@@ -1,4 +1,5 @@
-      home-battery-ai-optimizer/
+´´´
+      home-battery-ai/
     ├── README.md                # Project overview and setup instructions
     ├── LICENSE                  # Licensing information
     ├── requirements.txt         # Python dependencies
@@ -30,3 +31,4 @@
     │   ├── figures/             # Graphs, charts, and visualizations
     │   ├── logs/                # Logs for debugging or tracking experiments
     │   ├── simulations.csv      # Summary of simulation results
+    ´´´

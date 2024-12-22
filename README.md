@@ -1,4 +1,30 @@
-      home-battery-ai/
+# Home Energy AI Optimizer
+
+This project is an AI-driven system for optimizing home energy usage, with a focus on reducing electricity costs and minimizing energy peaks. It integrates with Home Assistant and Node-RED to control batteries, appliances, and renewable energy sources dynamically.
+
+## Features
+- Predict hourly energy demand using machine learning models.
+- Optimize battery charging and discharging based on energy prices, solar generation, and demand forecasts.
+- Control home appliances (e.g., floor heating, water radiators, EV chargers) to reduce energy peaks.
+- Minimize electricity costs under the Swedish energy pricing model.
+
+## Repository Structure
+- `config/`: Configuration files for integrations (Home Assistant, Node-RED).
+- `data/`: Raw and processed datasets for model training.
+- `deployment/`: Deployment scripts and resources (e.g., Docker, cloud instructions).
+- `models/`: Trained models for prediction and optimization.
+- `notebooks/`: Jupyter notebooks for analysis and development.
+- `results/`: Simulation and experiment outputs.
+- `scripts/`: Core scripts for preprocessing, training, and control logic.
+
+## How to Use
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Michelingumman/home-energy-ai.git
+   cd home-energy-ai
+  ```
+
+    home-battery-ai/
     ├── README.md                # Project overview and setup instructions
     ├── LICENSE                  # Licensing information
     ├── requirements.txt         # Python dependencies

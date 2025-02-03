@@ -24,36 +24,68 @@ This project is an AI-driven system for optimizing home energy usage, with a foc
    cd home-energy-ai
   ```
 
-    home-battery-ai/
-    ├── README.md                # Project overview and setup instructions
-    ├── LICENSE                  # Licensing information
-    ├── requirements.txt         # Python dependencies
-    ├── .gitignore               # Ignored files (e.g., .csv, .pkl, .h5, etc.)
-    ├── data/                    # Placeholder for sample or synthetic datasets
-    │   ├── raw/                 # Raw data exported from Home Assistant
-    │   ├── processed/           # Preprocessed data ready for modeling
-    │   ├── example_data.csv     # Example dataset (anonymized/synthetic if needed)
-    ├── models/                  # Trained models for deployment
-    │   ├── demand_predictor.pkl # Trained energy demand prediction model
-    │   ├── optimizer_agent.onnx # RL or optimization model for battery control
-    ├── notebooks/               # Jupyter notebooks for analysis and experimentation
-    │   ├── 01_data_exploration.ipynb  # Data exploration and visualization
-    │   ├── 02_model_training.ipynb   # Model training and evaluation
-    │   ├── 03_control_simulation.ipynb # Battery/appliance control simulations
-    ├── scripts/                 # Core scripts for pipeline and automation
-    │   ├── preprocess.py        # Data preprocessing pipeline
-    │   ├── train_model.py       # Script to train AI models
-    │   ├── predict.py           # Script for real-time predictions
-    │   ├── control_agent.py     # Agent for controlling battery and appliances
-    ├── config/                  # Configuration files for deployment
-    │   ├── home_assistant.yaml  # Example Home Assistant configuration
-    │   ├── node_red.json        # Example Node-RED flows
-    ├── deployment/              # Deployment-specific files and tools
-    │   ├── docker/              # Docker configurations (if applicable)
-    │   ├── edge_inference.py    # Inference logic for local deployment
-    │   ├── cloud_pipeline.md    # Instructions for cloud-based model training
-    ├── results/                 # Store results from simulations and experiments
-    │   ├── figures/             # Graphs, charts, and visualizations
-    │   ├── logs/                # Logs for debugging or tracking experiments
-    │   ├── simulations.csv      # Summary of simulation results
+AI-Driven-Home-Energy-Management-System/
+├── README.md                   # Project overview, quickstart, etc.
+├── LICENSE                     # License file
+├── .gitignore                  # Files/folders to ignore in git
+├── requirements.txt            # Python dependencies
+├── setup.py                    # Optional packaging script
+│
+├── docs/                       # Documentation
+│   ├── architecture.md
+│   ├── installation.md
+│   ├── user_guide.md
+│   └── design_notes.md
+│
+├── data/
+│   ├── raw/                    # Raw datasets
+│   │   └── jena_climate_2009_2016.csv
+│   └── processed/              # Processed data for experiments
+│
+├── src/
+│   ├── main.py                 # Application entry point
+│   │
+│   ├── data/                   # Data-related scripts
+│   │   └── preprocess.py       # Data cleaning/preprocessing code
+│   │
+│   ├── models/                 # Machine learning models
+│   │   ├── __init__.py         # (Empty file to mark as a package)
+│   │   ├── lstm/               # LSTM forecasting model
+│   │   │   ├── __init__.py     # (Empty file to mark as a package)
+│   │   │   ├── lstm_config.json# Configuration parameters for the LSTM model
+│   │   │   ├── utils.py        # Utility functions for data loading & windowing
+│   │   │   ├── model.py        # Model definition
+│   │   │   ├── train.py        # Script to train the LSTM model
+│   │   │   └── inference.py    # Script to run inference with the trained model
+│   │   │
+│   │   └── rl/                 # RL agent code (to be implemented)
+│   │       ├── train.py
+│   │       ├── agent.py
+│   │       ├── env.py
+│   │       └── rl_config.json
+│   │
+│   ├── controllers/            # Control logic for battery scheduling
+│   │   ├── long_term.py
+│   │   └── short_term.py
+│   │
+│   ├── home_assistant/         # Integration with Home Assistant
+│   │   ├── mqtt_client.py
+│   │   └── integration.py
+│   │
+│   └── utils/                  # Shared utilities (logging, config, etc.)
+│       ├── logger.py
+│       ├── config.py
+│       └── helpers.py
+│
+├── tests/                      # Unit and integration tests
+│   ├── test_preprocess.py
+│   ├── test_lstm.py
+│   ├── test_rl.py
+│   └── test_controllers.py
+│
+└── simulations/                # Simulation experiments & environments
+    ├── custom_env.py
+    ├── run_simulation.py
+    └── results/
+
 

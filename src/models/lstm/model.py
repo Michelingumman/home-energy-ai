@@ -17,11 +17,11 @@ def build_model(input_window, forecast_horizon, lstm_units):
     model = Sequential([
         InputLayer(input_shape=(input_window, 1)),
         # Encoder LSTM
-        LSTM(lstm_units, activation='relu'),
+        LSTM(lstm_units, activation='tanh'),
         # Repeat the context vector forecast_horizon times
         RepeatVector(forecast_horizon),
         # Decoder LSTM returns a sequence
-        LSTM(lstm_units, activation='relu', return_sequences=True),
+        LSTM(lstm_units, activation='tanh', return_sequences=True),
         # For each time step, produce a single output value
         TimeDistributed(Dense(1, activation='linear'))
     ])

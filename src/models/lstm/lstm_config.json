@@ -1,15 +1,15 @@
 {
     "csv_paths": [
-        "data/raw/Tibber_villamichelin_PowerConsumption.csv"
+        "data/raw/synthetic_power.csv"
     ],
-    "input_window": 168,
-    "forecast_horizon": 168,
+    "input_window": 5000,
+    "forecast_horizon": 24,
     "train_split": 0.75,
     "val_split": 0.90,
-    "lstm_units": 1028,
+    "lstm_units": 32,
     "dense_units": 8,
-    "learning_rate": 0.0001,
-    "epochs": 10,
+    "learning_rate": 0.001,
+    "epochs": 30,
     "batch_size": 32,
     "model_save_path": "src/models/lstm/model.keras"
 }

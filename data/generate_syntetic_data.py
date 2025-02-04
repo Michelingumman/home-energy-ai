@@ -3,7 +3,7 @@ import numpy as np
 from datetime import datetime, timedelta
 
 # Number of hourly observations (for example, about 5000 hours ~ 208 days)
-n_hours = 5000
+n_hours = 100000
 
 # Create a date range starting at a specific date
 start_date = datetime(2024, 1, 1)

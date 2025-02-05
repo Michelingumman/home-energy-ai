@@ -1,29 +1,23 @@
 # train.py
 from stable_baselines3 import PPO
 from custom_env import HomeEnergyEnv
-import json
 
-def train(config_path):
-    # Load configuration
-    with open(config_path) as f:
-        config = json.load(f)
-    
-    # Create environment
+def train(config):
     env = HomeEnergyEnv(config)
     
-    # Initialize SB3 agent
+    # Custom policy network
+    policy_kwargs = dict(
+        features_extractor_class=CustomFeatureExtractor,
+        net_arch=[dict(pi=[256, 256], vf=[256, 256])]
+    )
+    
     model = PPO(
         "MultiInputPolicy",
         env,
-        policy_kwargs={
-            "features_extractor_class": CustomFeatureExtractor,
-            "net_arch": [256, 128]
-        },
-        verbose=1
+        policy_kwargs=policy_kwargs,
+        verbose=1,
+        device='cuda'  # Use GPU if available
     )
     
-    # Train
-    model.learn(total_timesteps=config['training_steps'])
-    
-    # Save
+    model.learn(total_timesteps=1_000_000)
     model.save("energy_manager")

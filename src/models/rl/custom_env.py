@@ -104,8 +104,9 @@ class HomeEnergyEnv(gym.Env):
         }
 
     def render(self, mode='human'):
-        print(f"\nTime: {self.current_time.strftime('%Y-%m-%d %H:%M')}")
-        print(f"Battery SOC: {self.battery.soc:.2%}")
-        print(f"Solar Production: {self.solar.current_production(self.current_time, 0.2):.2f} kW")
-        print(f"Grid Price: {self.grid.get_current_price(self.current_time.hour):.2f} öre/kWh")
-        print(f"Active Appliances: {list(self.appliance_manager.active_set)}")
+        state = self.components.get_state()
+        print(f"\nTime: {self.components.current_time.strftime('%Y-%m-%d %H:%M')}")
+        print(f"Battery SOC: {state['battery_soc'][0]:.1%}")
+        print(f"Solar Production: {state['solar_production'][0]:.1f} kW")
+        print(f"Grid Price: {state['grid_price'][0]:.2f} öre/kWh")
+        print(f"Active Appliances: {self.components.appliances.active_set}")

@@ -1,0 +1,45 @@
+{
+    "battery": {
+        "capacity": 22,
+        "soc_min": 0.2,
+        "soc_max": 0.9,
+        "degradation_factor": 0.0001
+    },
+    "solar": {
+        "capacity": 10,
+        "efficiency": 0.85,
+        "model_path": "models/solar_lstm.h5"
+    },
+    "grid": {
+        "import_price_api": "https://api.example.com/prices",
+        "export_tariff": 0.85
+    },
+    "appliances": {
+        "ev_charger": {
+            "power_usage": 7.2,
+            "priority": 1,
+            "conflicts": ["heat_pump"]
+        },
+        "heat_pump": {
+            "power_usage": 5.0,
+            "priority": 2,
+            "conflicts": ["ev_charger"]
+        },
+        "sauna": {
+            "power_usage": 8.0,
+            "priority": 3,
+            "conflicts": []
+        }
+    },
+    "paths": {
+        "demand_model": "models/demand_lstm.h5",
+        "price_model": "models/price_ann.h5"
+    },
+    "training": {
+        "learning_rate": 0.0003,
+        "n_steps": 2048,
+        "batch_size": 64,
+        "total_timesteps": 1000000,
+        "save_freq": 50000
+    }
+}

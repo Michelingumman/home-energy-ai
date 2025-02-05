@@ -17,16 +17,21 @@
     "appliances": {
         "ev_charger": {
             "power_usage": 7.2,
-            "priority": 1,
+            "priority": 2,
             "conflicts": ["heat_pump"]
         },
         "heat_pump": {
-            "power_usage": 5.0,
-            "priority": 2,
+            "power_usage": 3.0,
+            "priority": 3,
             "conflicts": ["ev_charger"]
         },
         "sauna": {
-            "power_usage": 8.0,
+            "power_usage": 5.0,
+            "priority": 1,
+            "conflicts": []
+        },
+        "floor_heating": {
+            "power_usage": 2.0,
             "priority": 3,
             "conflicts": []
         }

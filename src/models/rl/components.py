@@ -1,9 +1,9 @@
-
 import numpy as np
 import tensorflow as tf
 import requests
 from typing import Dict, List
-
+from datetime import datetime, timedelta
+import gymnasium as gym
 
 
 # components.py
@@ -13,14 +13,80 @@ class ComponentManager:
         self.solar = SolarSystem(**config['solar'])
         self.grid = GridInterface(**config['grid'])
         self.appliances = ApplianceManager(**config['appliances'])
+        self._time = datetime.now()
+        self.time_step = timedelta(minutes=15)
+        
+    def get_observation_space(self):
+        return gym.spaces.Dict({
+            "battery_soc": gym.spaces.Box(0.0, 1.0, (1,)),
+            "appliance_states": gym.spaces.MultiBinary(
+                len(self.appliances.appliances)
+            ),
+            "solar_production": gym.spaces.Box(
+                0.0, self.solar.capacity, (1,)
+            ),
+            "grid_price": gym.spaces.Box(0.0, 100.0, (1,)),
+            "export_tariff": gym.spaces.Box(0.0, 1.0, (1,)),
+            "time_encoding": gym.spaces.Box(-1.0, 1.0, (4,))
+        })
+        
+    def execute_actions(self, action):
+        # Battery handling
+        if action['battery_mode'] == 0:
+            self.battery.charge(self.grid.get_current_price(self._time.hour))
+        elif action['battery_mode'] == 1:
+            self.battery.discharge(
+                self.appliances.total_power_demand()
+            )
+        elif action['battery_mode'] == 2:  # Sell to grid
+            sell_energy = min(
+                action['grid_sell'][0] * self.battery.capacity,
+                self.battery.available_energy
+            )
+            self.battery.discharge(sell_energy)
+            self.grid.log_sale(sell_energy, self._time.hour)
+            
+        # Appliance handling
+        self.appliances.set_state({
+            name: bool(action['appliance_control'][i])
+            for i, name in enumerate(self.appliances.appliances)
+        })
+    
+        # Time progression
+        self._time += self.time_step
+        self.grid.update_prices()
         
     def get_state(self):
         return {
-            "battery": self.battery.state,
-            "solar": self.solar.state,
-            "grid": self.grid.state,
-            "appliances": self.appliances.state
+            "battery_soc": np.array([self.battery.soc]),
+            "appliance_states": np.array([
+                int(app.active) 
+                for app in self.appliances.appliances.values()
+            ]),
+            "solar_production": np.array([
+                self.solar.current_production(
+                    self._time, 
+                    self.weather_service.get_cloud_cover()
+                )
+            ]),
+            "grid_price": np.array([
+                self.grid.get_current_price(self._time.hour)
+            ]),
+            "export_tariff": np.array([self.grid.export_tariff]),
+            "time_encoding": np.array([
+                np.sin(2 * np.pi * self._time.hour / 24),
+                np.cos(2 * np.pi * self._time.hour / 24),
+                np.sin(2 * np.pi * self._time.weekday() / 7),
+                np.cos(2 * np.pi * self._time.weekday() / 7)
+            ])
         }
+    
+    def reset(self):
+        self._time = datetime.now()
+        self.battery.reset()
+        self.appliances.reset()
+        self.grid.reset()
+        return self.get_state()
         
         
 class Appliance:

@@ -6,16 +6,8 @@ This project is an AI-driven system for optimizing home energy usage, with a foc
 - Predict hourly energy demand using machine learning models.
 - Optimize battery charging and discharging based on energy prices, solar generation, and demand forecasts.
 - Control home appliances (e.g., floor heating, water radiators, EV chargers) to reduce energy peaks.
-- Minimize electricity costs under the Swedish energy pricing model.
+- Minimize electricity costs under the Swedish energy pricing model (power tariff).
 
-## Repository Structure
-- `config/`: Configuration files for integrations (Home Assistant, Node-RED).
-- `data/`: Raw and processed datasets for model training.
-- `deployment/`: Deployment scripts and resources (e.g., Docker, cloud instructions).
-- `models/`: Trained models for prediction and optimization.
-- `notebooks/`: Jupyter notebooks for analysis and development.
-- `results/`: Simulation and experiment outputs.
-- `scripts/`: Core scripts for preprocessing, training, and control logic.
 
 ## How to Use
 1. Clone the repository:

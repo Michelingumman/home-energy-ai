@@ -9,8 +9,8 @@ from tensorflow.keras.metrics import RootMeanSquaredError
 from tensorflow.keras.optimizers import Adam
 
 from src.data.preprocess import load_raw_data, clean_data, resample_data, normalize_series
-from src.models.lstm.utils import df_to_X_y
-from src.models.lstm.model import build_model
+from src.models.predictions.demand.utils import df_to_X_y
+from src.models.predictions.demand.model import build_model
 
 # Load configuration from JSON.
 config_path = os.path.join(os.path.dirname(__file__), "lstm_config.json")

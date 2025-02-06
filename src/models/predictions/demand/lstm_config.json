@@ -11,5 +11,5 @@
     "learning_rate": 0.001,
     "epochs": 30,
     "batch_size": 32,
-    "model_save_path": "src/models/lstm/demand_model.keras"
+    "model_save_path": "src/models/predictions/demand/demand_model.keras"
 }

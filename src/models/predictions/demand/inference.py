@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 
 from src.data.preprocess import load_raw_data, clean_data, resample_data, normalize_series
-from src.models.lstm.utils import df_to_X_y
+from src.models.predictions.demand.utils import df_to_X_y
 
 # Load configuration.
 config_path = os.path.join(os.path.dirname(__file__), "lstm_config.json")

@@ -1,0 +1,1 @@
+model = load_model(self.models_dir / "best_model.keras")

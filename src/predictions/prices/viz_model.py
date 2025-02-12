@@ -44,13 +44,23 @@ class ModelVisualizer:
     def create_model(self):
         """Create the model architecture"""
         model = Sequential([
-            LSTM(64, input_shape=(48, 9), return_sequences=True, name="LSTM_1"),
-            Dropout(0.2, name="Dropout_1"),
-            LSTM(32, name="LSTM_2"),
-            Dropout(0.2, name="Dropout_2"),
-            Dense(16, activation='relu', name="Dense_1"),
-            Dense(1, name="Output")
+            # First LSTM layer with more units for feature extraction
+            LSTM(256, input_shape=(168 ,25), return_sequences=True),
+            Dropout(0.3),
+            
+            # Deep LSTM stack for temporal patterns
+            LSTM(128, return_sequences=True),
+            Dropout(0.3),
+            LSTM(64),
+            Dropout(0.3),
+            
+            # Dense layers for feature interaction
+            Dense(128, activation='relu'),
+            Dropout(0.2),
+            Dense(64, activation='relu'),
+            Dense(1)
         ])
+        
         return model
     
     def setup_tensorboard(self, model):
@@ -133,14 +143,12 @@ class ModelVisualizer:
             draw_volume=True,
             scale_z=1.5
         )
-        
-        # Create graph visualization with simpler settings
+                
         graph = visualkeras.graph_view(
             model,
-            to_file=str(self.plots_dir / "model_architecture_graph.png") if save else None,
-            show_shapes=True,
-            show_layer_names=True
+            to_file=str(self.plots_dir / "model_architecture_graph.png") if save else None
         )
+
         
         # Create dot visualization
         self.create_dot_visualization(model)

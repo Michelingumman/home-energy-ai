@@ -5,7 +5,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import RobustScaler
 import joblib
 from pathlib import Path
 import logging
@@ -15,18 +15,59 @@ import os
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class PriceModelTrainer:
-    def __init__(self, window_size=48):
+    def __init__(self, window_size=168):  # One week of hourly data
         """Initialize trainer with project paths"""
         self.window_size = window_size
         self.model = None
-        self.scaler = MinMaxScaler(feature_range=(0, 1))
+        self.scaler = RobustScaler()
         
         # Setup project paths
-        self.project_root = Path(__file__).resolve().parents[3]  # Go up 3 levels to project root
+        self.project_root = Path(__file__).resolve().parents[3]
         self.models_dir = self.project_root / "models/saved"
         self.test_data_dir = self.project_root / "models/test_data"
+    
+    def get_required_features(self):
+        """List all required features for the model"""
+        # Cyclical time features
+        time_features = [
+            'hour_sin', 'hour_cos',
+            'day_of_week_sin', 'day_of_week_cos',
+            'month_sin', 'month_cos'
+        ]
         
+        # Binary and categorical features
+        binary_features = [
+            'is_peak_hour', 
+            'is_weekend', 
+            'season',
+            'is_holiday',
+            'is_holiday_eve'
+        ]
         
+        # Grid supply features (most important ones)
+        grid_features = [
+            'renewable_percentage',  # Key for price formation
+            'nuclear_percentage',    # Stable baseload indicator
+            'import_percentage',     # Supply constraint indicator
+            'total_supply',          # Overall system capacity
+            'hydro',                 # Important for Nordic market
+            'wind'                   # Affects price volatility
+        ]
+        
+        # Price-based features
+        price_features = [
+            'SE3_price_ore',  # Target variable
+            'price_24h_avg',
+            'price_168h_avg',
+            'price_24h_std',
+            'price_volatility_24h',
+            'price_momentum',
+            'hour_avg_price',
+            'price_vs_hour_avg'
+        ]
+        
+        return price_features + time_features + binary_features + grid_features
+
     def load_data(self):
         """Load and prepare the processed data"""
         logging.info("Loading datasets...")
@@ -76,79 +117,23 @@ class PriceModelTrainer:
         # Handle any missing values
         df = df.ffill().bfill()
         
-        # Verify we have all required features
-        missing_cols = set(self.get_required_features()) - set(df.columns)
-        if missing_cols:
-            raise ValueError(f"Missing required features: {missing_cols}")
-        
         logging.info(f"Final dataset shape: {df.shape}")
-        logging.info(f"Dataset columns: {df.columns}")
-        logging.info(f"Dataset sample: {df.head()}")
+        
         return df
-    
-    def get_required_features(self):
-        """List all required features for the model"""
-        # Base time features
-        time_features = [
-            'hour_sin', 'hour_cos',
-            'day_of_week_sin', 'day_of_week_cos',
-            'month_sin', 'month_cos',
-            'is_peak_hour', 'is_weekend'
-        ]
-        
-        # Holiday features
-        holiday_features = [
-            'is_holiday', 'is_holiday_eve',
-            'days_to_next_holiday', 'days_from_last_holiday'
-        ]
-        
-        # Grid supply features (match actual columns from SwedenGrid.csv)
-        grid_features = [
-            'renewable_percentage',
-            'nuclear_percentage', 
-            'thermal_percentage',
-            'import_percentage',
-            'total_supply',
-            'hydro',
-            'wind',
-            'nuclear',
-            'total_supply_3m_ma',
-            'renewable_percentage_3m_ma',
-            'nuclear_percentage_3m_ma'
-        ]
-        
-        # Price features
-        price_features = ['SE3_price_ore']
-        
-        return price_features + time_features + holiday_features + grid_features
-    
+
     def create_sequences(self, data):
-        """Create sequences for LSTM training"""
-        feature_cols = self.get_required_features()
-        
+        """Convert dataframe of features to sequences for LSTM training"""
         X, y = [], []
-        values = data[feature_cols].values
-        
+        values = data.values
         for i in range(len(values) - self.window_size):
             X.append(values[i:(i + self.window_size)])
-            y.append(values[i + self.window_size, 0])  # First column is price
-            
+            # Assuming the first column ('SE3_price_ore') is the target
+            y.append(values[i + self.window_size, 0])
         return np.array(X), np.array(y)
     
     def prepare_data(self):
         """Prepare data for training"""
         df = self.load_data()
-        
-        # Add time-based features if not present
-        if 'hour_sin' not in df.columns:
-            df['hour_sin'] = np.sin(2 * np.pi * df.index.hour/24)
-            df['hour_cos'] = np.cos(2 * np.pi * df.index.hour/24)
-            df['day_of_week_sin'] = np.sin(2 * np.pi * df.index.dayofweek/7)
-            df['day_of_week_cos'] = np.cos(2 * np.pi * df.index.dayofweek/7)
-            df['month_sin'] = np.sin(2 * np.pi * df.index.month/12)
-            df['month_cos'] = np.cos(2 * np.pi * df.index.month/12)
-            df['is_peak_hour'] = ((df.index.hour >= 6) & (df.index.hour <= 22)).astype(int)
-            df['is_weekend'] = (df.index.dayofweek >= 5).astype(int)
         
         # Get required features
         feature_cols = self.get_required_features()
@@ -158,10 +143,10 @@ class PriceModelTrainer:
         if missing_cols:
             raise ValueError(f"Missing required features: {missing_cols}")
         
-        # Scale the price data
-        prices = df['SE3_price_ore'].values.reshape(-1, 1)
-        scaled_prices = self.scaler.fit_transform(prices)
-        df['SE3_price_ore'] = scaled_prices.flatten()
+        # Scale the price data and price-based features
+        price_cols = [col for col in feature_cols if 'price' in col.lower()]
+        for col in price_cols:
+            df[col] = self.scaler.fit_transform(df[col].values.reshape(-1, 1)).flatten()
         
         # Create sequences
         X, y = self.create_sequences(df[feature_cols])
@@ -180,20 +165,32 @@ class PriceModelTrainer:
         return (X_train, y_train, X_val, y_val, X_test, y_test), df.index[self.window_size:]
     
     def build_model(self, input_shape):
+        print("INPUT SHAPE", input_shape)
         """Build the LSTM model"""
         model = Sequential([
-            LSTM(64, input_shape=input_shape, return_sequences=True),
+            # First LSTM layer with more units for feature extraction
+            LSTM(256, input_shape=input_shape, return_sequences=True),
+            Dropout(0.3),
+            
+            # Deep LSTM stack for temporal patterns
+            LSTM(128, return_sequences=True),
+            Dropout(0.3),
+            LSTM(64),
+            Dropout(0.3),
+            
+            # Dense layers for feature interaction
+            Dense(128, activation='relu'),
             Dropout(0.2),
-            LSTM(32),
-            Dropout(0.2),
-            Dense(16, activation='relu'),
+            Dense(64, activation='relu'),
             Dense(1)
         ])
         
-        model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+        # Use custom learning rate with Adam optimizer
+        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+        model.compile(optimizer=optimizer, loss='huber', metrics=['mae'])
         return model
     
-    def train(self, epochs=50, batch_size=32):
+    def train(self, epochs=100, batch_size=32):
         """Train the model"""
         logging.info("Preparing data...")
         (X_train, y_train, X_val, y_val, X_test, y_test), timestamps = self.prepare_data()
@@ -209,15 +206,27 @@ class PriceModelTrainer:
         self.models_dir.mkdir(parents=True, exist_ok=True)
         self.test_data_dir.mkdir(parents=True, exist_ok=True)
         
-        # Callbacks
+        # Callbacks with longer patience for larger model
         callbacks = [
-            EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True),
+            EarlyStopping(
+                monitor='val_mae',
+                patience=25,
+                restore_best_weights=True,
+                mode='min'
+            ),
             ModelCheckpoint(
                 self.models_dir / 'best_model.keras',
-                monitor='val_loss',
-                save_best_only=True
+                monitor='val_mae',
+                save_best_only=True,
+                mode='min'
             ),
-            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-6)
+            ReduceLROnPlateau(
+                monitor='val_mae',
+                factor=0.2,
+                patience=10,
+                min_lr=1e-6,
+                mode='min'
+            )
         ]
         
         logging.info("Training model...")
@@ -246,8 +255,9 @@ class PriceModelTrainer:
     
     def plot_training_history(self, history):
         """Plot training history"""
-        plt.figure(figsize=(12, 4))
+        plt.figure(figsize=(15, 5))
         
+        # Plot loss
         plt.subplot(1, 2, 1)
         plt.plot(history.history['loss'], label='Training Loss')
         plt.plot(history.history['val_loss'], label='Validation Loss')
@@ -255,7 +265,9 @@ class PriceModelTrainer:
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.legend()
+        plt.grid(True)
         
+        # Plot MAE
         plt.subplot(1, 2, 2)
         plt.plot(history.history['mae'], label='Training MAE')
         plt.plot(history.history['val_mae'], label='Validation MAE')
@@ -263,6 +275,7 @@ class PriceModelTrainer:
         plt.xlabel('Epoch')
         plt.ylabel('MAE')
         plt.legend()
+        plt.grid(True)
         
         plt.tight_layout()
         plt.show()
@@ -274,4 +287,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

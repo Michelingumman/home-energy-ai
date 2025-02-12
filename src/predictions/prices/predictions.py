@@ -316,13 +316,13 @@ class PricePredictor:
         plt.xlabel('Time')
         plt.ylabel('Price (öre/kWh)')
         plt.grid(True, alpha=0.3)
-        plt.legend()
+plt.legend()
         plt.xticks(rotation=45)
         plt.tight_layout()
-        plt.show()
-        
+plt.show()
+
         # Print statistics
-        print("\nPrediction Summary:")
+print("\nPrediction Summary:")
         print(f"Period: {dates[0]} to {dates[-1]}")
         print(f"Average predicted price: {predictions.mean():.2f} öre/kWh")
         print(f"Min predicted price: {predictions.min():.2f} öre/kWh")

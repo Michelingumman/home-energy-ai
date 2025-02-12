@@ -6,3 +6,4 @@ tensorflow
 xgboost
 gymnasium
 seaborn
+pathlib

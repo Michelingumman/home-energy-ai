@@ -68,15 +68,6 @@ class GridDataProcessor:
             self.df['import'] / self.df['total_supply'] * 100
         )
         
-        # Add seasonal features
-        self.df['month_num'] = self.df['month'].dt.month
-        self.df['season'] = pd.cut(
-            self.df['month_num'], 
-            bins=[0, 3, 6, 9, 12], 
-            labels=['winter', 'spring', 'summer', 'fall'],
-            include_lowest=True
-        )
-        
         # Add year-over-year growth rates
         for col in ['total_supply', 'hydro', 'wind', 'nuclear', 'import']:
             self.df[f'{col}_yoy_change'] = (

@@ -18,9 +18,6 @@ def add_features(df):
 
 def prepare_prediction_data(df, window_size=48):
     """Prepare data for prediction including features"""
-    # Add features
-    df = add_features(df)
-    
     # Add cyclical time features
     df['hour_sin'] = np.sin(2 * np.pi * df.index.hour/24)
     df['hour_cos'] = np.cos(2 * np.pi * df.index.hour/24)
@@ -28,10 +25,30 @@ def prepare_prediction_data(df, window_size=48):
     df['day_of_week_cos'] = np.cos(2 * np.pi * df.index.dayofweek/7)
     df['month_sin'] = np.sin(2 * np.pi * df.index.month/12)
     df['month_cos'] = np.cos(2 * np.pi * df.index.month/12)
+    df['quarter_sin'] = np.sin(2 * np.pi * ((df.index.month-1)//3)/4)
+    df['quarter_cos'] = np.cos(2 * np.pi * ((df.index.month-1)//3)/4)
+    df['week_sin'] = np.sin(2 * np.pi * df.index.isocalendar().week/52)
+    df['week_cos'] = np.cos(2 * np.pi * df.index.isocalendar().week/52)
     
-    # Add peak hour and weekend features
+    # Add binary time features
     df['is_peak_hour'] = ((df.index.hour >= 6) & (df.index.hour <= 22)).astype(int)
     df['is_weekend'] = (df.index.dayofweek >= 5).astype(int)
+    df['is_summer'] = ((df.index.month >= 6) & (df.index.month <= 8)).astype(int)
+    df['is_winter'] = ((df.index.month == 12) | (df.index.month <= 2)).astype(int)
+    
+    # Add price-based features
+    df['price_24h_avg'] = df['SE3_price_ore'].rolling(window=24, min_periods=1).mean()
+    df['price_168h_avg'] = df['SE3_price_ore'].rolling(window=168, min_periods=1).mean()
+    df['price_24h_std'] = df['SE3_price_ore'].rolling(window=24, min_periods=1).std()
+    df['price_24h_max'] = df['SE3_price_ore'].rolling(window=24, min_periods=1).max()
+    df['price_24h_min'] = df['SE3_price_ore'].rolling(window=24, min_periods=1).min()
+    
+    # Add volatility and trend indicators
+    df['price_volatility_24h'] = df['price_24h_std'] / df['price_24h_avg']
+    df['price_trend_24h'] = (df['SE3_price_ore'] - df['price_24h_avg']) / df['price_24h_avg']
+    
+    # Handle any missing values from rolling calculations
+    df = df.ffill().bfill()
     
     # Get the last window of data
     feature_cols = [
@@ -39,7 +56,20 @@ def prepare_prediction_data(df, window_size=48):
         'hour_sin', 'hour_cos',
         'day_of_week_sin', 'day_of_week_cos',
         'month_sin', 'month_cos',
-        'is_peak_hour', 'is_weekend'
+        'quarter_sin', 'quarter_cos',
+        'week_sin', 'week_cos',
+        'is_peak_hour', 'is_weekend',
+        'is_summer', 'is_winter',
+        'is_holiday', 'is_holiday_eve',
+        'days_to_next_holiday', 'days_from_last_holiday',
+        'renewable_percentage', 'nuclear_percentage', 
+        'thermal_percentage', 'import_percentage',
+        'total_supply', 'hydro', 'wind', 'nuclear',
+        'total_supply_3m_ma', 'renewable_percentage_3m_ma',
+        'nuclear_percentage_3m_ma',
+        'price_24h_avg', 'price_168h_avg', 'price_24h_std',
+        'price_24h_max', 'price_24h_min', 'price_volatility_24h',
+        'price_trend_24h'
     ]
     
     last_window = df[feature_cols].values[-window_size:]
@@ -68,25 +98,62 @@ def make_prediction(model, last_window, steps=24, dampening_factor=0.9):
         confidence = pred[0, 0] * (base_uncertainty + time_uncertainty)
         confidence_intervals.append([pred[0, 0] - confidence, pred[0, 0] + confidence])
         
+        # Update window with new prediction and features
+        current_date = pd.Timestamp.now() + pd.Timedelta(hours=step)
+        
+        # Update time features
+        hour = current_date.hour
+        day = current_date.dayofweek
+        month = current_date.month
+        week = current_date.isocalendar().week
+        quarter = (month - 1) // 3
+        
+        # Calculate all features for the new row
+        new_row = np.zeros(current_window.shape[1])  # Same number of features as input
+        
+        # Time features
+        new_row[1] = np.sin(2 * np.pi * hour/24)  # hour_sin
+        new_row[2] = np.cos(2 * np.pi * hour/24)  # hour_cos
+        new_row[3] = np.sin(2 * np.pi * day/7)    # day_sin
+        new_row[4] = np.cos(2 * np.pi * day/7)    # day_cos
+        new_row[5] = np.sin(2 * np.pi * month/12) # month_sin
+        new_row[6] = np.cos(2 * np.pi * month/12) # month_cos
+        new_row[7] = np.sin(2 * np.pi * quarter/4) # quarter_sin
+        new_row[8] = np.cos(2 * np.pi * quarter/4) # quarter_cos
+        new_row[9] = np.sin(2 * np.pi * week/52)  # week_sin
+        new_row[10] = np.cos(2 * np.pi * week/52) # week_cos
+        
+        # Binary features
+        new_row[11] = 1 if (hour >= 6 and hour <= 22) else 0  # is_peak_hour
+        new_row[12] = 1 if (day >= 5) else 0                  # is_weekend
+        new_row[13] = 1 if (month >= 6 and month <= 8) else 0 # is_summer
+        new_row[14] = 1 if (month == 12 or month <= 2) else 0 # is_winter
+        
+        # Holiday features (maintain last values)
+        new_row[15:19] = current_window[-1, 15:19]
+        
+        # Grid features (maintain last values)
+        new_row[19:30] = current_window[-1, 19:30]
+        
+        # Price features
+        if step > 0:
+            # Use predictions for price statistics
+            window_prices = np.array(predictions[-min(24, step):])
+            new_row[30] = np.mean(window_prices)  # price_24h_avg
+            new_row[31] = np.mean(predictions)    # price_168h_avg
+            new_row[32] = np.std(window_prices)   # price_24h_std
+            new_row[33] = np.max(window_prices)   # price_24h_max
+            new_row[34] = np.min(window_prices)   # price_24h_min
+            new_row[35] = new_row[32] / new_row[30] if new_row[30] != 0 else 0  # volatility
+            new_row[36] = (pred[0, 0] - new_row[30]) / new_row[30] if new_row[30] != 0 else 0  # trend
+        else:
+            # Use last window's price statistics
+            new_row[30:37] = current_window[-1, 30:37]
+        
+        # Set predicted price
+        new_row[0] = pred[0, 0]
+        
         # Update window
-        hour = (step + current_window[-1, 1]) % 24
-        day = (current_window[-1, 3] + (1 if hour == 0 else 0)) % 7
-        month = current_window[-1, 5]  # Keep month same for short-term predictions
-        
-        # Create new row with predicted values and updated features
-        new_row = np.array([[
-            pred[0, 0],  # Predicted price
-            np.sin(2 * np.pi * hour/24),  # hour_sin
-            np.cos(2 * np.pi * hour/24),  # hour_cos
-            np.sin(2 * np.pi * day/7),    # day_sin
-            np.cos(2 * np.pi * day/7),    # day_cos
-            np.sin(2 * np.pi * month/12), # month_sin
-            np.cos(2 * np.pi * month/12), # month_cos
-            1 if (hour >= 6 and hour <= 22) else 0,  # is_peak_hour
-            1 if (day >= 5) else 0        # is_weekend
-        ]])
-        
-        # Update the window by dropping oldest row and adding new row
         current_window = np.vstack([current_window[1:], new_row])
     
     return np.array(predictions), np.array(confidence_intervals)
@@ -316,13 +383,13 @@ class PricePredictor:
         plt.xlabel('Time')
         plt.ylabel('Price (öre/kWh)')
         plt.grid(True, alpha=0.3)
-plt.legend()
+        plt.legend()
         plt.xticks(rotation=45)
         plt.tight_layout()
-plt.show()
+        plt.show()
 
         # Print statistics
-print("\nPrediction Summary:")
+        print("\nPrediction Summary:")
         print(f"Period: {dates[0]} to {dates[-1]}")
         print(f"Average predicted price: {predictions.mean():.2f} öre/kWh")
         print(f"Min predicted price: {predictions.min():.2f} öre/kWh")

@@ -23,7 +23,7 @@ class ElectricityPricePreprocessor:
         self.price_area = price_area
         self.eur_to_sek = eur_to_sek
         self.df = None
-        
+    
     def load_data(self):
         """Load and perform initial data cleaning"""
         logging.info(f"Loading data from {self.file_path}")
@@ -69,13 +69,12 @@ class ElectricityPricePreprocessor:
     
     def add_features(self):
         """Add time-based features"""
-        # Basic time features
+        # Basic time features - only keep what's needed for feature engineering
         self.df['hour'] = self.df.index.hour
         self.df['day_of_week'] = self.df.index.dayofweek
         self.df['month'] = self.df.index.month
-        self.df['week_of_year'] = self.df.index.isocalendar().week
         
-        # Cyclical encoding
+        # Cyclical encoding - focus on most important time cycles
         self.df['hour_sin'] = np.sin(2 * np.pi * self.df['hour']/24)
         self.df['hour_cos'] = np.cos(2 * np.pi * self.df['hour']/24)
         self.df['day_of_week_sin'] = np.sin(2 * np.pi * self.df['day_of_week']/7)
@@ -83,9 +82,30 @@ class ElectricityPricePreprocessor:
         self.df['month_sin'] = np.sin(2 * np.pi * self.df['month']/12)
         self.df['month_cos'] = np.cos(2 * np.pi * self.df['month']/12)
         
-        # Additional features
+        # Binary time features - keep only the most significant ones
         self.df['is_peak_hour'] = ((self.df['hour'] >= 6) & (self.df['hour'] <= 22)).astype(int)
         self.df['is_weekend'] = (self.df['day_of_week'] >= 5).astype(int)
+        
+        # Seasonal feature (combine summer/winter into one feature)
+        self.df['season'] = 0  # Default to spring/fall
+        self.df.loc[(self.df['month'] >= 6) & (self.df['month'] <= 8), 'season'] = 1  # Summer
+        self.df.loc[(self.df['month'] == 12) | (self.df['month'] <= 2), 'season'] = -1  # Winter
+        
+        # Price-based features - focus on most predictive windows
+        # Short-term price patterns
+        self.df['price_24h_avg'] = self.df['SE3_price_ore'].rolling(window=24, min_periods=1).mean()
+        self.df['price_24h_std'] = self.df['SE3_price_ore'].rolling(window=24, min_periods=1).std()
+        
+        # Weekly patterns
+        self.df['price_168h_avg'] = self.df['SE3_price_ore'].rolling(window=168, min_periods=1).mean()
+        
+        # Price dynamics
+        self.df['price_volatility_24h'] = self.df['price_24h_std'] / self.df['price_24h_avg']
+        self.df['price_momentum'] = (self.df['SE3_price_ore'] - self.df['price_24h_avg']) / self.df['price_24h_avg']
+        
+        # Add hour-of-day average price (captures daily patterns)
+        self.df['hour_avg_price'] = self.df.groupby('hour')['SE3_price_ore'].transform('mean')
+        self.df['price_vs_hour_avg'] = self.df['SE3_price_ore'] / self.df['hour_avg_price']
         
         return self
     
@@ -101,10 +121,24 @@ class ElectricityPricePreprocessor:
     
     def select_final_columns(self):
         """Select and order final columns"""
-        # Keep PriceArea, SE3_price_ore and all feature columns
-        feature_cols = ['hour', 'day_of_week', 'month', 'week_of_year',
-                       'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos',
-                       'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend']
+        feature_cols = [
+            # Cyclical time features
+            'hour_sin', 'hour_cos',
+            'day_of_week_sin', 'day_of_week_cos',
+            'month_sin', 'month_cos',
+            
+            # Binary and categorical features
+            'is_peak_hour', 'is_weekend', 'season',
+            
+            # Price patterns
+            'price_24h_avg',
+            'price_168h_avg',
+            'price_24h_std',
+            'price_volatility_24h',
+            'price_momentum',
+            'hour_avg_price',
+            'price_vs_hour_avg'
+        ]
         
         self.df = self.df[['PriceArea', 'SE3_price_ore'] + feature_cols]
         return self
@@ -127,7 +161,7 @@ class ElectricityPricePreprocessor:
 
 def main():
     # Get project root (2 levels up from this file)
-    project_root = Path(__file__).parents[1]
+    project_root = Path(__file__).parents[3]
     
     # Input and output paths relative to project root
     file_path = project_root / "data/raw/Elspotprices/Elspotprices to - 2024.csv"

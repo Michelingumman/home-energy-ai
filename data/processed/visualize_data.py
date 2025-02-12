@@ -1,160 +1,304 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
-import numpy as np
-from datetime import datetime, timedelta
+from typing import Dict
 
-class PriceVisualizer:
-    def __init__(self, data_path=None):
-        """Initialize visualizer with data path"""
-        if data_path is None:
-            # Get the path relative to this file
-            self.data_path = Path(__file__).parent / "SE3prices.csv"
-        else:
-            self.data_path = Path(data_path)
-        self.df = self.load_data()
+class DataVisualizer:
+    def __init__(self, data_paths: Dict[str, str]):
+        """
+        Initialize the visualizer with paths to data files.
+        """
+        self.data_paths = data_paths
+        self.data = {}
+        self.load_data()
         
+        # Set visualization style
+        plt.style.use('fivethirtyeight')
+        self.colors = sns.color_palette()
+    
     def load_data(self):
-        """Load and prepare the data"""
-        df = pd.read_csv(self.data_path, index_col=0)
-        df.index = pd.to_datetime(df.index)
-        return df
+        """Loads all datasets specified in data_paths."""
+        for key, path in self.data_paths.items():
+            try:
+                self.data[key] = pd.read_csv(path, index_col=0, parse_dates=True)
+                print(f"Successfully loaded {key} data from {path}")
+            except Exception as e:
+                print(f"Error loading {key} data: {e}")
     
-    def plot_date_range(self, start_date, end_date, title=None):
-        """Plot prices for a specific date range"""
-        mask = (self.df.index >= start_date) & (self.df.index <= end_date)
-        data = self.df[mask]
+    def plot_price_vs_renewable(self, start_date: str, end_date: str):
+        """Plots SE3 electricity prices vs. renewable energy percentage."""
+        print(f"Running plot_price_vs_renewable from {start_date} to {end_date}")
+        if 'prices' not in self.data or 'grid' not in self.data:
+            print("Missing required data sources.")
+            return
         
-        plt.figure(figsize=(15, 6))
-        plt.step(data.index, data['price_ore'], where='post', label='Price')
-        plt.grid(True, alpha=0.3)
-        plt.title(title or f'Electricity Prices ({start_date} to {end_date})')
-        plt.xlabel('Date')
-        plt.ylabel('Price (öre/kWh)')
+        fig, ax1 = plt.subplots(figsize=(15, 6))
         
-        # Add day markers
-        days = pd.date_range(start_date, end_date, freq='D')
-        plt.xticks(days, [d.strftime('%Y-%m-%d') for d in days], rotation=45)
+        prices = self.data['prices'].loc[start_date:end_date, 'SE3_price_ore']
+        ax1.plot(prices.index, prices.values, color=self.colors[0], label='Price')
+        ax1.set_ylabel('Price (öre/kWh)', color=self.colors[0])
         
-        # Add statistics
-        avg_price = data['price_ore'].mean()
-        max_price = data['price_ore'].max()
-        min_price = data['price_ore'].min()
-        plt.axhline(y=avg_price, color='r', linestyle='--', alpha=0.5, label=f'Average: {avg_price:.2f}')
+        ax2 = ax1.twinx()
+        renewable = self.data['grid'].loc[start_date:end_date, 'renewable_percentage']
+        ax2.plot(renewable.index, renewable.values, color=self.colors[1], label='Renewable %')
+        ax2.set_ylabel('Renewable %', color=self.colors[1])
         
-        plt.legend()
-        plt.tight_layout()
+        plt.title(f'Price vs Renewable Percentage ({start_date} to {end_date})')
         plt.show()
-        
-        # Print statistics
-        print(f"\nStatistics for period {start_date} to {end_date}:")
-        print(f"Average price: {avg_price:.2f} öre/kWh")
-        print(f"Maximum price: {max_price:.2f} öre/kWh")
-        print(f"Minimum price: {min_price:.2f} öre/kWh")
     
-    def plot_daily_profile(self, date):
-        """Plot 24-hour profile for a specific date"""
-        day_start = pd.Timestamp(date).normalize()
-        day_end = day_start + pd.Timedelta(days=1)
+    def plot_holiday_price_impact(self, year: int):
+        """Plots electricity price distribution on holidays vs non-holidays for one year."""
+        print(f"Running plot_holiday_price_impact for year {year}")
+        if 'prices' not in self.data or 'holidays' not in self.data:
+            print("Missing required data sources.")
+            return
         
-        mask = (self.df.index >= day_start) & (self.df.index < day_end)
-        data = self.df[mask]
+        prices = self.data['prices']
+        holidays = self.data['holidays']
+        yearly_prices = prices[prices.index.year == year]
+        yearly_holidays = holidays[holidays.index.year == year]
+        
+        holiday_prices = yearly_prices[yearly_prices.index.isin(yearly_holidays.index)]
+        non_holiday_prices = yearly_prices[~yearly_prices.index.isin(yearly_holidays.index)]
         
         plt.figure(figsize=(12, 6))
-        plt.step(range(24), data['price_ore'].values, where='post', label='Price')
-        plt.grid(True, alpha=0.3)
-        plt.title(f'24-Hour Price Profile for {date}')
-        plt.xlabel('Hour of Day')
+        plt.boxplot([holiday_prices['SE3_price_ore'], non_holiday_prices['SE3_price_ore']],
+                    labels=['Holidays', 'Non-Holidays'])
+        plt.title(f'Price Distribution: Holidays vs Non-Holidays ({year})')
         plt.ylabel('Price (öre/kWh)')
-        plt.xticks(range(24))
-        
-        # Add average line
-        avg_price = data['price_ore'].mean()
-        plt.axhline(y=avg_price, color='r', linestyle='--', alpha=0.5, 
-                   label=f'Daily Average: {avg_price:.2f}')
-        
-        plt.legend()
-        plt.tight_layout()
         plt.show()
     
-    def plot_monthly_comparison(self, year, month):
-        """Plot daily averages for a specific month with previous year comparison"""
-        # Current year data
-        current_month = self.df[
-            (self.df.index.year == year) & 
-            (self.df.index.month == month)
-        ]
+    def compare_holiday_price_impacts(self, *years: int):
+        """
+        Compares holiday price impacts across multiple years by plotting subplots.
+        Each subplot shows a boxplot for one year.
+        """
+        print(f"Running compare_holiday_price_impacts for years: {', '.join(map(str, years))}")
+        if 'prices' not in self.data or 'holidays' not in self.data:
+            print("Missing required data sources.")
+            return
         
-        # Previous year data
-        prev_month = self.df[
-            (self.df.index.year == year-1) & 
-            (self.df.index.month == month)
-        ]
+        prices = self.data['prices']
+        holidays = self.data['holidays']
+        num_years = len(years)
+        fig, axes = plt.subplots(1, num_years, figsize=(6*num_years, 6), squeeze=False)
+        for i, year in enumerate(years):
+            ax = axes[0][i]
+            yearly_prices = prices[prices.index.year == year]
+            yearly_holidays = holidays[holidays.index.year == year]
+            holiday_prices = yearly_prices[yearly_prices.index.isin(yearly_holidays.index)]
+            non_holiday_prices = yearly_prices[~yearly_prices.index.isin(yearly_holidays.index)]
+            ax.boxplot([holiday_prices['SE3_price_ore'], non_holiday_prices['SE3_price_ore']],
+                       labels=['Holidays', 'Non-Holidays'])
+            ax.set_title(f'Year {year}')
+            ax.set_ylabel('Price (öre/kWh)')
+        plt.suptitle('Holiday Price Impacts Comparison')
+        plt.show()
+    
+    def plot_supply_mix(self, date: str):
+        """
+        Plots the energy supply mix for a specific month.
+        Since grid data is monthly aggregated, a pie chart is used.
+        """
+        print(f"Running plot_supply_mix for date {date}")
+        if 'grid' not in self.data:
+            print("Missing grid data.")
+            return
         
-        # Calculate daily averages
-        current_daily = current_month.groupby(current_month.index.day)['price_ore'].mean()
-        prev_daily = prev_month.groupby(prev_month.index.day)['price_ore'].mean()
+        supply_columns = ['hydro', 'wind', 'nuclear', 'solar', 'thermal_total']
+        try:
+            monthly_data = self.data['grid'].loc[date]
+        except KeyError:
+            print(f"No grid data available for {date}.")
+            return
+
+        values = monthly_data[supply_columns]
+        plt.figure(figsize=(8, 8))
+        plt.pie(values, labels=supply_columns, autopct='%1.1f%%', 
+                colors=self.colors[:len(supply_columns)])
+        plt.title(f'Energy Supply Mix for {date}')
+        plt.show()
+    
+    def plot_monthly_price_comparison(self, year: int, month: int):
+        """
+        Compares daily average prices for the specified month in one year against the previous year.
+        """
+        print(f"Running plot_monthly_price_comparison for {year}-{month:02d}")
+        if 'prices' not in self.data:
+            print("Missing price data.")
+            return
+        
+        prices = self.data['prices']
+        current_month = prices[(prices.index.year == year) & (prices.index.month == month)]
+        prev_month = prices[(prices.index.year == year - 1) & (prices.index.month == month)]
+        
+        current_daily = current_month.groupby(current_month.index.day)['SE3_price_ore'].mean()
+        prev_daily = prev_month.groupby(prev_month.index.day)['SE3_price_ore'].mean()
         
         plt.figure(figsize=(15, 6))
-        plt.plot(current_daily.index, current_daily.values, 
-                label=f'{year}', marker='o')
-        plt.plot(prev_daily.index, prev_daily.values, 
-                label=f'{year-1}', marker='o', linestyle='--', alpha=0.7)
+        plt.plot(current_daily.index, current_daily.values, label=f'{year}', marker='o')
+        plt.plot(prev_daily.index, prev_daily.values, label=f'{year - 1}', marker='o', linestyle='--', alpha=0.7)
         
-        plt.grid(True, alpha=0.3)
         plt.title(f'Daily Average Prices - {pd.Timestamp(year, month, 1).strftime("%B %Y")}')
         plt.xlabel('Day of Month')
         plt.ylabel('Average Price (öre/kWh)')
         plt.legend()
-        plt.tight_layout()
         plt.show()
     
-    def plot_price_distribution(self, year=None):
-        """Plot price distribution for a specific year or all data"""
-        if year:
-            data = self.df[self.df.index.year == year]
-            title = f'Price Distribution for {year}'
-        else:
-            data = self.df
-            title = 'Price Distribution for All Data'
+    def compare_monthly_price_across_years(self, month: int, *years: int):
+        """
+        Compares daily average prices for a given month across multiple years.
+        Each year's daily averages are plotted on the same chart.
+        """
+        print(f"Running compare_monthly_price_across_years for month {month} and years: {', '.join(map(str, years))}")
+        if 'prices' not in self.data:
+            print("Missing price data.")
+            return
         
-        plt.figure(figsize=(12, 6))
-        sns.histplot(data=data, x='price_ore', bins=50)
-        plt.title(title)
-        plt.xlabel('Price (öre/kWh)')
-        plt.ylabel('Count')
-        
-        # Add statistics
-        plt.axvline(data['price_ore'].mean(), color='r', linestyle='--', 
-                   label=f'Mean: {data["price_ore"].mean():.2f}')
-        plt.axvline(data['price_ore'].median(), color='g', linestyle='--', 
-                   label=f'Median: {data["price_ore"].median():.2f}')
-        
+        prices = self.data['prices']
+        plt.figure(figsize=(15, 6))
+        for year in years:
+            monthly_prices = prices[(prices.index.year == year) & (prices.index.month == month)]
+            if monthly_prices.empty:
+                print(f"No price data for year {year} and month {month}")
+                continue
+            daily_avg = monthly_prices.groupby(monthly_prices.index.day)['SE3_price_ore'].mean()
+            plt.plot(daily_avg.index, daily_avg.values, marker='o', label=str(year))
+        plt.title(f"Daily Average Prices for Month {month} Across Years")
+        plt.xlabel("Day of Month")
+        plt.ylabel("Average Price (öre/kWh)")
         plt.legend()
-        plt.tight_layout()
+        plt.show()
+    
+    def plot_yearly_grid_usage(self, years: list = None):
+        """
+        Aggregates grid usage by year and plots key energy sources.
+        If a list of years is provided, only those years are plotted.
+        """
+        print("Running plot_yearly_grid_usage")
+        if 'grid' not in self.data:
+            print("Missing grid data.")
+            return
+        
+        grid = self.data['grid'].copy()
+        grid['year'] = grid.index.year
+        yearly = grid.groupby('year').sum()
+        if years is not None:
+            yearly = yearly.loc[yearly.index.isin(years)]
+        
+        energy_sources = ['total_supply', 'hydro', 'wind', 'nuclear', 'solar', 'thermal_total']
+        plt.figure(figsize=(15, 8))
+        for source in energy_sources:
+            if source in yearly.columns:
+                plt.plot(yearly.index, yearly[source], marker='o', label=source)
+            else:
+                print(f"Column '{source}' not found in grid data.")
+        plt.xlabel("Year")
+        plt.ylabel("Aggregated Energy Supply")
+        plt.title("Yearly Aggregated Grid Usage")
+        plt.legend()
+        plt.show()
+    
+    def plot_yearly_renewable_trend(self, years: list = None):
+        """
+        Plots the trend of average renewable percentage for each year.
+        Optionally, only the specified years are included.
+        """
+        print("Running plot_yearly_renewable_trend")
+        if 'grid' not in self.data:
+            print("Missing grid data.")
+            return
+        
+        grid = self.data['grid'].copy()
+        grid['year'] = grid.index.year
+        yearly_renewable = grid.groupby('year')['renewable_percentage'].mean()
+        if years is not None:
+            yearly_renewable = yearly_renewable[yearly_renewable.index.isin(years)]
+        plt.figure(figsize=(12, 6))
+        plt.plot(yearly_renewable.index, yearly_renewable.values, marker='o', color=self.colors[2])
+        plt.xlabel("Year")
+        plt.ylabel("Average Renewable Percentage")
+        plt.title("Yearly Trend of Renewable Percentage")
+        plt.show()
+    
+    def compare_supply_mix_between_years(self, *years: int):
+        """
+        Compares the average supply mix across multiple years using grid data.
+        A grouped bar chart shows the average values of selected energy sources.
+        """
+        print(f"Running compare_supply_mix_between_years for years: {', '.join(map(str, years))}")
+        if 'grid' not in self.data:
+            print("Missing grid data.")
+            return
+        
+        grid = self.data['grid'].copy()
+        grid['year'] = grid.index.year
+        supply_columns = ['hydro', 'wind', 'nuclear', 'solar', 'thermal_total']
+        averages = {}
+        for year in years:
+            if year in grid['year'].unique():
+                averages[year] = grid[grid['year'] == year][supply_columns].mean()
+            else:
+                print(f"No grid data for year {year}")
+        if not averages:
+            print("No valid years provided for comparison.")
+            return
+        
+        df_averages = pd.DataFrame(averages).T  # rows: years, columns: supply sources
+        x = np.arange(len(supply_columns))
+        total_years = len(df_averages)
+        width = 0.8 / total_years
+        
+        plt.figure(figsize=(10, 6))
+        for idx, year in enumerate(df_averages.index):
+            plt.bar(x + idx*width - (total_years - 1)*width/2,
+                    df_averages.loc[year].values,
+                    width, label=str(year))
+        plt.xticks(x, supply_columns)
+        plt.xlabel("Energy Source")
+        plt.ylabel("Average Supply")
+        plt.title("Comparison of Average Supply Mix Across Years")
+        plt.legend()
         plt.show()
 
 def main():
-    visualizer = PriceVisualizer()
+    # Define file paths
+    data_paths = {
+        'prices': 'C:/_Projects/home-energy-ai/data/processed/SE3prices.csv',
+        'grid': 'C:/_Projects/home-energy-ai/data/processed/SwedenGrid.csv',
+        'holidays': 'C:/_Projects/home-energy-ai/data/processed/holidays.csv'
+    }
     
-    # Example usage:
+    # Initialize and use the visualizer
+    visualizer = DataVisualizer(data_paths)
     
-    # 1. Plot a specific week
-    visualizer.plot_date_range('2024-02-01', '2024-02-07', 
-                            'First Week of February 2024')
+    print("Plotting Monthly Price Comparison (single-year vs previous year)...")
+    visualizer.plot_monthly_price_comparison(2023, 12)
     
-    visualizer.plot_date_range('2023-02-01', '2023-02-07', 
-                            'First Week of February 2023')
+    print("Plotting Price vs Renewable...")
+    visualizer.plot_price_vs_renewable('2023-01-01', '2023-01-07')
     
-    # 2. Plot a specific day's 24-hour profile
-    visualizer.plot_daily_profile('2024-02-05')
+    print("Plotting Supply Mix...")
+    visualizer.plot_supply_mix('2023-01-01')
     
-    # 3. Plot monthly comparison
-    visualizer.plot_monthly_comparison(2024, 2)  # February 2024 vs February 2023
+    print("Plotting Holiday Price Impact for 2023...")
+    visualizer.plot_holiday_price_impact(2023)
     
-    # 4. Plot price distribution for 2023
-    visualizer.plot_price_distribution(2023)
+    print("Comparing Holiday Price Impacts for 2022, 2023...")
+    visualizer.compare_holiday_price_impacts(2022, 2023)
+    
+    print("Plotting Yearly Grid Usage (all years)...")
+    visualizer.plot_yearly_grid_usage()
+    
+    print("Plotting Yearly Renewable Trend (all years)...")
+    visualizer.plot_yearly_renewable_trend()
+    
+    print("Comparing Supply Mix Between Years (2021, 2022, 2023)...")
+    visualizer.compare_supply_mix_between_years(2021, 2022, 2023)
+    
+    print("Comparing Monthly Price Across Years for December (2021, 2022, 2023)...")
+    visualizer.compare_monthly_price_across_years(12, 2021, 2022, 2023)
 
 if __name__ == "__main__":
     main()

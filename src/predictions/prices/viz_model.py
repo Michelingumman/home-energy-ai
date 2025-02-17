@@ -46,19 +46,15 @@ class ModelVisualizer:
         model = Sequential([
             # First LSTM layer with more units for feature extraction
             LSTM(256, input_shape=(168 ,25), return_sequences=True),
-            Dropout(0.3),
+            Dropout(0.2),
             
             # Deep LSTM stack for temporal patterns
             LSTM(128, return_sequences=True),
-            Dropout(0.3),
-            LSTM(64),
-            Dropout(0.3),
+            Dropout(0.2),
             
             # Dense layers for feature interaction
-            Dense(128, activation='relu'),
-            Dropout(0.2),
             Dense(64, activation='relu'),
-            Dense(1)
+            Dense(24)
         ])
         
         return model

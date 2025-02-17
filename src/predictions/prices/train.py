@@ -5,69 +5,72 @@ import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import RobustScaler, MinMaxScaler, StandardScaler
 import joblib
 from pathlib import Path
 import logging
 import os
+import sys
+
+
+# Add the project root to the Python path
+project_root = str(Path(__file__).resolve().parents[3])
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from src.predictions.prices.feature_config import feature_config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class PriceModelTrainer:
-    def __init__(self, window_size=168):  # One week of hourly data
-        """Initialize trainer with project paths"""
-        self.window_size = window_size
+    def __init__(self, window_size=None, scaler_type="minmax"):
+        """Initialize trainer with project paths and scaler type
+        
+        Args:
+            window_size (int): Size of the input window
+            scaler_type (str): Type of scaler to use ('minmax', 'standard', 'robust')
+                - minmax: MinMaxScaler(feature_range=(-1, 1)), preserves relative magnitudes
+                - standard: StandardScaler(), normalizes to mean=0, std=1
+                - robust: RobustScaler(), scales using statistics robust to outliers
+        """
+        # Load feature configuration
+        self.feature_config = feature_config
+        
+        # Get window size from config if not provided
+        self.window_size = window_size or self.feature_config.training["window_size"]
         self.model = None
-        self.scaler = RobustScaler()
         
         # Setup project paths
         self.project_root = Path(__file__).resolve().parents[3]
         self.models_dir = self.project_root / "models/saved"
         self.test_data_dir = self.project_root / "models/test_data"
+        
+        # Initialize scalers based on type
+        self.scaler_type = scaler_type
+        self._initialize_scalers()
+    
+    def _initialize_scalers(self):
+        """Initialize the appropriate scalers based on scaler_type"""
+        if self.scaler_type == "minmax":
+            self.price_scaler = MinMaxScaler(feature_range=(-1, 1))  # Symmetric range for price variations
+            self.grid_scaler = MinMaxScaler(feature_range=(-1, 1))
+            logging.info("Using MinMaxScaler: Better preserves relative magnitudes of price spikes")
+        elif self.scaler_type == "standard":
+            self.price_scaler = StandardScaler()
+            self.grid_scaler = StandardScaler()
+            logging.info("Using StandardScaler: Normalizes features to mean=0, std=1")
+        elif self.scaler_type == "robust":
+            self.price_scaler = RobustScaler(quantile_range=(1, 99))
+            self.grid_scaler = RobustScaler()
+            logging.info("Using RobustScaler: Scales using statistics that are robust to outliers")
+        else:
+            raise ValueError(f"Unknown scaler type: {self.scaler_type}. Must be one of: minmax, standard, robust")
     
     def get_required_features(self):
         """List all required features for the model"""
-        # Cyclical time features
-        time_features = [
-            'hour_sin', 'hour_cos',
-            'day_of_week_sin', 'day_of_week_cos',
-            'month_sin', 'month_cos'
-        ]
-        
-        # Binary and categorical features
-        binary_features = [
-            'is_peak_hour', 
-            'is_weekend', 
-            'season',
-            'is_holiday',
-            'is_holiday_eve'
-        ]
-        
-        # Grid supply features (most important ones)
-        grid_features = [
-            'renewable_percentage',  # Key for price formation
-            'nuclear_percentage',    # Stable baseload indicator
-            'import_percentage',     # Supply constraint indicator
-            'total_supply',          # Overall system capacity
-            'hydro',                 # Important for Nordic market
-            'wind'                   # Affects price volatility
-        ]
-        
-        # Price-based features
-        price_features = [
-            'SE3_price_ore',  # Target variable
-            'price_24h_avg',
-            'price_168h_avg',
-            'price_24h_std',
-            'price_volatility_24h',
-            'price_momentum',
-            'hour_avg_price',
-            'price_vs_hour_avg'
-        ]
-        
-        return price_features + time_features + binary_features + grid_features
-
+        return self.feature_config.get_ordered_features()
+    
     def load_data(self):
         """Load and prepare the processed data"""
         logging.info("Loading datasets...")
@@ -125,10 +128,10 @@ class PriceModelTrainer:
         """Convert dataframe of features to sequences for LSTM training"""
         X, y = [], []
         values = data.values
-        for i in range(len(values) - self.window_size):
+        for i in range(len(values) - self.window_size - 24):  # Need 24 more steps for targets
             X.append(values[i:(i + self.window_size)])
-            # Assuming the first column ('SE3_price_ore') is the target
-            y.append(values[i + self.window_size, 0])
+            # Get next 24 hours of prices as target
+            y.append(values[i + self.window_size:i + self.window_size + 24, 0])  # First column is price
         return np.array(X), np.array(y)
     
     def prepare_data(self):
@@ -139,16 +142,47 @@ class PriceModelTrainer:
         feature_cols = self.get_required_features()
         
         # Verify all required features exist
-        missing_cols = set(feature_cols) - set(df.columns)
+        missing_cols = self.feature_config.verify_features(df.columns)
         if missing_cols:
             raise ValueError(f"Missing required features: {missing_cols}")
         
-        # Scale the price data and price-based features
-        price_cols = [col for col in feature_cols if 'price' in col.lower()]
-        for col in price_cols:
-            df[col] = self.scaler.fit_transform(df[col].values.reshape(-1, 1)).flatten()
+        # Scale price features together (including target)
+        price_data = df[self.feature_config.price_cols].values
+        scaled_prices = self.price_scaler.fit_transform(price_data)
         
-        # Create sequences
+        # Log price scaling statistics
+        if self.scaler_type != "robust":
+            logging.info("\nPrice Scaling Statistics:")
+            for i, col in enumerate(self.feature_config.price_cols):
+                orig_std = np.std(price_data[:, i])
+                scaled_std = np.std(scaled_prices[:, i])
+                logging.info(f"{col}:")
+                logging.info(f"  Original std: {orig_std:.2f}")
+                logging.info(f"  Scaled std: {scaled_std:.2f}")
+                logging.info(f"  Scale factor: {scaled_std/orig_std:.2f}")
+        
+        for i, col in enumerate(self.feature_config.price_cols):
+            df[col] = scaled_prices[:, i]
+        
+        # Scale grid features together
+        grid_data = df[self.feature_config.grid_cols].values
+        scaled_grid = self.grid_scaler.fit_transform(grid_data)
+        for i, col in enumerate(self.feature_config.grid_cols):
+            df[col] = scaled_grid[:, i]
+        
+        # Binary features are left as is - no scaling needed
+        # They are already in correct form:
+        # is_peak_hour, is_weekend, is_holiday*, : 0 or 1
+        # season: -1 (winter), 0 (spring/fall), 1 (summer)
+        
+        # Log feature statistics after scaling
+        logging.info("\nFeature Statistics after scaling:")
+        for col in feature_cols:
+            stats = df[col].describe()
+            logging.info(f"{col}: mean={stats['mean']:.3f}, std={stats['std']:.3f}, "
+                        f"min={stats['min']:.3f}, max={stats['max']:.3f}")
+        
+        # Create sequences with ordered features
         X, y = self.create_sequences(df[feature_cols])
         
         # Split into train, validation, and test sets
@@ -162,69 +196,121 @@ class PriceModelTrainer:
         X_test = X[val_split:]
         y_test = y[val_split:]
         
-        return (X_train, y_train, X_val, y_val, X_test, y_test), df.index[self.window_size:]
+        return (X_train, y_train, X_val, y_val, X_test, y_test), df.index[self.window_size + 24:]
     
     def build_model(self, input_shape):
-        print("INPUT SHAPE", input_shape)
-        """Build the LSTM model"""
-        model = Sequential([
-            # First LSTM layer with more units for feature extraction
-            LSTM(256, input_shape=input_shape, return_sequences=True),
-            Dropout(0.3),
-            
-            # Deep LSTM stack for temporal patterns
-            LSTM(128, return_sequences=True),
-            Dropout(0.3),
-            LSTM(64),
-            Dropout(0.3),
-            
-            # Dense layers for feature interaction
-            Dense(128, activation='relu'),
-            Dropout(0.2),
-            Dense(64, activation='relu'),
-            Dense(1)
-        ])
+        """Build LSTM model with adjusted architecture for better spike prediction"""
+        model = Sequential()
         
-        # Use custom learning rate with Adam optimizer
-        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-        model.compile(optimizer=optimizer, loss='huber', metrics=['mae'])
+        # Add LSTM layers with increased capacity
+        lstm_layers = self.feature_config.architecture["lstm_layers"]
+        first_layer = True
+        
+        for layer in lstm_layers:
+            if first_layer:
+                model.add(LSTM(
+                    units=layer["units"],
+                    input_shape=input_shape,
+                    return_sequences=layer["return_sequences"],
+                    activation='tanh'  # Explicit tanh activation for better gradient flow
+                ))
+                first_layer = False
+            else:
+                model.add(LSTM(
+                    units=layer["units"],
+                    return_sequences=layer["return_sequences"],
+                    activation='tanh'
+                ))
+            
+            if layer.get("dropout", 0) > 0:
+                model.add(Dropout(layer["dropout"]))
+        
+        # Add Dense layers
+        dense_layers = self.feature_config.architecture["dense_layers"]
+        for layer in dense_layers[:-1]:  # All layers except the last
+            model.add(Dense(
+                units=layer["units"],
+                activation='relu'
+            ))
+        
+        # Final output layer with linear activation
+        model.add(Dense(
+            units=dense_layers[-1]["units"],
+            activation=None  # Linear activation for price prediction
+        ))
+        
+        # Get training parameters
+        training_params = self.feature_config.get_training_params()
+        
+        # Configure optimizer with gradient clipping
+        if training_params["optimizer"].lower() == "adam":
+            optimizer = tf.keras.optimizers.Adam(
+                learning_rate=training_params["learning_rate"],
+                clipnorm=1.0  # Add gradient clipping to prevent exploding gradients
+            )
+        
+        # Use Huber loss for better handling of outliers
+        model.compile(
+            optimizer=optimizer,
+            loss=training_params["loss"],
+            metrics=training_params["metrics"]
+        )
+        
         return model
     
-    def train(self, epochs=100, batch_size=32):
-        """Train the model"""
+    def train(self, epochs=None, batch_size=None):
+        """Train the model using config parameters"""
         logging.info("Preparing data...")
         (X_train, y_train, X_val, y_val, X_test, y_test), timestamps = self.prepare_data()
         
-        # Get the validation split index for saving test data later
-        train_split = int(len(timestamps) * 0.7)
-        val_split = int(len(timestamps) * 0.85)
+        # Get training parameters from config
+        training_params = self.feature_config.get_training_params()
+        epochs = epochs or training_params["max_epochs"]
+        batch_size = batch_size or training_params["batch_size"]
+        
+        # Get callback parameters
+        callback_params = self.feature_config.get_callback_params()
+        
+        # Save scalers
+        joblib.dump(self.price_scaler, self.models_dir / 'price_scaler.save')
+        joblib.dump(self.grid_scaler, self.models_dir / 'grid_scaler.save')
+        
+        # Save test data
+        train_split = int(len(timestamps) * self.feature_config.data_split["train_ratio"])
+        val_split = int(len(timestamps) * (
+            self.feature_config.data_split["train_ratio"] + 
+            self.feature_config.data_split["val_ratio"]
+        ))
+        
+        self.test_data_dir.mkdir(parents=True, exist_ok=True)
+        np.save(self.test_data_dir / 'X_test.npy', X_test)
+        np.save(self.test_data_dir / 'y_test.npy', y_test)
+        np.save(self.test_data_dir / 'test_timestamps.npy', timestamps[val_split:])
         
         logging.info("Building model...")
         self.model = self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
         
-        # Create directories if they don't exist
         self.models_dir.mkdir(parents=True, exist_ok=True)
-        self.test_data_dir.mkdir(parents=True, exist_ok=True)
         
-        # Callbacks with longer patience for larger model
+        # Configure callbacks from config
         callbacks = [
             EarlyStopping(
-                monitor='val_mae',
-                patience=25,
-                restore_best_weights=True,
+                monitor=callback_params["early_stopping"]["monitor"],
+                patience=callback_params["early_stopping"]["patience"],
+                restore_best_weights=callback_params["early_stopping"]["restore_best_weights"],
                 mode='min'
             ),
             ModelCheckpoint(
-                self.models_dir / 'best_model.keras',
-                monitor='val_mae',
+                self.models_dir / 'price_model.keras',
+                monitor=callback_params["early_stopping"]["monitor"],
                 save_best_only=True,
                 mode='min'
             ),
             ReduceLROnPlateau(
-                monitor='val_mae',
-                factor=0.2,
-                patience=10,
-                min_lr=1e-6,
+                monitor=callback_params["reduce_lr"]["monitor"],
+                factor=callback_params["reduce_lr"]["factor"],
+                patience=callback_params["reduce_lr"]["patience"],
+                min_lr=callback_params["reduce_lr"]["min_lr"],
                 mode='min'
             )
         ]
@@ -239,19 +325,14 @@ class PriceModelTrainer:
             verbose=1
         )
         
-        # Save model and scaler
-        self.model.save(self.models_dir / 'final_model.keras')
-        joblib.dump(self.scaler, self.models_dir / 'scaler.save')
-        
-        # Save test data
-        np.save(self.test_data_dir / 'X_test.npy', X_test)
-        np.save(self.test_data_dir / 'y_test.npy', y_test)
-        np.save(self.test_data_dir / 'test_timestamps.npy', timestamps[val_split:])
+        # Save final model
+        self.model.save(self.models_dir / 'price_model.keras')
         
         # Plot training history
         self.plot_training_history(history)
         
         return history
+
     
     def plot_training_history(self, history):
         """Plot training history"""
@@ -281,7 +362,7 @@ class PriceModelTrainer:
         plt.show()
 
 def main():
-    trainer = PriceModelTrainer()
+    trainer = PriceModelTrainer(scaler_type="robust")
     history = trainer.train()
     logging.info("Training complete!")
 

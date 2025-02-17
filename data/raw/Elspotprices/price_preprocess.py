@@ -99,10 +99,6 @@ class ElectricityPricePreprocessor:
         # Weekly patterns
         self.df['price_168h_avg'] = self.df['SE3_price_ore'].rolling(window=168, min_periods=1).mean()
         
-        # Price dynamics
-        self.df['price_volatility_24h'] = self.df['price_24h_std'] / self.df['price_24h_avg']
-        self.df['price_momentum'] = (self.df['SE3_price_ore'] - self.df['price_24h_avg']) / self.df['price_24h_avg']
-        
         # Add hour-of-day average price (captures daily patterns)
         self.df['hour_avg_price'] = self.df.groupby('hour')['SE3_price_ore'].transform('mean')
         self.df['price_vs_hour_avg'] = self.df['SE3_price_ore'] / self.df['hour_avg_price']
@@ -134,8 +130,6 @@ class ElectricityPricePreprocessor:
             'price_24h_avg',
             'price_168h_avg',
             'price_24h_std',
-            'price_volatility_24h',
-            'price_momentum',
             'hour_avg_price',
             'price_vs_hour_avg'
         ]

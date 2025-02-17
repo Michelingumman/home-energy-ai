@@ -7,7 +7,7 @@ from holidays import Sweden
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class HolidayProcessor:
-    def __init__(self, start_date='1970-01-01', end_date='2025-12-31'):
+    def __init__(self, start_date='1970-01-01', end_date='2050-12-31'):
         self.start_date = pd.to_datetime(start_date)
         self.end_date = pd.to_datetime(end_date)
         self.holidays = Sweden()

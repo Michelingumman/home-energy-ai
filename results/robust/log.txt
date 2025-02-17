@@ -1,0 +1,105 @@
+PS C:\_Projects\home-energy-ai> & C:/Users/adamm/AppData/Local/Microsoft/WindowsApps/python3.12.exe c:/_Projects/home-energy-ai/src/predictions/prices/evaluate.py 
+2025-02-15 15:31:45.341976: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-02-15 15:31:50.253723: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-02-15 15:32:10.133855: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Using RobustScaler: Scales using statistics robust to outliers
+
+Model and data artifacts loaded successfully
+Test set shape: (32381, 168, 23)
+Prediction horizon: 24 hours
+
+Temporal Split Validation:
+Test period: 2020-06-13T18:00:00.000000000 to 2024-02-22T22:00:00.000000000
+Timestamps are properly sorted: True
+Test set covers 1349 days (3.7 years)
+Number of hourly samples: 32381
+Sampling frequency: 24.0 samples per day
+
+Making predictions...
+Processing batch 33/33 (100.0%)...
+Predictions completed in 56.7 seconds
+
+Test set size: 32381 samples
+Prediction horizon: 24 hours
+
+Inverse transforming predictions...
+Processing hour 19/24 (79.2%)...
+Inverse transformation completed in 0.1 seconds
+
+Organizing results...
+c:\_Projects\home-energy-ai\src\predictions\prices\evaluate.py:178: FutureWarning: 'H' is deprecated and will be removed in a future version, please use 'h' instead.
+  timestamps = pd.date_range(
+
+Overall Model Performance Metrics:
+
+1-hour ahead predictions:
+MAPE: 6358824608111307.00%
+RMSE: 69.29 öre/kWh
+Mean Error: 21.23 öre/kWh
+Std Error: 65.96 öre/kWh
+
+6-hour ahead predictions:
+MAPE: 8484964307096803.00%
+RMSE: 80.03 öre/kWh
+Mean Error: 28.39 öre/kWh
+Std Error: 74.82 öre/kWh
+
+12-hour ahead predictions:
+MAPE: 10111883231594690.00%
+RMSE: 99.70 öre/kWh
+Mean Error: 42.53 öre/kWh
+Std Error: 90.17 öre/kWh
+
+24-hour ahead predictions:
+MAPE: 8315395463165205.00%
+RMSE: 84.38 öre/kWh
+Mean Error: 33.08 öre/kWh
+Std Error: 77.63 öre/kWh
+
+Year 2020 Statistics:
+MAPE: 1666939764862309.50%
+RMSE: 16.12 öre/kWh
+
+Year 2021 Statistics:
+MAPE: 110.58%
+RMSE: 56.67 öre/kWh
+
+Year 2022 Statistics:
+MAPE: 3218792147492237.50%
+RMSE: 146.07 öre/kWh
+
+Year 2023 Statistics:
+MAPE: 24624966341528292.00%
+RMSE: 37.32 öre/kWh
+
+Year 2024 Statistics:
+MAPE: 13609895408848740.00%
+RMSE: 40.06 öre/kWh
+
+Detailed Error Analysis:
+
+1-hour Prediction Errors by Price Range:
+Price 0-50 öre/kWh: 10.81 öre/kWh
+Price 50-100 öre/kWh: 14.25 öre/kWh
+Price 100-200 öre/kWh: 40.60 öre/kWh
+Price 200-inf öre/kWh: 180.64 öre/kWh
+
+6-hour Prediction Errors by Price Range:
+Price 0-50 öre/kWh: 13.58 öre/kWh
+Price 50-100 öre/kWh: 20.01 öre/kWh
+Price 100-200 öre/kWh: 60.75 öre/kWh
+Price 200-inf öre/kWh: 210.17 öre/kWh
+
+12-hour Prediction Errors by Price Range:
+Price 0-50 öre/kWh: 13.04 öre/kWh
+Price 50-100 öre/kWh: 26.26 öre/kWh
+Price 100-200 öre/kWh: 88.16 öre/kWh
+Price 200-inf öre/kWh: 268.34 öre/kWh
+
+24-hour Prediction Errors by Price Range:
+Price 0-50 öre/kWh: 9.95 öre/kWh
+Price 50-100 öre/kWh: 17.51 öre/kWh
+Price 100-200 öre/kWh: 65.04 öre/kWh
+Price 200-inf öre/kWh: 227.33 öre/kWh
+PS C:\_Projects\home-energy-ai> 

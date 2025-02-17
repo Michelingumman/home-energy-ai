@@ -1,0 +1,100 @@
+{
+    "feature_groups": {
+        "price_cols": [
+            "SE3_price_ore",
+            "price_24h_avg",
+            "price_168h_avg",
+            "price_24h_std",
+            "hour_avg_price",
+            "price_vs_hour_avg"
+        ],
+        "grid_cols": [
+            "renewable_percentage",
+            "nuclear_percentage",
+            "import_percentage",
+            "total_supply",
+            "hydro",
+            "wind"
+        ],
+        "cyclical_cols": [
+            "hour_sin",
+            "hour_cos",
+            "day_of_week_sin",
+            "day_of_week_cos",
+            "month_sin",
+            "month_cos"
+        ],
+        "binary_cols": [
+            "is_peak_hour",
+            "is_weekend",
+            "season",
+            "is_holiday",
+            "is_holiday_eve"
+        ]
+    },
+    "feature_metadata": {
+        "target_feature": "SE3_price_ore",
+        "feature_order": [
+            "price_cols",
+            "cyclical_cols",
+            "binary_cols",
+            "grid_cols"
+        ],
+        "description": {
+            "price_cols": "Price-related features including target variable",
+            "grid_cols": "Grid supply and generation features",
+            "cyclical_cols": "Time-based cyclical features",
+            "binary_cols": "Binary and categorical features"
+        }
+    },
+    "model_config": {
+        "architecture": {
+            "lstm_layers": [
+                {"units": 256, "return_sequences": true, "dropout": 0.2},
+                {"units": 128, "return_sequences": false, "dropout": 0.2}
+            ],
+            "dense_layers": [
+                {"units": 64, "activation": "relu"},
+                {"units": 24, "activation": null}
+            ]
+        },
+        "training": {
+            "window_size": 168,
+            "prediction_horizon": 24,
+            "batch_size": 32,
+            "max_epochs": 100,
+            "learning_rate": 0.001,
+            "optimizer": "adam",
+            "loss": "huber",
+            "metrics": ["mae"]
+        },
+        "callbacks": {
+            "early_stopping": {
+                "monitor": "val_mae",
+                "patience": 15,
+                "restore_best_weights": true
+            },
+            "reduce_lr": {
+                "monitor": "val_mae",
+                "factor": 0.2,
+                "patience": 10,
+                "min_lr": 1e-6
+            }
+        },
+        "data_split": {
+            "train_ratio": 0.7,
+            "val_ratio": 0.15,
+            "test_ratio": 0.15
+        },
+        "scaling": {
+            "price_scaler": {
+                "type": "RobustScaler",
+                "quantile_range": [1, 99]
+            },
+            "grid_scaler": {
+                "type": "RobustScaler",
+                "quantile_range": [0, 100]
+            }
+        }
+    }
+}

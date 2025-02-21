@@ -82,12 +82,19 @@ class PriceModelTrainer:
         )
         price_df.index = pd.to_datetime(price_df.index)
         
-        # Load holiday features
-        holidays_df = pd.read_csv(
+        # Load time features
+        time_df = pd.read_csv(
+            self.project_root / "data/processed/time_features.csv",
+            index_col=0
+        )
+        time_df.index = pd.to_datetime(time_df.index)
+        
+        # Load holiday data
+        holiday_df = pd.read_csv(
             self.project_root / "data/processed/holidays.csv",
             index_col=0
         )
-        holidays_df.index = pd.to_datetime(holidays_df.index)
+        holiday_df.index = pd.to_datetime(holiday_df.index)
         
         # Load grid features
         grid_df = pd.read_csv(
@@ -97,15 +104,35 @@ class PriceModelTrainer:
         grid_df.index = pd.to_datetime(grid_df.index)
         
         # Get common date range
-        start_date = price_df.index.min()
-        end_date = price_df.index.max()
+        start_date = max(
+            price_df.index.min(),
+            time_df.index.min(),
+            holiday_df.index.min(),
+            grid_df.index.min()
+        )
+        end_date = min(
+            price_df.index.max(),
+            time_df.index.max(),
+            holiday_df.index.max(),
+            grid_df.index.max()
+        )
         
         logging.info(f"Using data from {start_date} to {end_date}")
         
         # Trim all dataframes to common date range
-        holidays_df = holidays_df[
-            (holidays_df.index >= start_date) & 
-            (holidays_df.index <= end_date)
+        price_df = price_df[
+            (price_df.index >= start_date) & 
+            (price_df.index <= end_date)
+        ]
+        
+        time_df = time_df[
+            (time_df.index >= start_date) & 
+            (time_df.index <= end_date)
+        ]
+        
+        holiday_df = holiday_df[
+            (holiday_df.index >= start_date) & 
+            (holiday_df.index <= end_date)
         ]
         
         grid_df = grid_df[
@@ -114,7 +141,8 @@ class PriceModelTrainer:
         ]
         
         # Merge all features
-        df = price_df.join(holidays_df, how='left')
+        df = price_df.join(time_df, how='left')
+        df = df.join(holiday_df, how='left')
         df = df.join(grid_df, how='left')
         
         # Handle any missing values
@@ -138,22 +166,27 @@ class PriceModelTrainer:
         """Prepare data for training"""
         df = self.load_data()
         
-        # Get required features
+        # Get required features from config
         feature_cols = self.get_required_features()
         
         # Verify all required features exist
         missing_cols = self.feature_config.verify_features(df.columns)
         if missing_cols:
+            logging.error("Missing features:")
+            for col in missing_cols:
+                logging.error(f"  - {col}")
+                logging.error(f"Available columns: {sorted(df.columns.tolist())}")
             raise ValueError(f"Missing required features: {missing_cols}")
         
         # Scale price features together (including target)
-        price_data = df[self.feature_config.price_cols].values
+        price_cols = self.feature_config.price_cols
+        price_data = df[price_cols].values
         scaled_prices = self.price_scaler.fit_transform(price_data)
         
         # Log price scaling statistics
         if self.scaler_type != "robust":
             logging.info("\nPrice Scaling Statistics:")
-            for i, col in enumerate(self.feature_config.price_cols):
+            for i, col in enumerate(price_cols):
                 orig_std = np.std(price_data[:, i])
                 scaled_std = np.std(scaled_prices[:, i])
                 logging.info(f"{col}:")
@@ -161,20 +194,17 @@ class PriceModelTrainer:
                 logging.info(f"  Scaled std: {scaled_std:.2f}")
                 logging.info(f"  Scale factor: {scaled_std/orig_std:.2f}")
         
-        for i, col in enumerate(self.feature_config.price_cols):
+        for i, col in enumerate(price_cols):
             df[col] = scaled_prices[:, i]
         
         # Scale grid features together
-        grid_data = df[self.feature_config.grid_cols].values
+        grid_cols = self.feature_config.grid_cols
+        grid_data = df[grid_cols].values
         scaled_grid = self.grid_scaler.fit_transform(grid_data)
-        for i, col in enumerate(self.feature_config.grid_cols):
+        for i, col in enumerate(grid_cols):
             df[col] = scaled_grid[:, i]
         
-        # Binary features are left as is - no scaling needed
-        # They are already in correct form:
-        # is_peak_hour, is_weekend, is_holiday*, : 0 or 1
-        # season: -1 (winter), 0 (spring/fall), 1 (summer)
-        
+        # Binary and cyclical features are left as is - no scaling needed
         # Log feature statistics after scaling
         logging.info("\nFeature Statistics after scaling:")
         for col in feature_cols:
@@ -185,10 +215,24 @@ class PriceModelTrainer:
         # Create sequences with ordered features
         X, y = self.create_sequences(df[feature_cols])
         
-        # Split into train, validation, and test sets
-        train_split = int(len(X) * 0.7)
-        val_split = int(len(X) * 0.85)
+        # Get data split ratios from config
+        split_ratios = self.feature_config.get_data_split_ratios()
+        train_ratio = split_ratios["train_ratio"]
+        val_ratio = split_ratios["val_ratio"]
         
+        # Calculate split indices
+        total_samples = len(X)
+        train_split = int(total_samples * train_ratio)
+        val_split = int(total_samples * (train_ratio + val_ratio))
+        
+        # Log split information
+        logging.info("\nData Split Information:")
+        logging.info(f"Total samples: {total_samples}")
+        logging.info(f"Training samples: {train_split} ({train_ratio*100:.1f}%)")
+        logging.info(f"Validation samples: {val_split - train_split} ({val_ratio*100:.1f}%)")
+        logging.info(f"Test samples: {total_samples - val_split} ({split_ratios['test_ratio']*100:.1f}%)")
+        
+        # Split the data
         X_train = X[:train_split]
         y_train = y[:train_split]
         X_val = X[train_split:val_split]
@@ -250,9 +294,11 @@ class PriceModelTrainer:
             )
         
         # Use Huber loss for better handling of outliers
+        huber_loss = tf.keras.losses.Huber(delta=0.5)
+        
         model.compile(
             optimizer=optimizer,
-            loss=training_params["loss"],
+            loss=huber_loss,
             metrics=training_params["metrics"]
         )
         
@@ -301,7 +347,7 @@ class PriceModelTrainer:
                 mode='min'
             ),
             ModelCheckpoint(
-                self.models_dir / 'price_model.keras',
+                self.models_dir / 'large_delta_price_model.keras',
                 monitor=callback_params["early_stopping"]["monitor"],
                 save_best_only=True,
                 mode='min'
@@ -348,17 +394,17 @@ class PriceModelTrainer:
         plt.legend()
         plt.grid(True)
         
-        # Plot MAE
-        plt.subplot(1, 2, 2)
-        plt.plot(history.history['mae'], label='Training MAE')
-        plt.plot(history.history['val_mae'], label='Validation MAE')
-        plt.title('Model MAE')
-        plt.xlabel('Epoch')
-        plt.ylabel('MAE')
-        plt.legend()
-        plt.grid(True)
+        # # Plot MAE
+        # plt.subplot(1, 2, 2)
+        # plt.plot(history.history['mae'], label='Training MAE')
+        # plt.plot(history.history['val_mae'], label='Validation MAE')
+        # plt.title('Model MAE')
+        # plt.xlabel('Epoch')
+        # plt.ylabel('MAE')
+        # plt.legend()
+        # plt.grid(True)
         
-        plt.tight_layout()
+        # plt.tight_layout()
         plt.show()
 
 def main():

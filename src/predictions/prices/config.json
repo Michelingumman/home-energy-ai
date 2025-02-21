@@ -27,9 +27,9 @@
         "binary_cols": [
             "is_peak_hour",
             "is_weekend",
-            "season",
             "is_holiday",
-            "is_holiday_eve"
+            "is_holiday_eve",
+            "season"
         ]
     },
     "feature_metadata": {
@@ -44,7 +44,7 @@
             "price_cols": "Price-related features including target variable",
             "grid_cols": "Grid supply and generation features",
             "cyclical_cols": "Time-based cyclical features",
-            "binary_cols": "Binary and categorical features"
+            "binary_cols": "Binary and categorical features including holidays"
         }
     },
     "model_config": {
@@ -82,9 +82,9 @@
             }
         },
         "data_split": {
-            "train_ratio": 0.7,
-            "val_ratio": 0.15,
-            "test_ratio": 0.15
+            "train_ratio": 0.9,
+            "val_ratio": 0.05,
+            "test_ratio": 0.05
         },
         "scaling": {
             "price_scaler": {

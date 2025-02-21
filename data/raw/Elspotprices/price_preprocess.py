@@ -14,7 +14,7 @@ class ElectricityPricePreprocessor:
         Args:
             file_path (str): Path to the CSV file
             price_area (str): Price area to filter (default: 'SE3')
-            eur_to_sek (float): Exchange rate EUR to SEK (default: 11.8 - Feb 2024 rate)
+            eur_to_sek (float): Exchange rate EUR to SEK (default: 11.25 - Feb 2024 rate)
         
         Note:
             Input prices are in EUR/MWh, output will be in öre/kWh
@@ -67,41 +67,23 @@ class ElectricityPricePreprocessor:
                     f"max={self.df['SE3_price_ore'].max():.2f}")
         return self
     
-    def add_features(self):
-        """Add time-based features"""
-        # Basic time features - only keep what's needed for feature engineering
-        self.df['hour'] = self.df.index.hour
-        self.df['day_of_week'] = self.df.index.dayofweek
-        self.df['month'] = self.df.index.month
+    def generate_price_features(self):
+        """Generate price-derived features"""
+        logging.info("Generating price-derived features")
         
-        # Cyclical encoding - focus on most important time cycles
-        self.df['hour_sin'] = np.sin(2 * np.pi * self.df['hour']/24)
-        self.df['hour_cos'] = np.cos(2 * np.pi * self.df['hour']/24)
-        self.df['day_of_week_sin'] = np.sin(2 * np.pi * self.df['day_of_week']/7)
-        self.df['day_of_week_cos'] = np.cos(2 * np.pi * self.df['day_of_week']/7)
-        self.df['month_sin'] = np.sin(2 * np.pi * self.df['month']/12)
-        self.df['month_cos'] = np.cos(2 * np.pi * self.df['month']/12)
+        # Rolling statistics
+        self.df['price_24h_avg'] = self.df['SE3_price_ore'].rolling(
+            window=24, min_periods=1).mean()
+        self.df['price_168h_avg'] = self.df['SE3_price_ore'].rolling(
+            window=168, min_periods=1).mean()
+        self.df['price_24h_std'] = self.df['SE3_price_ore'].rolling(
+            window=24, min_periods=1).std()
         
-        # Binary time features - keep only the most significant ones
-        self.df['is_peak_hour'] = ((self.df['hour'] >= 6) & (self.df['hour'] <= 22)).astype(int)
-        self.df['is_weekend'] = (self.df['day_of_week'] >= 5).astype(int)
-        
-        # Seasonal feature (combine summer/winter into one feature)
-        self.df['season'] = 0  # Default to spring/fall
-        self.df.loc[(self.df['month'] >= 6) & (self.df['month'] <= 8), 'season'] = 1  # Summer
-        self.df.loc[(self.df['month'] == 12) | (self.df['month'] <= 2), 'season'] = -1  # Winter
-        
-        # Price-based features - focus on most predictive windows
-        # Short-term price patterns
-        self.df['price_24h_avg'] = self.df['SE3_price_ore'].rolling(window=24, min_periods=1).mean()
-        self.df['price_24h_std'] = self.df['SE3_price_ore'].rolling(window=24, min_periods=1).std()
-        
-        # Weekly patterns
-        self.df['price_168h_avg'] = self.df['SE3_price_ore'].rolling(window=168, min_periods=1).mean()
-        
-        # Add hour-of-day average price (captures daily patterns)
-        self.df['hour_avg_price'] = self.df.groupby('hour')['SE3_price_ore'].transform('mean')
-        self.df['price_vs_hour_avg'] = self.df['SE3_price_ore'] / self.df['hour_avg_price']
+        # Hour-of-day patterns
+        self.df['hour_avg_price'] = self.df.groupby(
+            self.df.index.hour)['SE3_price_ore'].transform('mean')
+        self.df['price_vs_hour_avg'] = (self.df['SE3_price_ore'] / 
+                                        self.df['hour_avg_price'])
         
         return self
     
@@ -112,29 +94,20 @@ class ElectricityPricePreprocessor:
             logging.info("\nHandling missing values:")
             logging.info(missing[missing > 0])
             self.df = self.df.ffill().bfill()
-            
         return self
     
     def select_final_columns(self):
         """Select and order final columns"""
-        feature_cols = [
-            # Cyclical time features
-            'hour_sin', 'hour_cos',
-            'day_of_week_sin', 'day_of_week_cos',
-            'month_sin', 'month_cos',
-            
-            # Binary and categorical features
-            'is_peak_hour', 'is_weekend', 'season',
-            
-            # Price patterns
+        price_cols = [
+            'PriceArea',
+            'SE3_price_ore',
             'price_24h_avg',
             'price_168h_avg',
             'price_24h_std',
             'hour_avg_price',
             'price_vs_hour_avg'
         ]
-        
-        self.df = self.df[['PriceArea', 'SE3_price_ore'] + feature_cols]
+        self.df = self.df[price_cols]
         return self
     
     def process(self):
@@ -143,7 +116,7 @@ class ElectricityPricePreprocessor:
                 .filter_area()
                 .process_timestamps()
                 .convert_prices()
-                .add_features()
+                .generate_price_features()
                 .handle_missing_values()
                 .select_final_columns())
     

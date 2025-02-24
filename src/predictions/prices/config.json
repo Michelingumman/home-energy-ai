@@ -9,12 +9,27 @@
             "price_vs_hour_avg"
         ],
         "grid_cols": [
-            "renewable_percentage",
-            "nuclear_percentage",
-            "import_percentage",
-            "total_supply",
+            "fossilFreePercentage",
+            "renewablePercentage",
+            "powerConsumptionTotal",
+            "powerProductionTotal",
+            "powerImportTotal",
+            "powerExportTotal",
+            "nuclear",
+            "wind",
             "hydro",
-            "wind"
+            "solar",
+            "unknown",
+            "import_SE-SE2",
+            "export_SE-SE4",
+            "import_NO-NO1",
+            "export_NO-NO1",
+            "import_DK-DK1",
+            "export_DK-DK1",
+            "import_FI",
+            "export_FI",
+            "import_AX",
+            "export_AX"
         ],
         "cyclical_cols": [
             "hour_sin",

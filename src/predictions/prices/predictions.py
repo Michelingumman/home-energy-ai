@@ -36,10 +36,10 @@ class PricePredictor:
         # Load feature configuration
         self.feature_config = feature_config
         
-        # Load model and scalers
-        self.model = load_model(self.models_dir / "price_model.keras")
-        self.price_scaler = joblib.load(self.models_dir / "price_scaler.save")
-        self.grid_scaler = joblib.load(self.models_dir / "grid_scaler.save")
+        # Load production model and scalers for future predictions
+        self.model = load_model(self.models_dir / "price_model_production.keras")
+        self.price_scaler = joblib.load(self.models_dir / "price_scaler_production.save")
+        self.grid_scaler = joblib.load(self.models_dir / "grid_scaler_production.save")
         
         # Load processed data
         self._load_preprocessed_data()
@@ -347,6 +347,59 @@ class PricePredictor:
         print(f"Mean: {pred_series.mean():.2f} öre/kWh")
         print(f"Min: {pred_series.min():.2f} öre/kWh")
         print(f"Max: {pred_series.max():.2f} öre/kWh")
+
+    def predict_week(self, start_date=None):
+        """
+        Predict prices for the next week (168 hours) starting from the given date.
+        If no date is provided, starts from the latest available data point.
+        """
+        if start_date is None:
+            start_date = self.df.index.max() + pd.Timedelta(hours=1)
+        else:
+            start_date = pd.to_datetime(start_date)
+
+        end_date = start_date + pd.Timedelta(days=7)
+        
+        logging.info(f"Predicting prices from {start_date} to {end_date}")
+        
+        # Get predictions using the predict_range method
+        predictions = self.predict_range(start_date, end_date)
+        
+        # Create a more detailed visualization for the week
+        plt.figure(figsize=(15, 10))
+        
+        # Plot predictions
+        plt.subplot(2, 1, 1)
+        plt.step(predictions.index, predictions.values, where='post', label='Predicted', linewidth=2)
+        plt.title("Weekly Price Prediction")
+        plt.xlabel("Time")
+        plt.ylabel("Price (öre/kWh)")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.xticks(rotation=45)
+        
+        # Plot daily averages
+        plt.subplot(2, 1, 2)
+        daily_avg = predictions.resample('D').mean()
+        plt.bar(daily_avg.index, daily_avg.values, alpha=0.7)
+        plt.title("Daily Average Prices")
+        plt.xlabel("Date")
+        plt.ylabel("Average Price (öre/kWh)")
+        plt.grid(True, alpha=0.3)
+        plt.xticks(rotation=45)
+        
+        plt.tight_layout()
+        plt.show()
+        
+        # Print summary statistics
+        print("\nWeekly Prediction Summary:")
+        print(f"Period: {predictions.index[0]} to {predictions.index[-1]}")
+        print(f"Overall Mean: {predictions.mean():.2f} öre/kWh")
+        print(f"Min Price: {predictions.min():.2f} öre/kWh")
+        print(f"Max Price: {predictions.max():.2f} öre/kWh")
+        print("\nDaily Averages:")
+        for date, avg_price in daily_avg.items():
+            print(f"{date.strftime('%Y-%m-%d')}: {avg_price:.2f} öre/kWh")
 
 def main():
     predictor = PricePredictor(window_size=168, apply_dampening=False)

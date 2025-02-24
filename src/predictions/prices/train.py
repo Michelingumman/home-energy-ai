@@ -24,7 +24,7 @@ from src.predictions.prices.feature_config import feature_config
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class PriceModelTrainer:
-    def __init__(self, window_size=None, scaler_type="minmax"):
+    def __init__(self, window_size=None, scaler_type="minmax", train_from_all_data=False):
         """Initialize trainer with project paths and scaler type
         
         Args:
@@ -33,6 +33,7 @@ class PriceModelTrainer:
                 - minmax: MinMaxScaler(feature_range=(-1, 1)), preserves relative magnitudes
                 - standard: StandardScaler(), normalizes to mean=0, std=1
                 - robust: RobustScaler(), scales using statistics robust to outliers
+            train_from_all_data (bool): If True, uses all data for training without test split
         """
         # Load feature configuration
         self.feature_config = feature_config
@@ -40,6 +41,7 @@ class PriceModelTrainer:
         # Get window size from config if not provided
         self.window_size = window_size or self.feature_config.training["window_size"]
         self.model = None
+        self.train_from_all_data = train_from_all_data
         
         # Setup project paths
         self.project_root = Path(__file__).resolve().parents[3]
@@ -75,7 +77,7 @@ class PriceModelTrainer:
         """Load and prepare the processed data"""
         logging.info("Loading datasets...")
         
-        # Load price data first to establish the date range
+        # Load price data first
         price_df = pd.read_csv(
             self.project_root / "data/processed/SE3prices.csv", 
             index_col=0
@@ -103,13 +105,15 @@ class PriceModelTrainer:
         )
         grid_df.index = pd.to_datetime(grid_df.index)
         
-        # Get common date range
+        # Get common date range where all data is available
         start_date = max(
             price_df.index.min(),
             time_df.index.min(),
             holiday_df.index.min(),
             grid_df.index.min()
         )
+        
+        # For production model, use all available data up to the latest date
         end_date = min(
             price_df.index.max(),
             time_df.index.max(),
@@ -121,23 +125,19 @@ class PriceModelTrainer:
         
         # Trim all dataframes to common date range
         price_df = price_df[
-            (price_df.index >= start_date) & 
-            (price_df.index <= end_date)
+            (price_df.index >= start_date)
         ]
         
         time_df = time_df[
-            (time_df.index >= start_date) & 
-            (time_df.index <= end_date)
+            (time_df.index >= start_date)
         ]
         
         holiday_df = holiday_df[
-            (holiday_df.index >= start_date) & 
-            (holiday_df.index <= end_date)
+            (holiday_df.index >= start_date)
         ]
         
         grid_df = grid_df[
-            (grid_df.index >= start_date) & 
-            (grid_df.index <= end_date)
+            (grid_df.index >= start_date)
         ]
         
         # Merge all features
@@ -215,32 +215,56 @@ class PriceModelTrainer:
         # Create sequences with ordered features
         X, y = self.create_sequences(df[feature_cols])
         
-        # Get data split ratios from config
-        split_ratios = self.feature_config.get_data_split_ratios()
-        train_ratio = split_ratios["train_ratio"]
-        val_ratio = split_ratios["val_ratio"]
-        
-        # Calculate split indices
-        total_samples = len(X)
-        train_split = int(total_samples * train_ratio)
-        val_split = int(total_samples * (train_ratio + val_ratio))
-        
-        # Log split information
-        logging.info("\nData Split Information:")
-        logging.info(f"Total samples: {total_samples}")
-        logging.info(f"Training samples: {train_split} ({train_ratio*100:.1f}%)")
-        logging.info(f"Validation samples: {val_split - train_split} ({val_ratio*100:.1f}%)")
-        logging.info(f"Test samples: {total_samples - val_split} ({split_ratios['test_ratio']*100:.1f}%)")
-        
-        # Split the data
-        X_train = X[:train_split]
-        y_train = y[:train_split]
-        X_val = X[train_split:val_split]
-        y_val = y[train_split:val_split]
-        X_test = X[val_split:]
-        y_test = y[val_split:]
-        
-        return (X_train, y_train, X_val, y_val, X_test, y_test), df.index[self.window_size + 24:]
+        if self.train_from_all_data:
+            logging.info("\nUsing all data for production model training")
+            # Use all data for training, keeping a small validation set for monitoring
+            val_size = min(int(len(X) * 0.05), 5000)  # Use 5% or max 5000 samples for validation
+            
+            # Take the validation set from the middle of the dataset to avoid recent data
+            mid_point = len(X) // 2
+            val_start = mid_point - val_size // 2
+            val_end = val_start + val_size
+            
+            # Create validation set from middle
+            X_val = X[val_start:val_end]
+            y_val = y[val_start:val_end]
+            
+            # Create training set from remaining data
+            X_train = np.concatenate([X[:val_start], X[val_end:]], axis=0)
+            y_train = np.concatenate([y[:val_start], y[val_end:]], axis=0)
+            
+            logging.info(f"Total samples: {len(X)}")
+            logging.info(f"Training samples: {len(X_train)} ({len(X_train)/len(X)*100:.1f}%)")
+            logging.info(f"Validation samples: {len(X_val)} ({len(X_val)/len(X)*100:.1f}%)")
+            
+            return (X_train, y_train, X_val, y_val, None, None), df.index[self.window_size + 24:]
+        else:
+            # Get data split ratios from config for evaluation model
+            split_ratios = self.feature_config.get_data_split_ratios()
+            train_ratio = split_ratios["train_ratio"]
+            val_ratio = split_ratios["val_ratio"]
+            
+            # Calculate split indices
+            total_samples = len(X)
+            train_split = int(total_samples * train_ratio)
+            val_split = int(total_samples * (train_ratio + val_ratio))
+            
+            # Log split information
+            logging.info("\nData Split Information for Evaluation Model:")
+            logging.info(f"Total samples: {total_samples}")
+            logging.info(f"Training samples: {train_split} ({train_ratio*100:.1f}%)")
+            logging.info(f"Validation samples: {val_split - train_split} ({val_ratio*100:.1f}%)")
+            logging.info(f"Test samples: {total_samples - val_split} ({split_ratios['test_ratio']*100:.1f}%)")
+            
+            # Split the data
+            X_train = X[:train_split]
+            y_train = y[:train_split]
+            X_val = X[train_split:val_split]
+            y_val = y[train_split:val_split]
+            X_test = X[val_split:]
+            y_test = y[val_split:]
+            
+            return (X_train, y_train, X_val, y_val, X_test, y_test), df.index[self.window_size + 24:]
     
     def build_model(self, input_shape):
         """Build LSTM model with adjusted architecture for better spike prediction"""
@@ -317,28 +341,34 @@ class PriceModelTrainer:
         # Get callback parameters
         callback_params = self.feature_config.get_callback_params()
         
+        # Determine model and data paths based on training mode
+        model_suffix = "_production" if self.train_from_all_data else ""
+        scaler_suffix = "_production" if self.train_from_all_data else ""
+        
         # Save scalers
-        joblib.dump(self.price_scaler, self.models_dir / 'price_scaler.save')
-        joblib.dump(self.grid_scaler, self.models_dir / 'grid_scaler.save')
+        joblib.dump(self.price_scaler, self.models_dir / f'price_scaler{scaler_suffix}.save')
+        joblib.dump(self.grid_scaler, self.models_dir / f'grid_scaler{scaler_suffix}.save')
         
-        # Save test data
-        train_split = int(len(timestamps) * self.feature_config.data_split["train_ratio"])
-        val_split = int(len(timestamps) * (
-            self.feature_config.data_split["train_ratio"] + 
-            self.feature_config.data_split["val_ratio"]
-        ))
-        
-        self.test_data_dir.mkdir(parents=True, exist_ok=True)
-        np.save(self.test_data_dir / 'X_test.npy', X_test)
-        np.save(self.test_data_dir / 'y_test.npy', y_test)
-        np.save(self.test_data_dir / 'test_timestamps.npy', timestamps[val_split:])
+        if not self.train_from_all_data:
+            # Save test data for evaluation
+            train_split = int(len(timestamps) * self.feature_config.data_split["train_ratio"])
+            val_split = int(len(timestamps) * (
+                self.feature_config.data_split["train_ratio"] + 
+                self.feature_config.data_split["val_ratio"]
+            ))
+            
+            self.test_data_dir.mkdir(parents=True, exist_ok=True)
+            np.save(self.test_data_dir / 'X_test.npy', X_test)
+            np.save(self.test_data_dir / 'y_test.npy', y_test)
+            np.save(self.test_data_dir / 'test_timestamps.npy', timestamps[val_split:])
         
         logging.info("Building model...")
         self.model = self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
         
         self.models_dir.mkdir(parents=True, exist_ok=True)
         
-        # Configure callbacks from config
+        # Configure callbacks
+        model_checkpoint_path = self.models_dir / f'price_model{model_suffix}.keras'
         callbacks = [
             EarlyStopping(
                 monitor=callback_params["early_stopping"]["monitor"],
@@ -347,7 +377,7 @@ class PriceModelTrainer:
                 mode='min'
             ),
             ModelCheckpoint(
-                self.models_dir / 'large_delta_price_model.keras',
+                model_checkpoint_path,
                 monitor=callback_params["early_stopping"]["monitor"],
                 save_best_only=True,
                 mode='min'
@@ -361,7 +391,7 @@ class PriceModelTrainer:
             )
         ]
         
-        logging.info("Training model...")
+        logging.info(f"Training {'production' if self.train_from_all_data else 'evaluation'} model...")
         history = self.model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),
@@ -370,9 +400,6 @@ class PriceModelTrainer:
             callbacks=callbacks,
             verbose=1
         )
-        
-        # Save final model
-        self.model.save(self.models_dir / 'price_model.keras')
         
         # Plot training history
         self.plot_training_history(history)
@@ -408,9 +435,17 @@ class PriceModelTrainer:
         plt.show()
 
 def main():
-    trainer = PriceModelTrainer(scaler_type="robust")
-    history = trainer.train()
-    logging.info("Training complete!")
+    # # Train evaluation model first
+    # logging.info("\n=== Training Evaluation Model ===")
+    # trainer = PriceModelTrainer(scaler_type="robust", train_from_all_data=False)
+    # history = trainer.train()
+    # logging.info("Evaluation model training complete!")
+    
+    # Then train production model using all data
+    logging.info("\n=== Training Production Model ===")
+    trainer_prod = PriceModelTrainer(scaler_type="robust", train_from_all_data=True)
+    history_prod = trainer_prod.train()
+    logging.info("Production model training complete!")
 
 if __name__ == "__main__":
     main()

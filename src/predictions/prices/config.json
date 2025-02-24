@@ -82,9 +82,10 @@
             }
         },
         "data_split": {
-            "train_ratio": 0.9,
+            "train_ratio": 0.90,
             "val_ratio": 0.05,
             "test_ratio": 0.05
+    
         },
         "scaling": {
             "price_scaler": {

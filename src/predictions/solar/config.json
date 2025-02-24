@@ -1,41 +1,25 @@
 {
     "system_specs": {
         "total_capacity_kw": 20.3,
-        "panel_count": 50,
+        "total_panel_count": 50,
+        "panel_count_north": 0,
+        "panel_count_northeast": 0,
+        "panel_count_east": 0,
+        "panel_count_southeast": 30,
+        "panel_count_south": 0,
+        "panel_count_southwest": 0,
+        "panel_count_west": 0,
+        "panel_count_northwest": 20,
         "panel_power_w": 405,
         "tilt_degrees": 27,
         "azimuth_degrees": 50,
         "shading_loss": 0.01,
         "location": {
-            "latitude": 59.2785,
-            "longitude": 18.0089,
+            "latitude": 59.27316407985615,
+            "longitude": 17.958286019897105,
             "city": "Stockholm",
-            "area": "Herrängen"
+            "area": "Herrängen",
+            "adress": "Sjöhagsvägen 17"
         }
-    },
-    "model_params": {
-        "sequence_length": 96,
-        "prediction_horizon": 96,
-        "features": [
-            "time_of_day",
-            "day_of_year",
-            "temperature",
-            "cloud_cover",
-            "solar_elevation",
-            "solar_azimuth",
-            "clear_sky_radiation",
-            "historical_production"
-        ],
-        "lstm_layers": [128, 64],
-        "dropout_rate": 0.2,
-        "learning_rate": 0.001,
-        "batch_size": 32,
-        "epochs": 100
-    },
-    "data_params": {
-        "time_step_minutes": 15,
-        "train_test_split": 0.8,
-        "validation_split": 0.1,
-        "scaling": "robust"
     }
 }

@@ -17,7 +17,7 @@ class GridDataProcessor:
         # Read the CSV file, skipping the first two rows (header description)
         self.df = pd.read_csv(self.input_file, sep='\t', skiprows=2)
         
-        # Clean column names
+        # Clean column names and select only required columns
         self.df.columns = [
             'month',
             'total_supply',
@@ -43,66 +43,30 @@ class GridDataProcessor:
         numeric_columns = self.df.columns.difference(['month'])
         self.df[numeric_columns] = self.df[numeric_columns].astype(float)
         
-        return self
-    
-    def add_features(self):
-        """Add calculated features to the dataset"""
-        # Calculate renewable percentage
-        self.df['renewable_percentage'] = (
-            (self.df['hydro'] + self.df['wind'] + self.df['solar']) / 
-            self.df['total_supply'] * 100
-        )
+        # Select only the required columns
+        self.df = self.df[[
+            'month',
+            'total_supply',
+            'hydro',
+            'wind',
+            'nuclear',
+            'solar',
+            'thermal_total',
+            'import'
+        ]]
         
-        # Calculate nuclear percentage
-        self.df['nuclear_percentage'] = (
-            self.df['nuclear'] / self.df['total_supply'] * 100
-        )
+        # Set month as index
+        self.df.set_index('month', inplace=True)
         
-        # Calculate thermal percentage
-        self.df['thermal_percentage'] = (
-            self.df['thermal_total'] / self.df['total_supply'] * 100
-        )
-        
-        # Calculate import dependency
-        self.df['import_percentage'] = (
-            self.df['import'] / self.df['total_supply'] * 100
-        )
-        
-        # Add year-over-year growth rates
-        for col in ['total_supply', 'hydro', 'wind', 'nuclear', 'import']:
-            self.df[f'{col}_yoy_change'] = (
-                self.df[col].pct_change(periods=12) * 100
-            )
-        
-        # Calculate energy mix complexity (Shannon diversity index)
-        def calculate_diversity(row):
-            sources = ['hydro', 'wind', 'solar', 'nuclear', 'thermal_total', 'import']
-            proportions = [row[source]/row['total_supply'] for source in sources]
-            proportions = [p for p in proportions if p > 0]  # Remove zero values
-            return -sum(p * np.log(p) for p in proportions)
-        
-        self.df['energy_mix_diversity'] = self.df.apply(calculate_diversity, axis=1)
-        
-        return self
-    
-    def add_rolling_features(self, windows=[3, 6, 12]):
-        """Add rolling average features"""
-        for window in windows:
-            for col in ['total_supply', 'renewable_percentage', 'nuclear_percentage']:
-                self.df[f'{col}_{window}m_ma'] = (
-                    self.df[col].rolling(window=window, min_periods=1).mean()
-                )
         return self
     
     def process(self):
         """Run all processing steps"""
-        return (self.load_data()
-                .add_features()
-                .add_rolling_features())
+        return self.load_data()
     
     def save_data(self, output_file):
         """Save processed data to CSV"""
-        self.df.to_csv(output_file, index=False)
+        self.df.to_csv(output_file)
         logging.info(f"Saved processed data to {output_file}")
 
 def main():
@@ -123,7 +87,7 @@ def main():
     print(processor.df.head())
     
     # Print feature summary
-    print("\nFeatures created:")
+    print("\nFeatures in processed data:")
     for col in processor.df.columns:
         print(f"- {col}")
 

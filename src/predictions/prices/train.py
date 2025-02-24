@@ -2,8 +2,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from sklearn.preprocessing import RobustScaler, MinMaxScaler, StandardScaler
 import joblib
@@ -11,14 +11,21 @@ from pathlib import Path
 import logging
 import os
 import sys
+import argparse
 
+# Configure TensorFlow to use available CPU instructions
+try:
+    tf.config.optimizer.set_jit(True)  # Enable XLA optimization
+except:
+    logging.warning("Could not enable XLA optimization")
 
 # Add the project root to the Python path
 project_root = str(Path(__file__).resolve().parents[3])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from src.predictions.prices.feature_config import feature_config
+from src.predictions.prices.gather_data import FeatureConfig
+feature_config = FeatureConfig()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -267,45 +274,51 @@ class PriceModelTrainer:
             return (X_train, y_train, X_val, y_val, X_test, y_test), df.index[self.window_size + 24:]
     
     def build_model(self, input_shape):
-        """Build LSTM model with adjusted architecture for better spike prediction"""
-        model = Sequential()
+        """Build LSTM model using Keras Functional API for better architecture"""
+        # Input layer with explicit shape
+        inputs = Input(shape=(input_shape[0], input_shape[1]), name='sequence_input')
         
-        # Add LSTM layers with increased capacity
+        # Get architecture config
         lstm_layers = self.feature_config.architecture["lstm_layers"]
-        first_layer = True
+        dense_layers = self.feature_config.architecture["dense_layers"]
         
-        for layer in lstm_layers:
-            if first_layer:
-                model.add(LSTM(
-                    units=layer["units"],
-                    input_shape=input_shape,
-                    return_sequences=layer["return_sequences"],
-                    activation='tanh'  # Explicit tanh activation for better gradient flow
-                ))
-                first_layer = False
-            else:
-                model.add(LSTM(
-                    units=layer["units"],
-                    return_sequences=layer["return_sequences"],
-                    activation='tanh'
-                ))
+        # Build LSTM layers
+        x = inputs
+        for i, layer in enumerate(lstm_layers):
+            return_sequences = layer["return_sequences"]
+            dropout_rate = layer.get("dropout", 0)
             
-            if layer.get("dropout", 0) > 0:
-                model.add(Dropout(layer["dropout"]))
+            # Add LSTM layer
+            lstm_layer = LSTM(
+                units=layer["units"],
+                return_sequences=return_sequences,
+                activation='tanh',
+                name=f'lstm_{i+1}'
+            )(x)
+            
+            # Add dropout if specified
+            if dropout_rate > 0:
+                lstm_layer = Dropout(dropout_rate, name=f'lstm_dropout_{i+1}')(lstm_layer)
+            
+            x = lstm_layer
         
         # Add Dense layers
-        dense_layers = self.feature_config.architecture["dense_layers"]
-        for layer in dense_layers[:-1]:  # All layers except the last
-            model.add(Dense(
+        for i, layer in enumerate(dense_layers[:-1]):
+            x = Dense(
                 units=layer["units"],
-                activation='relu'
-            ))
+                activation='relu',
+                name=f'dense_{i+1}'
+            )(x)
         
-        # Final output layer with linear activation
-        model.add(Dense(
+        # Final output layer
+        outputs = Dense(
             units=dense_layers[-1]["units"],
-            activation=None  # Linear activation for price prediction
-        ))
+            activation=None,  # Linear activation for price prediction
+            name='price_output'
+        )(x)
+        
+        # Create model
+        model = Model(inputs=inputs, outputs=outputs, name='price_prediction_model')
         
         # Get training parameters
         training_params = self.feature_config.get_training_params()
@@ -320,11 +333,15 @@ class PriceModelTrainer:
         # Use Huber loss for better handling of outliers
         huber_loss = tf.keras.losses.Huber(delta=0.5)
         
+        # Compile model
         model.compile(
             optimizer=optimizer,
             loss=huber_loss,
             metrics=training_params["metrics"]
         )
+        
+        # Print model summary
+        model.summary()
         
         return model
     
@@ -346,26 +363,25 @@ class PriceModelTrainer:
         scaler_suffix = "_production" if self.train_from_all_data else ""
         
         # Save scalers
+        self.models_dir.mkdir(parents=True, exist_ok=True)
         joblib.dump(self.price_scaler, self.models_dir / f'price_scaler{scaler_suffix}.save')
         joblib.dump(self.grid_scaler, self.models_dir / f'grid_scaler{scaler_suffix}.save')
         
         if not self.train_from_all_data:
             # Save test data for evaluation
+            self.test_data_dir.mkdir(parents=True, exist_ok=True)
             train_split = int(len(timestamps) * self.feature_config.data_split["train_ratio"])
             val_split = int(len(timestamps) * (
                 self.feature_config.data_split["train_ratio"] + 
                 self.feature_config.data_split["val_ratio"]
             ))
             
-            self.test_data_dir.mkdir(parents=True, exist_ok=True)
             np.save(self.test_data_dir / 'X_test.npy', X_test)
             np.save(self.test_data_dir / 'y_test.npy', y_test)
             np.save(self.test_data_dir / 'test_timestamps.npy', timestamps[val_split:])
         
         logging.info("Building model...")
         self.model = self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
-        
-        self.models_dir.mkdir(parents=True, exist_ok=True)
         
         # Configure callbacks
         model_checkpoint_path = self.models_dir / f'price_model{model_suffix}.keras'
@@ -435,17 +451,29 @@ class PriceModelTrainer:
         plt.show()
 
 def main():
-    # # Train evaluation model first
-    # logging.info("\n=== Training Evaluation Model ===")
-    # trainer = PriceModelTrainer(scaler_type="robust", train_from_all_data=False)
-    # history = trainer.train()
-    # logging.info("Evaluation model training complete!")
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Train price prediction model')
+    parser.add_argument('mode', choices=['production', 'evaluation'], 
+                        help='Training mode: production (uses all data) or evaluation (uses train/val/test split)')
+    parser.add_argument('--scaler', default='robust', choices=['robust', 'minmax', 'standard'],
+                        help='Type of scaler to use (default: robust)')
+    args = parser.parse_args()
+
+    # Set training mode based on argument
+    train_from_all_data = args.mode == 'production'
     
-    # Then train production model using all data
-    logging.info("\n=== Training Production Model ===")
-    trainer_prod = PriceModelTrainer(scaler_type="robust", train_from_all_data=True)
-    history_prod = trainer_prod.train()
-    logging.info("Production model training complete!")
+    # Log the training mode
+    logging.info(f"\n=== Training {args.mode.capitalize()} Model ===")
+    logging.info(f"Using {args.scaler} scaler")
+    logging.info(f"Training with {'all available' if train_from_all_data else 'train/val/test split'} data")
+    
+    # Initialize and train the model
+    trainer = PriceModelTrainer(scaler_type=args.scaler, train_from_all_data=train_from_all_data)
+    history = trainer.train()
+    
+    logging.info(f"{args.mode.capitalize()} model training complete!")
 
 if __name__ == "__main__":
     main()
+
+

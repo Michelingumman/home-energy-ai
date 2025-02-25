@@ -1,292 +1,525 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 import tensorflow as tf
 import joblib
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
+import logging
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import scipy.stats as stats
 
-def predict_single_day(target_date):
-    # Load the saved model and scaler
-    model = tf.keras.models.load_model("C:/_Projects/home-energy-ai/models/saved/large_delta_price_model.keras")
-    price_scaler = joblib.load("C:/_Projects/home-energy-ai/models/saved/price_scaler.save")
+# Add the project root to the Python path
+import sys
+project_root = str(Path(__file__).resolve().parents[3])
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-    # Load test data and timestamps
-    X_test = np.load("C:/_Projects/home-energy-ai/models/test_data/X_test.npy")
-    y_test = np.load("C:/_Projects/home-energy-ai/models/test_data/y_test.npy")
-    timestamps = np.load("C:/_Projects/home-energy-ai/models/test_data/test_timestamps.npy", allow_pickle=True)
-    timestamps = pd.to_datetime(timestamps)
+from src.predictions.prices.gather_data import FeatureConfig
 
-    # Print available date range
-    print(f"\nAvailable date range for predictions:")
-    print(f"From: {timestamps.min().strftime('%Y-%m-%d')}")
-    print(f"To: {timestamps.max().strftime('%Y-%m-%d')}\n")
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    # Convert user input to a date and find matching samples
-    target_date = pd.to_datetime(target_date)
-    print(f"Evaluating predictions for: {target_date.strftime('%Y-%m-%d')}")
-    
-    # Find samples that fall on the chosen date
-    target_day_start = pd.Timestamp(target_date.date())
-    target_day_end = target_day_start + pd.Timedelta(days=1)
-    matching_mask = (timestamps >= target_day_start) & (timestamps < target_day_end)
-    matching_indices = np.where(matching_mask)[0]
-    
-    if len(matching_indices) == 0:
-        print(f"\nNo predictions found for {target_date.strftime('%Y-%m-%d')}.")
-        print("Please choose a date within the available range.")
-        return
-
-    # Among all matches, try to pick the one starting exactly at midnight (hour == 0).
-    # If none start at midnight, just pick the earliest one of that date.
-    day_timestamps = timestamps[matching_indices]
-    midnight_mask = day_timestamps.hour == 0
-    if midnight_mask.any():
-        sample_index = matching_indices[day_timestamps.hour == 0][0]
-    else:
-        sample_index = matching_indices[0]
-
-    # Create figure for plotting
-    plt.figure(figsize=(15, 6))
-
-    # Get the sample and make prediction
-    X_sample = X_test[sample_index:sample_index+1]
-    y_true = y_test[sample_index]            # shape: (24,)
-    y_pred = model.predict(X_sample, verbose=0)[0]  # shape: (24,)
-
-    # Inverse transform
-    num_features = len(price_scaler.scale_)
-    dummy_pred = np.zeros((len(y_pred), num_features))
-    dummy_true = np.zeros((len(y_true), num_features))
-    dummy_pred[:, 0] = y_pred
-    dummy_true[:, 0] = y_true
-
-    y_pred_inv = price_scaler.inverse_transform(dummy_pred)[:, 0]
-    y_true_inv = price_scaler.inverse_transform(dummy_true)[:, 0]
-
-    # Create hour labels for x-axis
-    start_time = timestamps[sample_index]
-    hours = pd.date_range(start_time, periods=24, freq='h')
-
-    # Plot predictions vs. actual using a step plot
-    plt.step(hours, y_true_inv, 'b-', label='Actual')
-    plt.step(hours, y_pred_inv, 'r--', label='Predicted')
-    plt.title(f'24-Hour Price Prediction Starting {start_time.strftime("%Y-%m-%d %H:%M")}')
-    plt.xlabel('Time')
-    plt.ylabel('Price (öre/kWh)')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.xticks(rotation=45)
-
-    plt.tight_layout()
-    plt.show()
-
-    # Calculate and print summary statistics for the day's prediction
-    error = y_pred_inv - y_true_inv
-    mape = np.mean(np.abs(error / y_true_inv)) * 100
-    rmse = np.sqrt(np.mean(error**2))
-    print("\nPrediction Summary:")
-    print(f"Date: {start_time.strftime('%Y-%m-%d %H:%M')}")
-    print(f"MAPE: {mape:.2f}%")
-    print(f"RMSE: {rmse:.2f} öre/kWh")
-
-def predict_month(target_month):
-    """
-    Predict and display 24-hour forecasts for each day in the given month.
-    target_month should be in "YYYY-MM" format (e.g., "2023-08").
-    """
-    # Load model, scaler, test data and timestamps
-    model = tf.keras.models.load_model("C:/_Projects/home-energy-ai/models/saved/large_delta_price_model.keras")
-    price_scaler = joblib.load("C:/_Projects/home-energy-ai/models/saved/price_scaler.save")
-    X_test = np.load("C:/_Projects/home-energy-ai/models/test_data/X_test.npy")
-    y_test = np.load("C:/_Projects/home-energy-ai/models/test_data/y_test.npy")
-    timestamps = np.load("C:/_Projects/home-energy-ai/models/test_data/test_timestamps.npy", allow_pickle=True)
-    timestamps = pd.to_datetime(timestamps)
-
-    # Print available date range
-    print(f"\nAvailable date range for predictions:")
-    print(f"From: {timestamps.min().strftime('%Y-%m-%d')}")
-    print(f"To: {timestamps.max().strftime('%Y-%m-%d')}\n")
-
-    # Parse target month (e.g., "2023-08")
-    try:
-        target_month_start = pd.to_datetime(target_month + "-01")
-    except Exception as e:
-        print("Invalid month format. Please use YYYY-MM")
-        return
-    target_month_end = target_month_start + pd.DateOffset(months=1)
-
-    # Filter indices to those within the target month
-    month_mask = (timestamps >= target_month_start) & (timestamps < target_month_end)
-    month_indices = np.where(month_mask)[0]
-    if len(month_indices) == 0:
-        print(f"No predictions found for {target_month}.")
-        return
-
-    # Group the indices by day using the date part of the timestamp
-    df_indices = pd.DataFrame({'index': month_indices, 'timestamp': timestamps[month_indices]})
-    df_indices['date'] = df_indices['timestamp'].dt.date
-    unique_days = df_indices['date'].unique()
-
-    all_times = []
-    all_actual = []
-    all_pred = []
-    error_list = []
-
-    plt.figure(figsize=(15, 6))
-    
-    for i, day in enumerate(unique_days):
-        # Get indices for the current day
-        day_indices = df_indices[df_indices['date'] == day]['index'].values
-        day_timestamps = timestamps[day_indices]
+class PriceModelEvaluator:
+    def __init__(self, model_suffix="_production"):
+        """Initialize the evaluator with model paths and data"""
+        self.project_root = Path("C:/_Projects/home-energy-ai")
+        self.model_suffix = model_suffix
+        self.feature_config = FeatureConfig()
+        self.load_model_and_data()
         
-        # Try to pick the sample starting at midnight; if not, use the earliest sample of that day
+    def load_model_and_data(self):
+        """Load the model, scalers, and test data"""
+        try:
+            self.model = tf.keras.models.load_model(
+                self.project_root / f"models/saved/price_model{self.model_suffix}.keras"
+            )
+            self.price_scaler = joblib.load(
+                self.project_root / f"models/saved/price_scaler{self.model_suffix}.save"
+            )
+            self.grid_scaler = joblib.load(
+                self.project_root / f"models/saved/grid_scaler{self.model_suffix}.save"
+            )
+            self.X_test = np.load(self.project_root / "models/test_data/X_test.npy")
+            self.y_test = np.load(self.project_root / "models/test_data/y_test.npy")
+            self.timestamps = pd.to_datetime(
+                np.load(self.project_root / "models/test_data/test_timestamps.npy", allow_pickle=True)
+            )
+            logging.info("Successfully loaded model and data")
+        except Exception as e:
+            logging.error(f"Error loading model or data: {str(e)}")
+            raise
+    
+    def load_feature_data(self):
+        """Load all required feature data from CSV files"""
+        try:
+            # Load price data
+            price_df = pd.read_csv(
+                self.project_root / "data/processed/SE3prices.csv",
+                index_col='HourSE'
+            )
+            price_df.index = pd.to_datetime(price_df.index)
+            
+            # Load time features
+            time_df = pd.read_csv(
+                self.project_root / "data/processed/time_features.csv",
+                index_col=0
+            )
+            time_df.index = pd.to_datetime(time_df.index)
+            
+            # Load holiday data
+            holiday_df = pd.read_csv(
+                self.project_root / "data/processed/holidays.csv",
+                index_col=0
+            )
+            holiday_df.index = pd.to_datetime(holiday_df.index)
+            
+            # Load grid data
+            grid_df = pd.read_csv(
+                self.project_root / "data/processed/SwedenGrid.csv",
+                index_col=0
+            )
+            grid_df.index = pd.to_datetime(grid_df.index)
+            
+            # Merge all features
+            df = price_df.join(time_df, how='left')
+            df = df.join(holiday_df, how='left')
+            df = df.join(grid_df, how='left')
+            
+            # Handle missing values
+            df = df.ffill().bfill()
+            
+            return df
+            
+        except Exception as e:
+            logging.error(f"Error loading feature data: {str(e)}")
+            raise
+
+    def predict_next_week(self):
+        """Predict prices for the next week starting from tomorrow"""
+        logging.info("Preparing next week predictions...")
+        
+        # Load feature data
+        df = self.load_feature_data()
+        
+        # Get start and end dates
+        tomorrow = pd.Timestamp.now().normalize() + pd.Timedelta(days=1)
+        end_date = tomorrow + pd.Timedelta(days=7)
+        
+        logging.info(f"Predicting prices from {tomorrow.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        
+        # Get the window size from config
+        window_size = self.feature_config.training["window_size"]
+        
+        # Get historical window ending today
+        window_start = tomorrow - pd.Timedelta(hours=window_size)
+        historical_data = df[df.index <= tomorrow].copy()
+        
+        if len(historical_data) < window_size:
+            raise ValueError(f"Insufficient historical data. Need at least {window_size} hours.")
+        
+        # Get required features in correct order
+        feature_cols = self.feature_config.get_ordered_features()
+        
+        # Verify all required features exist
+        missing_features = self.feature_config.verify_features(df.columns)
+        if missing_features:
+            raise ValueError(f"Missing required features: {missing_features}")
+        
+        # Scale price features
+        price_cols = self.feature_config.price_cols
+        price_data = historical_data[price_cols].values
+        scaled_prices = self.price_scaler.transform(price_data)
+        for i, col in enumerate(price_cols):
+            historical_data[col] = scaled_prices[:, i]
+        
+        # Scale grid features
+        grid_cols = self.feature_config.grid_cols
+        grid_data = historical_data[grid_cols].values
+        scaled_grid = self.grid_scaler.transform(grid_data)
+        for i, col in enumerate(grid_cols):
+            historical_data[col] = scaled_grid[:, i]
+        
+        # Prepare initial window
+        window_data = historical_data[feature_cols].values[-window_size:]
+        current_window = window_data.reshape(1, window_size, len(feature_cols))
+        
+        # Generate predictions for each hour
+        predictions = []
+        prediction_times = pd.date_range(tomorrow, end_date, freq='H', inclusive='left')
+        
+        for current_time in prediction_times:
+            # Get prediction for next 24 hours
+            pred = self.model.predict(current_window, verbose=0)[0]
+            next_hour_pred = pred[0]  # Take only the next hour
+            predictions.append(next_hour_pred)
+            
+            # Update the window for next prediction
+            new_row = current_window[0, -1].copy()
+            new_row[0] = next_hour_pred  # Update price
+            
+            # Update time-based features for next hour
+            cyclical_start = len(price_cols)
+            new_row[cyclical_start:cyclical_start+6] = [
+                np.sin(2 * np.pi * current_time.hour / 24),
+                np.cos(2 * np.pi * current_time.hour / 24),
+                np.sin(2 * np.pi * current_time.dayofweek / 7),
+                np.cos(2 * np.pi * current_time.dayofweek / 7),
+                np.sin(2 * np.pi * current_time.month / 12),
+                np.cos(2 * np.pi * current_time.month / 12)
+            ]
+            
+            # Shift window and add new row
+            current_window = np.roll(current_window, -1, axis=1)
+            current_window[0, -1] = new_row
+        
+        # Inverse transform predictions
+        dummy_pred = np.zeros((len(predictions), len(self.price_scaler.scale_)))
+        dummy_pred[:, 0] = predictions
+        predictions_inv = self.price_scaler.inverse_transform(dummy_pred)[:, 0]
+        
+        # Create results DataFrame
+        results = pd.DataFrame({
+            'timestamp': prediction_times,
+            'price': predictions_inv
+        }).set_index('timestamp')
+        
+        # Plot predictions
+        self._plot_week_prediction(results, tomorrow)
+        
+        # Print summary statistics
+        print("\n=== Next Week Price Predictions ===")
+        print(f"Period: {tomorrow.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        print(f"Mean Price: {results['price'].mean():.2f} öre/kWh")
+        print(f"Min Price: {results['price'].min():.2f} öre/kWh")
+        print(f"Max Price: {results['price'].max():.2f} öre/kWh")
+        
+        # Print daily averages
+        print("\nDaily Averages:")
+        daily_avg = results.resample('D')['price'].mean()
+        for date, price in daily_avg.items():
+            print(f"{date.strftime('%Y-%m-%d')}: {price:.2f} öre/kWh")
+        
+        return results
+    
+    def _plot_week_prediction(self, predictions, start_date):
+        """Plot detailed week prediction"""
+        plt.figure(figsize=(15, 10))
+        
+        # Price predictions
+        plt.subplot(2, 1, 1)
+        plt.plot(predictions.index, predictions['price'], 'b-', label='Predicted Price')
+        plt.title(f'Week Price Predictions Starting {start_date.strftime("%Y-%m-%d")}')
+        plt.xlabel('Time')
+        plt.ylabel('Price (öre/kWh)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.xticks(rotation=45)
+        
+        # Daily averages
+        plt.subplot(2, 1, 2)
+        daily_avg = predictions.resample('D')['price'].mean()
+        plt.bar(daily_avg.index, daily_avg.values, alpha=0.7)
+        plt.title('Daily Average Prices')
+        plt.xlabel('Date')
+        plt.ylabel('Average Price (öre/kWh)')
+        plt.grid(True, alpha=0.3)
+        plt.xticks(rotation=45)
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def calculate_metrics(self, y_true, y_pred):
+        """Calculate comprehensive error metrics"""
+        metrics = {}
+        
+        # Basic metrics
+        metrics['mae'] = mean_absolute_error(y_true, y_pred)
+        metrics['rmse'] = np.sqrt(mean_squared_error(y_true, y_pred))
+        metrics['mape'] = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+        metrics['r2'] = r2_score(y_true, y_pred)
+        
+        # Additional metrics
+        metrics['bias'] = np.mean(y_pred - y_true)
+        metrics['std_error'] = np.std(y_pred - y_true)
+        metrics['max_error'] = np.max(np.abs(y_pred - y_true))
+        
+        # Correlation
+        metrics['correlation'] = np.corrcoef(y_true, y_pred)[0, 1]
+        
+        return metrics
+    
+    def inverse_transform_prices(self, y_scaled):
+        """Helper to inverse transform scaled prices"""
+        dummy = np.zeros((len(y_scaled), len(self.price_scaler.scale_)))
+        dummy[:, 0] = y_scaled
+        return self.price_scaler.inverse_transform(dummy)[:, 0]
+    
+    def plot_error_distribution(self, errors, title="Error Distribution"):
+        """Plot error distribution with normal curve"""
+        plt.figure(figsize=(10, 6))
+        sns.histplot(errors, kde=True)
+        plt.title(title)
+        plt.xlabel("Prediction Error (öre/kWh)")
+        plt.ylabel("Frequency")
+        
+        # Add normal curve
+        mu, std = stats.norm.fit(errors)
+        xmin, xmax = plt.xlim()
+        x = np.linspace(xmin, xmax, 100)
+        p = stats.norm.pdf(x, mu, std)
+        plt.plot(x, p * len(errors) * (xmax - xmin) / 30, 'r-', lw=2, 
+                label=f'Normal: μ={mu:.2f}, σ={std:.2f}')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+    
+    def plot_residuals(self, y_true, y_pred, title="Residual Plot"):
+        """Plot residuals against predicted values"""
+        plt.figure(figsize=(10, 6))
+        residuals = y_pred - y_true
+        plt.scatter(y_pred, residuals, alpha=0.5)
+        plt.axhline(y=0, color='r', linestyle='--')
+        plt.title(title)
+        plt.xlabel("Predicted Price (öre/kWh)")
+        plt.ylabel("Residuals (öre/kWh)")
+        plt.grid(True, alpha=0.3)
+        plt.show()
+    
+    def evaluate_single_day(self, target_date):
+        """Detailed evaluation for a single day"""
+        target_date = pd.to_datetime(target_date)
+        logging.info(f"Evaluating predictions for: {target_date.strftime('%Y-%m-%d')}")
+        
+        # Find matching sample
+        target_day_start = pd.Timestamp(target_date.date())
+        target_day_end = target_day_start + pd.Timedelta(days=1)
+        matching_mask = (self.timestamps >= target_day_start) & (self.timestamps < target_day_end)
+        matching_indices = np.where(matching_mask)[0]
+        
+        if len(matching_indices) == 0:
+            logging.error(f"No predictions found for {target_date.strftime('%Y-%m-%d')}")
+            return
+        
+        # Get midnight sample if available
+        day_timestamps = self.timestamps[matching_indices]
         midnight_mask = day_timestamps.hour == 0
-        if midnight_mask.any():
-            sample_index = day_indices[day_timestamps.hour == 0][0]
-        else:
-            sample_index = day_indices[0]
-
-        # Get prediction for the sample
-        X_sample = X_test[sample_index:sample_index+1]
-        y_true = y_test[sample_index]    # shape: (24,)
-        y_pred = model.predict(X_sample, verbose=0)[0]  # shape: (24,)
-
-        num_features = len(price_scaler.scale_)
-        dummy_pred = np.zeros((len(y_pred), num_features))
-        dummy_true = np.zeros((len(y_true), num_features))
-        dummy_pred[:, 0] = y_pred
-        dummy_true[:, 0] = y_true
-
-        y_pred_inv = price_scaler.inverse_transform(dummy_pred)[:, 0]
-        y_true_inv = price_scaler.inverse_transform(dummy_true)[:, 0]
-
-        # Create hourly timestamps for this 24-hour prediction
-        start_time = timestamps[sample_index]
-        hours = pd.date_range(start_time, periods=24, freq='h')
-
-        # Accumulate data for overall error metrics
-        all_times.extend(hours)
-        all_actual.extend(y_true_inv)
-        all_pred.extend(y_pred_inv)
-        error = y_pred_inv - y_true_inv
-        error_list.extend(error)
-
-        # Plot this day's forecast. Only label the first day's lines.
-        if i == 0:
-            plt.step(hours, y_true_inv, 'b-', label='Actual')
-            plt.step(hours, y_pred_inv, 'r--', label='Predicted')
-        else:
-            plt.step(hours, y_true_inv, 'b-', alpha=0.7)
-            plt.step(hours, y_pred_inv, 'r--', alpha=0.7)
-    
-    plt.title(f'24-Hour Price Predictions for Each Day in {target_month}')
-    plt.xlabel('Time')
-    plt.ylabel('Price (öre/kWh)')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.xticks(rotation=45)
-
-
-    plt.tight_layout()
-    plt.show()
-
-    # Calculate and print overall summary statistics
-    all_actual = np.array(all_actual)
-    all_pred = np.array(all_pred)
-    mape = np.mean(np.abs((all_actual - all_pred) / all_actual)) * 100
-    rmse = np.sqrt(np.mean((all_actual - all_pred)**2))
-    print("\nPrediction Summary for the Month:")
-    print(f"MAPE: {mape:.2f}%")
-    print(f"RMSE: {rmse:.2f} öre/kWh")
-
-
-def predict_rolling_forecast(target_date, horizon=24):
-    # Load model, scaler, test data, and timestamps
-    model = tf.keras.models.load_model("C:/_Projects/home-energy-ai/models/saved/large_delta_price_model.keras")
-    price_scaler = joblib.load("C:/_Projects/home-energy-ai/models/saved/price_scaler.save")
-    X_test = np.load("C:/_Projects/home-energy-ai/models/test_data/X_test.npy")
-    y_test = np.load("C:/_Projects/home-energy-ai/models/test_data/y_test.npy")
-    timestamps = np.load("C:/_Projects/home-energy-ai/models/test_data/test_timestamps.npy", allow_pickle=True)
-    timestamps = pd.to_datetime(timestamps)
-    
-    # Find the sample for the target date (preferably one starting at midnight)
-    target_date = pd.to_datetime(target_date)
-    target_day_start = pd.Timestamp(target_date.date())
-    target_day_end = target_day_start + pd.Timedelta(days=1)
-    matching_mask = (timestamps >= target_day_start) & (timestamps < target_day_end)
-    matching_indices = np.where(matching_mask)[0]
-    if len(matching_indices) == 0:
-        print(f"No sample found for {target_date.strftime('%Y-%m-%d')}.")
-        return
-    
-    day_timestamps = timestamps[matching_indices]
-    midnight_mask = day_timestamps.hour == 0
-    if midnight_mask.any():
-        sample_index = matching_indices[day_timestamps.hour == 0][0]
-    else:
-        sample_index = matching_indices[0]
-    
-    # Get the initial input window (shape: 1 x window_size x num_features)
-    current_window = X_test[sample_index:sample_index+1].copy()
-    
-    rolling_preds = []
-    
-    # Iteratively forecast one hour ahead until reaching the desired horizon.
-    # The model is trained to predict 24 hours, so we take only the first predicted hour.
-    for i in range(horizon):
-        pred_block = model.predict(current_window, verbose=0)[0]  # shape: (24,)
-        next_pred_scaled = pred_block[0]  # forecast for the next hour
-        rolling_preds.append(next_pred_scaled)
+        sample_index = matching_indices[midnight_mask.argmax() if midnight_mask.any() else 0]
         
-        # Update the window:
-        # Drop the oldest hour and append a new row.
-        # For the new row, use the last row of current_window as baseline,
-        # but update its target (first feature) with the predicted value.
-        new_row = current_window[0, -1, :].copy()
-        new_row[0] = next_pred_scaled
-        updated_window = np.concatenate([current_window[0, 1:, :], new_row[np.newaxis, :]], axis=0)
-        current_window = updated_window[np.newaxis, :, :]  # reshape back to (1, window_size, num_features)
+        # Make prediction
+        X_sample = self.X_test[sample_index:sample_index+1]
+        y_true = self.y_test[sample_index]
+        y_pred = self.model.predict(X_sample, verbose=0)[0]
+        
+        # Inverse transform
+        y_true_inv = self.inverse_transform_prices(y_true)
+        y_pred_inv = self.inverse_transform_prices(y_pred)
+        
+        # Calculate metrics
+        metrics = self.calculate_metrics(y_true_inv, y_pred_inv)
+        
+        # Create visualizations
+        self._plot_day_prediction(y_true_inv, y_pred_inv, self.timestamps[sample_index])
+        self.plot_error_distribution(y_pred_inv - y_true_inv, 
+                                   f"Error Distribution - {target_date.strftime('%Y-%m-%d')}")
+        self.plot_residuals(y_true_inv, y_pred_inv, 
+                          f"Residual Plot - {target_date.strftime('%Y-%m-%d')}")
+        
+        # Print detailed statistics
+        self._print_metrics(metrics, f"Daily Metrics - {target_date.strftime('%Y-%m-%d')}")
+        
+        return metrics
     
-    # Inverse transform the forecasted target values
-    num_features = len(price_scaler.scale_)
-    dummy = np.zeros((horizon, num_features))
-    dummy[:, 0] = np.array(rolling_preds)
-    forecast_inv = price_scaler.inverse_transform(dummy)[:, 0]
+    def evaluate_month(self, target_month):
+        """Comprehensive evaluation for an entire month"""
+        try:
+            target_month_start = pd.to_datetime(f"{target_month}-01")
+        except Exception as e:
+            logging.error("Invalid month format. Please use YYYY-MM")
+            return
+            
+        target_month_end = target_month_start + pd.DateOffset(months=1)
+        
+        # Filter data for the month
+        month_mask = (self.timestamps >= target_month_start) & (self.timestamps < target_month_end)
+        month_indices = np.where(month_mask)[0]
+        
+        if len(month_indices) == 0:
+            logging.error(f"No predictions found for {target_month}")
+            return
+        
+        # Collect predictions and actuals
+        all_true = []
+        all_pred = []
+        daily_metrics = []
+        
+        # Group by day
+        df_indices = pd.DataFrame({
+            'index': month_indices, 
+            'timestamp': self.timestamps[month_indices]
+        })
+        df_indices['date'] = df_indices['timestamp'].dt.date
+        
+        # Evaluate each day
+        for date in df_indices['date'].unique():
+            day_indices = df_indices[df_indices['date'] == date]['index'].values
+            day_timestamps = self.timestamps[day_indices]
+            
+            # Get midnight sample if available
+            midnight_mask = day_timestamps.hour == 0
+            sample_index = day_indices[midnight_mask.argmax() if midnight_mask.any() else 0]
+            
+            # Make prediction
+            X_sample = self.X_test[sample_index:sample_index+1]
+            y_true = self.y_test[sample_index]
+            y_pred = self.model.predict(X_sample, verbose=0)[0]
+            
+            # Inverse transform
+            y_true_inv = self.inverse_transform_prices(y_true)
+            y_pred_inv = self.inverse_transform_prices(y_pred)
+            
+            all_true.extend(y_true_inv)
+            all_pred.extend(y_pred_inv)
+            
+            # Calculate daily metrics
+            daily_metrics.append({
+                'date': date,
+                **self.calculate_metrics(y_true_inv, y_pred_inv)
+            })
+        
+        # Calculate monthly metrics
+        monthly_metrics = self.calculate_metrics(np.array(all_true), np.array(all_pred))
+        
+        # Create visualizations
+        self._plot_monthly_predictions(all_true, all_pred, target_month)
+        self.plot_error_distribution(np.array(all_pred) - np.array(all_true),
+                                   f"Monthly Error Distribution - {target_month}")
+        self.plot_residuals(np.array(all_true), np.array(all_pred),
+                          f"Monthly Residual Plot - {target_month}")
+        
+        # Plot daily metrics trends
+        self._plot_daily_metrics_trends(daily_metrics)
+        
+        # Print detailed statistics
+        self._print_metrics(monthly_metrics, f"Monthly Metrics - {target_month}")
+        
+        return monthly_metrics, daily_metrics
     
-    # Get the actual values for the same forecast horizon from y_test.
-    # y_test[sample_index] is a 24-hour block (or longer) so we slice the first 'horizon' hours.
-    actual_scaled = y_test[sample_index][:horizon]
-    dummy_actual = np.zeros((horizon, num_features))
-    dummy_actual[:, 0] = actual_scaled
-    actual_inv = price_scaler.inverse_transform(dummy_actual)[:, 0]
+    def _plot_day_prediction(self, y_true, y_pred, start_time):
+        """Plot detailed day prediction"""
+        hours = pd.date_range(start_time, periods=24, freq='h')
+        
+        plt.figure(figsize=(15, 6))
+        plt.step(hours, y_true, 'b-', label='Actual', where='post')
+        plt.step(hours, y_pred, 'r--', label='Predicted', where='post')
+        
+        plt.fill_between(hours, y_true, y_pred, 
+                        where=y_pred >= y_true,
+                        color='red', alpha=0.1, 
+                        label='Over-prediction')
+        plt.fill_between(hours, y_true, y_pred,
+                        where=y_pred < y_true,
+                        color='blue', alpha=0.1,
+                        label='Under-prediction')
+        
+        plt.title(f'24-Hour Price Prediction - {start_time.strftime("%Y-%m-%d")}')
+        plt.xlabel('Time')
+        plt.ylabel('Price (öre/kWh)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
     
-    # Prepare time axis for plotting (forecast starting at the chosen sample time)
-    start_time = timestamps[sample_index]
-    forecast_times = pd.date_range(start_time, periods=horizon, freq='H')
+    def _plot_monthly_predictions(self, all_true, all_pred, target_month):
+        """Plot monthly predictions with additional analysis"""
+        plt.figure(figsize=(15, 10))
+        
+        # Price predictions
+        plt.subplot(2, 1, 1)
+        x = range(len(all_true))
+        plt.plot(x, all_true, 'b-', label='Actual', alpha=0.7)
+        plt.plot(x, all_pred, 'r--', label='Predicted', alpha=0.7)
+        plt.title(f'Price Predictions - {target_month}')
+        plt.xlabel('Hours')
+        plt.ylabel('Price (öre/kWh)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Error analysis
+        plt.subplot(2, 1, 2)
+        errors = np.array(all_pred) - np.array(all_true)
+        plt.plot(x, errors, 'g-', label='Prediction Error', alpha=0.7)
+        plt.axhline(y=0, color='r', linestyle='--', alpha=0.5)
+        plt.fill_between(x, 0, errors, alpha=0.2)
+        plt.title('Prediction Errors')
+        plt.xlabel('Hours')
+        plt.ylabel('Error (öre/kWh)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.show()
     
-    # Plot the rolling forecast together with the actual data
-    plt.figure(figsize=(15, 6))
-    plt.step(forecast_times, actual_inv, 'b-', label='Actual')
-    plt.step(forecast_times, forecast_inv, 'r--', label='Rolling Forecast')
-    plt.title(f'Iterative 1-Hour Rolling Forecast for {target_date.strftime("%Y-%m-%d")}')
-    plt.xlabel('Time')
-    plt.ylabel('Price (öre/kWh)')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.show()
+    def _plot_daily_metrics_trends(self, daily_metrics):
+        """Plot trends in daily metrics"""
+        df_metrics = pd.DataFrame(daily_metrics)
+        df_metrics['date'] = pd.to_datetime(df_metrics['date'])
+        
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        fig.suptitle('Daily Metrics Trends')
+        
+        # MAPE trend
+        axes[0, 0].plot(df_metrics['date'], df_metrics['mape'], 'b-')
+        axes[0, 0].set_title('MAPE')
+        axes[0, 0].set_xlabel('Date')
+        axes[0, 0].set_ylabel('MAPE (%)')
+        axes[0, 0].grid(True, alpha=0.3)
+        
+        # RMSE trend
+        axes[0, 1].plot(df_metrics['date'], df_metrics['rmse'], 'r-')
+        axes[0, 1].set_title('RMSE')
+        axes[0, 1].set_xlabel('Date')
+        axes[0, 1].set_ylabel('RMSE (öre/kWh)')
+        axes[0, 1].grid(True, alpha=0.3)
+        
+        # Bias trend
+        axes[1, 0].plot(df_metrics['date'], df_metrics['bias'], 'g-')
+        axes[1, 0].set_title('Bias')
+        axes[1, 0].set_xlabel('Date')
+        axes[1, 0].set_ylabel('Bias (öre/kWh)')
+        axes[1, 0].grid(True, alpha=0.3)
+        
+        # R² trend
+        axes[1, 1].plot(df_metrics['date'], df_metrics['r2'], 'm-')
+        axes[1, 1].set_title('R²')
+        axes[1, 1].set_xlabel('Date')
+        axes[1, 1].set_ylabel('R²')
+        axes[1, 1].grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.show()
     
-    # Print the forecasted values alongside actual values
-    print("Time\t\tActual\tForecast")
-    for t, act, pred in zip(forecast_times, actual_inv, forecast_inv):
-        print(f"{t}: {act:.2f} öre/kWh vs {pred:.2f} öre/kWh")
+    def _print_metrics(self, metrics, title="Model Metrics"):
+        """Print formatted metrics"""
+        print(f"\n=== {title} ===")
+        print(f"MAE: {metrics['mae']:.2f} öre/kWh")
+        print(f"RMSE: {metrics['rmse']:.2f} öre/kWh")
+        print(f"MAPE: {metrics['mape']:.2f}%")
+        print(f"R²: {metrics['r2']:.4f}")
+        print(f"Bias: {metrics['bias']:.2f} öre/kWh")
+        print(f"Std Error: {metrics['std_error']:.2f} öre/kWh")
+        print(f"Max Error: {metrics['max_error']:.2f} öre/kWh")
+        print(f"Correlation: {metrics['correlation']:.4f}")
 
+def main():
+    # Create evaluator instance
+    evaluator = PriceModelEvaluator()
+    
+    # Predict next week's prices
+    print("\nPredicting next week's prices...")
+    next_week_predictions = evaluator.predict_next_week()
 
-
-# Example usage:
-predict_single_day("2024-01-20")
-
-predict_month("2024-01")
-
-predict_rolling_forecast("2023-10-22", horizon=24)
+if __name__ == "__main__":
+    main()

@@ -14,7 +14,8 @@ project_root = str(Path(__file__).resolve().parents[3])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from src.predictions.prices.feature_config import feature_config
+from src.predictions.prices.gather_data import FeatureConfig
+feature_config = FeatureConfig()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -401,17 +402,194 @@ class PricePredictor:
         for date, avg_price in daily_avg.items():
             print(f"{date.strftime('%Y-%m-%d')}: {avg_price:.2f} öre/kWh")
 
+    def predict_next_week(self):
+        """Predict prices for the next week starting from tomorrow"""
+        logging.info("Preparing next week predictions...")
+        
+        # Get start and end dates
+        tomorrow = pd.Timestamp.now().normalize() + pd.Timedelta(days=1)
+        end_date = tomorrow + pd.Timedelta(days=7)
+        
+        logging.info(f"Predicting prices from {tomorrow.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        
+        # Get required features in correct order
+        feature_cols = self.feature_config.get_ordered_features()
+        
+        # Prepare initial window
+        window_data = self._prepare_prediction_window(tomorrow)
+        current_window = window_data.reshape(1, self.window_size, len(feature_cols))
+        
+        # Generate predictions for each hour
+        predictions = []
+        prediction_times = pd.date_range(tomorrow, end_date, freq='H', inclusive='left')
+        
+        for current_time in prediction_times:
+            # Get prediction for next 24 hours
+            pred = self.model.predict(current_window, verbose=0)[0]
+            next_hour_pred = pred[0]  # Take only the next hour
+            predictions.append(next_hour_pred)
+            
+            # Update the window for next prediction
+            new_row = self._create_feature_row(current_time, next_hour_pred)
+            
+            # Shift window and add new row
+            current_window = np.roll(current_window, -1, axis=1)
+            current_window[0, -1] = new_row
+        
+        # Inverse transform predictions
+        dummy_pred = np.zeros((len(predictions), len(self.price_scaler.scale_)))
+        dummy_pred[:, 0] = predictions
+        predictions_inv = self.price_scaler.inverse_transform(dummy_pred)[:, 0]
+        
+        # Create results DataFrame
+        results = pd.DataFrame({
+            'timestamp': prediction_times,
+            'price': predictions_inv
+        }).set_index('timestamp')
+        
+        # Plot predictions
+        self._plot_week_prediction(results)
+        
+        # Print summary statistics
+        print("\n=== Next Week Price Predictions ===")
+        print(f"Period: {tomorrow.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        print(f"Mean Price: {results['price'].mean():.2f} öre/kWh")
+        print(f"Min Price: {results['price'].min():.2f} öre/kWh")
+        print(f"Max Price: {results['price'].max():.2f} öre/kWh")
+        
+        # Print daily averages
+        print("\nDaily Averages:")
+        daily_avg = results.resample('D')['price'].mean()
+        for date, price in daily_avg.items():
+            print(f"{date.strftime('%Y-%m-%d')}: {price:.2f} öre/kWh")
+        
+        return results
+    
+    def _prepare_prediction_window(self, start_time):
+        """Prepare the initial window for prediction"""
+        window_start = start_time - pd.Timedelta(hours=self.window_size)
+        window_data = self.df[window_start:start_time].copy()
+        
+        if len(window_data) < self.window_size:
+            raise ValueError(f"Insufficient historical data. Need at least {self.window_size} hours.")
+        
+        # Scale price features
+        price_cols = self.feature_config.price_cols
+        window_data[price_cols] = self.price_scaler.transform(window_data[price_cols])
+        
+        # Scale grid features
+        grid_cols = self.feature_config.grid_cols
+        window_data[grid_cols] = self.grid_scaler.transform(window_data[grid_cols])
+        
+        # Get features in correct order
+        ordered_features = self.feature_config.get_ordered_features()
+        return window_data[ordered_features].values[-self.window_size:]
+    
+    def _create_feature_row(self, timestamp, predicted_price):
+        """Create a feature row for the next prediction"""
+        feature_cols = self.feature_config.get_ordered_features()
+        new_row = np.zeros(len(feature_cols))
+        
+        # Update price features
+        price_features = np.zeros(len(self.feature_config.price_cols))
+        price_features[0] = predicted_price  # Current price
+        
+        # Calculate rolling statistics if we have predictions
+        if hasattr(self, '_recent_predictions'):
+            self._recent_predictions.append(predicted_price)
+            if len(self._recent_predictions) > 168:  # Keep only last week
+                self._recent_predictions.pop(0)
+            
+            price_features[1] = np.mean(self._recent_predictions[-24:])  # 24h avg
+            price_features[2] = np.mean(self._recent_predictions)  # 168h avg
+            price_features[3] = np.std(self._recent_predictions[-24:])  # 24h std
+            price_features[4] = np.mean(self._recent_predictions)  # hour avg (simplified)
+            price_features[5] = predicted_price / price_features[4] if price_features[4] != 0 else 1
+        else:
+            self._recent_predictions = [predicted_price]
+            # Use the last known values from historical data for initial predictions
+            last_known = self.df.iloc[-1]
+            price_features[1:] = [
+                last_known['price_24h_avg'],
+                last_known['price_168h_avg'],
+                last_known['price_24h_std'],
+                last_known['hour_avg_price'],
+                predicted_price / last_known['hour_avg_price'] if last_known['hour_avg_price'] != 0 else 1
+            ]
+        
+        # Scale price features
+        price_features = self.price_scaler.transform(price_features.reshape(1, -1))[0]
+        new_row[:len(price_features)] = price_features
+        
+        # Update time features
+        hour = timestamp.hour
+        day_of_week = timestamp.dayofweek
+        month = timestamp.month
+        
+        # Cyclical features
+        cyclical_start = len(self.feature_config.price_cols)
+        new_row[cyclical_start:cyclical_start+6] = [
+            np.sin(2 * np.pi * hour / 24),
+            np.cos(2 * np.pi * hour / 24),
+            np.sin(2 * np.pi * day_of_week / 7),
+            np.cos(2 * np.pi * day_of_week / 7),
+            np.sin(2 * np.pi * month / 12),
+            np.cos(2 * np.pi * month / 12)
+        ]
+        
+        # Binary features
+        binary_start = cyclical_start + len(self.feature_config.cyclical_cols)
+        new_row[binary_start] = 1 if 6 <= hour <= 22 else 0  # is_peak_hour
+        new_row[binary_start+1] = 1 if day_of_week >= 5 else 0  # is_weekend
+        new_row[binary_start+2] = 0  # is_holiday (simplified)
+        new_row[binary_start+3] = 0  # is_holiday_eve (simplified)
+        new_row[binary_start+4] = (  # season
+            -1 if month in [12, 1, 2] else  # winter
+            1 if 6 <= month <= 8 else  # summer
+            0  # spring/fall
+        )
+        
+        # Grid features (use last known values)
+        grid_start = binary_start + len(self.feature_config.binary_cols)
+        last_grid = self.df[self.feature_config.grid_cols].iloc[-1].values
+        new_row[grid_start:] = last_grid
+        
+        return new_row
+    
+    def _plot_week_prediction(self, predictions):
+        """Plot detailed week prediction"""
+        plt.figure(figsize=(15, 10))
+        
+        # Price predictions
+        plt.subplot(2, 1, 1)
+        plt.plot(predictions.index, predictions['price'], 'b-', label='Predicted Price')
+        plt.title('Week Price Predictions')
+        plt.xlabel('Time')
+        plt.ylabel('Price (öre/kWh)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.xticks(rotation=45)
+        
+        # Daily averages
+        plt.subplot(2, 1, 2)
+        daily_avg = predictions.resample('D')['price'].mean()
+        plt.bar(daily_avg.index, daily_avg.values, alpha=0.7)
+        plt.title('Daily Average Prices')
+        plt.xlabel('Date')
+        plt.ylabel('Average Price (öre/kWh)')
+        plt.grid(True, alpha=0.3)
+        plt.xticks(rotation=45)
+        
+        plt.tight_layout()
+        plt.show()
+
 def main():
+    # Create predictor instance
     predictor = PricePredictor(window_size=168, apply_dampening=False)
     
-    # Example: Predict a single day
-    date = pd.Timestamp('2025-02-20')
-    print(f"\nPredicting prices for {date.date()}")
-    daily_predictions = predictor.predict_day(date)
-    
-    # Example: Predict a week (uncomment to use)
-    print(f"\nPredicting prices for week starting {date.date()}")
-    weekly_predictions = predictor.predict_range(date, date + pd.Timedelta(days=7))
+    # Predict next week's prices
+    print("\nPredicting next week's prices...")
+    next_week_predictions = predictor.predict_next_week()
 
 if __name__ == "__main__":
     main()

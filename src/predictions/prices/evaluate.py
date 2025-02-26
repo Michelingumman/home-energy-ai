@@ -211,12 +211,12 @@ class PriceModelEvaluator:
         plt.subplot(2, 1, 1)
         plt.plot(predictions.index, predictions['price'], 'b-', label='Predicted Price')
         plt.title(f'Week Price Predictions Starting {start_date.strftime("%Y-%m-%d")}')
-        plt.xlabel('Time')
-        plt.ylabel('Price (öre/kWh)')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        plt.xticks(rotation=45)
-        
+    plt.xlabel('Time')
+    plt.ylabel('Price (öre/kWh)')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.xticks(rotation=45)
+
         # Daily averages
         plt.subplot(2, 1, 2)
         daily_avg = predictions.resample('D')['price'].mean()
@@ -226,10 +226,10 @@ class PriceModelEvaluator:
         plt.ylabel('Average Price (öre/kWh)')
         plt.grid(True, alpha=0.3)
         plt.xticks(rotation=45)
-        
-        plt.tight_layout()
-        plt.show()
-    
+
+    plt.tight_layout()
+    plt.show()
+
     def calculate_metrics(self, y_true, y_pred):
         """Calculate comprehensive error metrics"""
         metrics = {}
@@ -289,22 +289,22 @@ class PriceModelEvaluator:
     
     def evaluate_single_day(self, target_date):
         """Detailed evaluation for a single day"""
-        target_date = pd.to_datetime(target_date)
+    target_date = pd.to_datetime(target_date)
         logging.info(f"Evaluating predictions for: {target_date.strftime('%Y-%m-%d')}")
         
         # Find matching sample
-        target_day_start = pd.Timestamp(target_date.date())
-        target_day_end = target_day_start + pd.Timedelta(days=1)
+    target_day_start = pd.Timestamp(target_date.date())
+    target_day_end = target_day_start + pd.Timedelta(days=1)
         matching_mask = (self.timestamps >= target_day_start) & (self.timestamps < target_day_end)
-        matching_indices = np.where(matching_mask)[0]
+    matching_indices = np.where(matching_mask)[0]
         
-        if len(matching_indices) == 0:
+    if len(matching_indices) == 0:
             logging.error(f"No predictions found for {target_date.strftime('%Y-%m-%d')}")
-            return
-        
+        return
+    
         # Get midnight sample if available
         day_timestamps = self.timestamps[matching_indices]
-        midnight_mask = day_timestamps.hour == 0
+    midnight_mask = day_timestamps.hour == 0
         sample_index = matching_indices[midnight_mask.argmax() if midnight_mask.any() else 0]
         
         # Make prediction
@@ -410,7 +410,7 @@ class PriceModelEvaluator:
         """Plot detailed day prediction"""
         hours = pd.date_range(start_time, periods=24, freq='h')
         
-        plt.figure(figsize=(15, 6))
+    plt.figure(figsize=(15, 6))
         plt.step(hours, y_true, 'b-', label='Actual', where='post')
         plt.step(hours, y_pred, 'r--', label='Predicted', where='post')
         
@@ -424,13 +424,13 @@ class PriceModelEvaluator:
                         label='Under-prediction')
         
         plt.title(f'24-Hour Price Prediction - {start_time.strftime("%Y-%m-%d")}')
-        plt.xlabel('Time')
-        plt.ylabel('Price (öre/kWh)')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.show()
+    plt.xlabel('Time')
+    plt.ylabel('Price (öre/kWh)')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
     
     def _plot_monthly_predictions(self, all_true, all_pred, target_month):
         """Plot monthly predictions with additional analysis"""

@@ -59,28 +59,31 @@ sensor.solar_production,1234.5,2024-02-24 10:15:00
 
 ### Generating Predictions
 
-Run the prediction script to generate predictions for today or a specific date (cannot be historic dates). You can specify the date in either YYYYMMDD or YYYY-MM-DD format, and optionally specify the number of days to predict (1-8 days):
+Run the prediction script to generate predictions for today or a specific date (cannot be historic dates). You can specify the date in either YYYYMMDD or YYYY-MM-DD format, and optionally specify the forecast horizon (1-8 days):
 
 ```bash
-# Generate predictions for today (default 7 days)
+# Generate predictions for today (only today's data will be stored)
 python prediction.py
 
 # Generate predictions for a specific date (YYYYMMDD format)
-python prediction.py 20250227        # 7 days starting from Feb 27, 2025
-python prediction.py 20250227 1      # 1 day starting from Feb 27, 2025
-python prediction.py 20250227 3      # 3 days starting from Feb 27, 2025
+python prediction.py 20250227        # Only Feb 27, 2025 data will be stored
+
+# Generate predictions for a specific date with custom horizon
+python prediction.py 20250227 3      # Only Feb 27, 2025 data will be stored,
+                                    # but API will fetch 3 days of data
 
 # Generate predictions for a specific date (YYYY-MM-DD format)
-python prediction.py 2025-02-27      # 7 days starting from Feb 27, 2025
-python prediction.py 2025-02-27 1    # 1 day starting from Feb 27, 2025
-python prediction.py 2025-02-27 3    # 3 days starting from Feb 27, 2025
+python prediction.py 2025-02-27      # Only Feb 27, 2025 data will be stored
 ```
 
 The script will:
-1. Accept the date in either format
+1. Accept the date in either format (YYYYMMDD or YYYY-MM-DD)
 2. Accept an optional horizon window (1-8 days, default is 7)
-3. Generate predictions for the specified number of days
-4. Save the results in the data/ directory with the format YYYYMMDD.csv
+3. Query the forecast.solar API for predictions over the specified horizon
+4. **Filter and save only the data for the requested date**
+5. Save the results in the data/ directory with the format YYYYMMDD.csv
+
+> Note: The horizon parameter only affects how far ahead the API looks for predictions. Regardless of the horizon value, only data for the specified date will be saved to the CSV file.
 
 ### Visualizing Predictions and Actual Production
 

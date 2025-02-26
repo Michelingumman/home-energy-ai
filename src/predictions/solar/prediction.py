@@ -222,7 +222,7 @@ class SolarPrediction:
         
         return None
     
-    def run_prediction(self, output_dir=None, start="now", days_horizon=7, resolution_minutes=60):
+    def run_prediction(self, output_dir=None, start="now", days_horizon=1, resolution_minutes=60):
         """
         Run the prediction process and save results to CSV.
         
@@ -233,7 +233,7 @@ class SolarPrediction:
             resolution_minutes: Time resolution in minutes (15, 30, or 60)
         
         Returns:
-            DataFrame with hourly energy predictions
+            Dictionary of DataFrames with hourly energy predictions for each date
         """
         # Get panel groups
         panel_groups = self.get_panel_groups()
@@ -260,26 +260,54 @@ class SolarPrediction:
         combined_df = self.combine_predictions(predictions)
         
         if combined_df is not None:
-            # Print the predictions
-            print("\nHourly Energy Production (kWh):")
-            print(combined_df[['kilowatt_hours']])
+            # Parse the start date to determine the requested date
+            if start == "now":
+                start_date = datetime.datetime.now().date()
+            else:
+                # Handle both YYYY-MM-DD and datetime objects
+                if isinstance(start, str):
+                    start_date = datetime.datetime.strptime(start, "%Y-%m-%d").date()
+                else:
+                    start_date = start.date()
             
-            # Save to CSV with date-based filename
-            if output_dir:
-                # Create data directory if it doesn't exist
-                output_dir.mkdir(parents=True, exist_ok=True)
-                
-                # Get the start date from the DataFrame for the filename
-                start_date = combined_df.index[0].strftime("%Y%m%d")
-                
-                # Create filename with just the start date
-                filename = f"{start_date}.csv"
-                csv_path = output_dir / filename
-                
-                combined_df.to_csv(csv_path)
-                print(f"Predictions saved to {csv_path}")
+            # Create a dictionary to store DataFrames for each date
+            date_dfs = {}
             
-            return combined_df
+            # Get all unique dates in the prediction
+            unique_dates = pd.Series(combined_df.index.date).unique()
+            
+            # Ensure we're only processing the requested number of days
+            # If we have more dates than requested, trim to the first 'days_horizon' days
+            if len(unique_dates) > days_horizon:
+                unique_dates = unique_dates[:days_horizon]
+            
+            print(f"\nProcessing {len(unique_dates)} days of predictions:")
+            
+            # Process each date
+            for date in unique_dates:
+                date_mask = combined_df.index.date == date
+                date_df = combined_df[date_mask]
+                
+                if not date_df.empty:
+                    date_dfs[date] = date_df
+                    print(f"\nHourly Energy Production (kWh) for {date}:")
+                    print(date_df[['kilowatt_hours']])
+                    
+                    # Save to CSV with date-based filename
+                    if output_dir:
+                        # Create data directory if it doesn't exist
+                        output_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        # Format the date for the filename
+                        filename = f"{date.strftime('%Y%m%d')}.csv"
+                        csv_path = output_dir / filename
+                        
+                        date_df.to_csv(csv_path)
+                        print(f"Predictions for {date} saved to {csv_path}")
+                else:
+                    print(f"No prediction data available for {date}.")
+            
+            return date_dfs
         else:
             print("Failed to get predictions.")
             return None
@@ -296,37 +324,53 @@ def main():
             date_str = sys.argv[1].replace('-', '')
             # Convert to YYYY-MM-DD format for the API
             start_date = datetime.datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
+            print(f"Starting predictions from: {start_date}")
         else:
             # Use today's date
             start_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            print(f"Starting predictions from today: {start_date}")
             
-        # Get the horizon window from command line argument or use default
-        days_horizon = 7  # Default to 7 days
+        # Get the horizon window from command line argument or use default (1 day)
+        days_horizon = 1  # Default to 1 day if not specified
         if len(sys.argv) > 2:
             try:
                 days_horizon = int(sys.argv[2])
                 if days_horizon < 1 or days_horizon > 8:
                     raise ValueError("Horizon must be between 1 and 8 days")
+                print(f"Calculating predictions for {days_horizon} days")
             except ValueError as e:
                 print(f"Error: Invalid horizon value. {str(e)}")
                 print("Please specify a number between 1 and 8 days.")
                 return
+        else:
+            print(f"Using default horizon: {days_horizon} day")
+        
+        # Show date range that will be processed
+        start_datetime = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+        end_datetime = start_datetime + datetime.timedelta(days=days_horizon-1)
+        print(f"Date range: {start_datetime.strftime('%Y-%m-%d')} to {end_datetime.strftime('%Y-%m-%d')}")
+        print(f"A separate CSV file will be created for each day in this range.")
         
         # Initialize solar prediction with config file
         solar = SolarPrediction(config_path=config_path)
         
         # Run prediction with specific parameters
-        df = solar.run_prediction(
+        date_dfs = solar.run_prediction(
             output_dir=data_dir,
             start=start_date,  # Use the formatted date
             days_horizon=days_horizon,  # Use specified or default horizon
             resolution_minutes=60
         )
         
+        if date_dfs:
+            print(f"\nSummary: Generated predictions for {len(date_dfs)} days:")
+            for date, df in date_dfs.items():
+                print(f"  - {date}: {len(df)} hourly values, saved to {data_dir / date.strftime('%Y%m%d')}.csv")
+        
     except ValueError as e:
         print(f"Error: Invalid date format. Please use YYYYMMDD or YYYY-MM-DD format.")
         print(f"Example: python prediction.py 20250227 [days] or python prediction.py 2025-02-27 [days]")
-        print(f"Where [days] is optional and must be between 1 and 8 (default is 7)")
+        print(f"Where [days] is optional and specifies the number of days to predict (default is 1)")
     except Exception as e:
         print(f"Error running solar prediction: {e}")
 

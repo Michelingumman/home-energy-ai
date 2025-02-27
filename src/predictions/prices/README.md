@@ -9,16 +9,16 @@ The price prediction system uses an LSTM-based neural network to forecast electr
 ## Key Components
 
 - `predictions.py`: Main prediction class for making forecasts
-- `train.py`: Model training pipeline
-- `evaluate.py`: Tools for evaluating model performance
-- `feature_config.py`: Configuration for features and model architecture
-- `gather_price_data.py`: Script for fetching and updating historical price data
+- `train.py`: Model training pipeline with support for both evaluation and production models
+- `evaluate.py`: Comprehensive model evaluation with automated visualizations
+- `config.json`: Configuration for features and model architecture
+- `gather_data.py`: Scripts for fetching and updating historical price and grid data
 
 ## Features Used
 
 - Historical price data (SE3 region)
 - Time-based features (hour, day, month, seasonality)
-- Grid condition data
+- Grid condition data (production, consumption, imports/exports)
 - Holiday information
 - Rolling statistics (24h and 168h averages, standard deviations)
 
@@ -27,7 +27,7 @@ The price prediction system uses an LSTM-based neural network to forecast electr
 - Architecture: LSTM-based neural network
 - Input: 168-hour (1 week) historical window
 - Output: 24-hour price predictions
-- Training data: Hourly prices from 1999-06-30 onwards
+- Training data: Hourly prices and grid data
 - Features are scaled using RobustScaler to handle price spikes
 
 ## Usage
@@ -41,42 +41,68 @@ from predictions import PricePredictor
 predictor = PricePredictor()
 
 # Predict next 24 hours
-predictions = predictor.predict_day("2024-02-20")
+predictions = predictor.predict_day()
 
-# Get predictions for a specific month
-monthly_predictions = predictor.predict_month("2024-02")
+# Predict the coming week
+weekly_predictions = predictor.predict_week()
+
+# Get predictions for a specific date range
+custom_predictions = predictor.predict_range("2024-02-20", "2024-02-27")
 ```
 
 ### Evaluation
 
-```python
-from evaluate import predict_single_day, predict_month, predict_rolling_forecast
+The evaluation system now provides a comprehensive, automatic analysis without requiring command-line arguments:
 
-# Evaluate a single day
-predict_single_day("2024-02-20")
-
-# Evaluate an entire month
-predict_month("2024-02")
-
-# Evaluate with rolling forecasts
-predict_rolling_forecast("2024-02-20", horizon=24)
+```bash
+# Run the comprehensive evaluation
+python evaluate.py
 ```
+
+This generates three focused visualization figures:
+
+1. **Time Period Analysis** (`time_period_analysis.png`):
+   - Full test period overview
+   - Yearly performance comparisons
+   - Monthly price patterns
+   - Weekly detail with weekend highlights
+
+2. **Day Analysis** (`day_comparison.png`):
+   - Representative day comparisons (low price, high price, volatile)
+   - Detailed hourly patterns for each day type
+
+3. **Error Analysis** (`error_analysis.png`):
+   - Error distribution and statistics
+   - Error patterns by hour of day
+   - Residual analysis
+   - Actual vs. predicted scatter plots
+
+All results are automatically saved to `models/evaluation/results/comprehensive_evaluation/` along with detailed metrics in both visual and text formats.
 
 ## Data Updates
 
-The system automatically updates price data using the mgrey.se API. New data is fetched and processed when running `gather_price_data.py`.
+The system automatically updates price and grid data using external APIs:
+- Electricity price data from mgrey.se API
+- Grid data from Electricity Maps API
+
+Data is fetched and processed when running `gather_data.py`.
 
 ## Performance Metrics
 
 The model's performance is evaluated using:
-- MAPE (Mean Absolute Percentage Error)
+- MAE (Mean Absolute Error)
 - RMSE (Root Mean Square Error)
+- MAPE (Mean Absolute Percentage Error)
+- R² (Coefficient of Determination)
+- Error bias and distribution analysis
+- Time-based performance (yearly, monthly, hourly)
 
 ## Dependencies
 
-- TensorFlow
+- TensorFlow (2.x)
 - Pandas
 - NumPy
 - Scikit-learn
 - Joblib
-- Matplotlib 
+- Matplotlib
+- Seaborn 

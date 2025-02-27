@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 import argparse
+import datetime
 
 # Configure TensorFlow to use available CPU instructions
 try:
@@ -52,8 +53,39 @@ class PriceModelTrainer:
         
         # Setup project paths
         self.project_root = Path(__file__).resolve().parents[3]
-        self.models_dir = self.project_root / "models/saved"
-        self.test_data_dir = self.project_root / "models/test_data"
+        
+        # Model directory paths
+        # Models directory structure:
+        # models/
+        #   ├── production/  - Production model (trained on all data)
+        #   │   ├── saved/   - Model files and scalers
+        #   │   └── logs/    - TensorBoard logs
+        #   └── evaluation/  - Evaluation model (with test split)
+        #       ├── saved/   - Model files and scalers
+        #       ├── logs/    - TensorBoard logs
+        #       └── test_data/ - Test data for evaluation
+        self.models_dir = Path(__file__).resolve().parent / "models"
+        
+        # Create specific paths based on training mode
+        if self.train_from_all_data:
+            # Production model paths
+            self.model_dir = self.models_dir / "production"
+            self.saved_dir = self.model_dir / "saved"
+            self.logs_dir = self.model_dir / "logs"
+            self.model_name = "price_model_production.keras"
+        else:
+            # Evaluation model paths
+            self.model_dir = self.models_dir / "evaluation"
+            self.saved_dir = self.model_dir / "saved"
+            self.logs_dir = self.model_dir / "logs"
+            self.test_data_dir = self.model_dir / "test_data"
+            self.model_name = "price_model_evaluation.keras"
+        
+        # Create directories
+        self.saved_dir.mkdir(parents=True, exist_ok=True)
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        if not self.train_from_all_data:
+            self.test_data_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize scalers based on type
         self.scaler_type = scaler_type
@@ -358,18 +390,12 @@ class PriceModelTrainer:
         # Get callback parameters
         callback_params = self.feature_config.get_callback_params()
         
-        # Determine model and data paths based on training mode
-        model_suffix = "_production" if self.train_from_all_data else ""
-        scaler_suffix = "_production" if self.train_from_all_data else ""
-        
         # Save scalers
-        self.models_dir.mkdir(parents=True, exist_ok=True)
-        joblib.dump(self.price_scaler, self.models_dir / f'price_scaler{scaler_suffix}.save')
-        joblib.dump(self.grid_scaler, self.models_dir / f'grid_scaler{scaler_suffix}.save')
+        joblib.dump(self.price_scaler, self.saved_dir / 'price_scaler.save')
+        joblib.dump(self.grid_scaler, self.saved_dir / 'grid_scaler.save')
         
         if not self.train_from_all_data:
             # Save test data for evaluation
-            self.test_data_dir.mkdir(parents=True, exist_ok=True)
             train_split = int(len(timestamps) * self.feature_config.data_split["train_ratio"])
             val_split = int(len(timestamps) * (
                 self.feature_config.data_split["train_ratio"] + 
@@ -379,12 +405,19 @@ class PriceModelTrainer:
             np.save(self.test_data_dir / 'X_test.npy', X_test)
             np.save(self.test_data_dir / 'y_test.npy', y_test)
             np.save(self.test_data_dir / 'test_timestamps.npy', timestamps[val_split:])
+            
+            # Save validation data for quick evaluation later
+            np.save(self.test_data_dir / 'X_val.npy', X_val)
+            np.save(self.test_data_dir / 'y_val.npy', y_val)
+            np.save(self.test_data_dir / 'val_timestamps.npy', timestamps[train_split:val_split])
         
         logging.info("Building model...")
         self.model = self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
         
         # Configure callbacks
-        model_checkpoint_path = self.models_dir / f'price_model{model_suffix}.keras'
+        model_checkpoint_path = self.saved_dir / self.model_name
+        log_dir = self.logs_dir / datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        
         callbacks = [
             EarlyStopping(
                 monitor=callback_params["early_stopping"]["monitor"],
@@ -404,10 +437,19 @@ class PriceModelTrainer:
                 patience=callback_params["reduce_lr"]["patience"],
                 min_lr=callback_params["reduce_lr"]["min_lr"],
                 mode='min'
+            ),
+            tf.keras.callbacks.TensorBoard(
+                log_dir=log_dir,
+                histogram_freq=1,
+                write_graph=True
             )
         ]
         
-        logging.info(f"Training {'production' if self.train_from_all_data else 'evaluation'} model...")
+        model_type = 'production' if self.train_from_all_data else 'evaluation'
+        logging.info(f"Training {model_type} model...")
+        logging.info(f"Model will be saved to: {model_checkpoint_path}")
+        logging.info(f"TensorBoard logs: {log_dir}")
+        
         history = self.model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),
@@ -418,36 +460,108 @@ class PriceModelTrainer:
         )
         
         # Plot training history
-        self.plot_training_history(history)
+        self.plot_training_history(history, model_type)
+        
+        # Save the history for later reference
+        history_df = pd.DataFrame(history.history)
+        history_df.to_csv(self.saved_dir / f'training_history.csv')
+        
+        # If it's an evaluation model, run a quick evaluation
+        if not self.train_from_all_data and X_test is not None:
+            self.quick_evaluation(X_test, y_test)
         
         return history
-
     
-    def plot_training_history(self, history):
-        """Plot training history"""
+    def quick_evaluation(self, X_test, y_test):
+        """Run a quick evaluation on test data and save results"""
+        logging.info("\nRunning quick evaluation on test data...")
+        
+        # Predict on test data
+        y_pred = self.model.predict(X_test)
+        
+        # Calculate metrics
+        test_loss = self.model.evaluate(X_test, y_test, verbose=0)
+        
+        # Create a small sample for visualization (first 5 test examples)
+        sample_size = min(5, len(X_test))
+        
+        fig, axes = plt.subplots(sample_size, 1, figsize=(15, 5*sample_size))
+        
+        # If only one sample, axes is not iterable
+        if sample_size == 1:
+            axes = [axes]
+        
+        # Plot each sample
+        for i in range(sample_size):
+            # Get the true and predicted values
+            true_vals = y_test[i]
+            pred_vals = y_pred[i]
+            
+            # Reshape for inverse transform
+            true_dummy = np.zeros((len(true_vals), len(self.price_scaler.scale_)))
+            true_dummy[:, 0] = true_vals
+            pred_dummy = np.zeros((len(pred_vals), len(self.price_scaler.scale_)))
+            pred_dummy[:, 0] = pred_vals
+            
+            # Inverse transform
+            true_inv = self.price_scaler.inverse_transform(true_dummy)[:, 0]
+            pred_inv = self.price_scaler.inverse_transform(pred_dummy)[:, 0]
+            
+            # Plot
+            hours = range(len(true_vals))
+            axes[i].plot(hours, true_inv, 'b-', label='Actual', linewidth=2)
+            axes[i].plot(hours, pred_inv, 'r--', label='Predicted', linewidth=2)
+            axes[i].set_title(f'Test Sample {i+1}')
+            axes[i].set_xlabel('Hours')
+            axes[i].set_ylabel('Price (öre/kWh)')
+            axes[i].legend()
+            axes[i].grid(True)
+        
+        plt.tight_layout()
+        plt.savefig(self.saved_dir / 'quick_evaluation.png')
+        plt.close()
+        
+        logging.info("Quick evaluation complete. Saved to quick_evaluation.png")
+        logging.info(f"Test Loss: {test_loss[0]:.4f}")
+        
+        # Save more detailed metrics
+        metrics = {
+            'test_loss': test_loss[0],
+            'test_mae': test_loss[1] if len(test_loss) > 1 else None
+        }
+        
+        # Save metrics to file
+        with open(self.saved_dir / 'test_metrics.txt', 'w') as f:
+            for key, value in metrics.items():
+                f.write(f"{key}: {value}\n")
+
+    def plot_training_history(self, history, model_type=''):
+        """Plot and save training history"""
         plt.figure(figsize=(15, 5))
         
         # Plot loss
         plt.subplot(1, 2, 1)
         plt.plot(history.history['loss'], label='Training Loss')
         plt.plot(history.history['val_loss'], label='Validation Loss')
-        plt.title('Model Loss')
+        plt.title(f'{model_type.capitalize()} Model - Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.legend()
         plt.grid(True)
         
-        # # Plot MAE
-        # plt.subplot(1, 2, 2)
-        # plt.plot(history.history['mae'], label='Training MAE')
-        # plt.plot(history.history['val_mae'], label='Validation MAE')
-        # plt.title('Model MAE')
-        # plt.xlabel('Epoch')
-        # plt.ylabel('MAE')
-        # plt.legend()
-        # plt.grid(True)
+        # Plot MAE if available
+        if 'mae' in history.history:
+            plt.subplot(1, 2, 2)
+            plt.plot(history.history['mae'], label='Training MAE')
+            plt.plot(history.history['val_mae'], label='Validation MAE')
+            plt.title(f'{model_type.capitalize()} Model - MAE')
+            plt.xlabel('Epoch')
+            plt.ylabel('MAE')
+            plt.legend()
+            plt.grid(True)
         
-        # plt.tight_layout()
+        plt.tight_layout()
+        plt.savefig(self.saved_dir / f'{model_type}_training_history.png')
         plt.show()
 
 def main():

@@ -20,9 +20,12 @@ def launch_tensorboard():
     # Remove all previous TensorBoard instances
     tf.keras.backend.clear_session()
     
+    # Get the path to the logs directory
+    logs_dir = Path(__file__).resolve().parent / "models/logs"
+    
     # Launch TensorBoard
     tb = program.TensorBoard()
-    tb.configure(argv=[None, '--logdir', 'models/logs'])
+    tb.configure(argv=[None, '--logdir', str(logs_dir)])
     url = tb.launch()
     print(f"\nTensorBoard started at {url}")
     print("Opening in default browser...")
@@ -30,17 +33,35 @@ def launch_tensorboard():
     return tb
 
 class ModelVisualizer:
-    def __init__(self):
-        # Setup paths
-        self.project_root = Path(__file__).parents[3]
-        self.models_dir = self.project_root / "models/saved"
-        self.plots_dir = self.project_root / "models/saved"
-        self.logs_dir = self.project_root / "models/logs"
+    def __init__(self, model_suffix="_production"):
+        """Initialize visualizer with model paths"""
+        # Setup project paths
+        self.project_root = Path(__file__).resolve().parents[3]
+        # Update models directory path to the new location
+        self.models_dir = Path(__file__).resolve().parent / "models/saved"
+        self.plots_dir = Path(__file__).resolve().parent / "models/saved"
+        self.logs_dir = Path(__file__).resolve().parent / "models/logs"
+        
+        # Model suffix for loading
+        self.model_suffix = model_suffix
         
         # Create directories if they don't exist
+        self.models_dir.mkdir(parents=True, exist_ok=True)
         self.plots_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         
+        # Try to load model
+        self._load_model()
+    
+    def _load_model(self):
+        """Load the model if available"""
+        try:
+            self.model = load_model(self.models_dir / f"price_model{self.model_suffix}.keras")
+            logging.info(f"Successfully loaded model from {self.models_dir / f'price_model{self.model_suffix}.keras'}")
+        except Exception as e:
+            logging.warning(f"Could not load model: {str(e)}")
+            self.model = None
+    
     def create_model(self):
         """Create the model architecture"""
         model = Sequential([
@@ -79,7 +100,7 @@ class ModelVisualizer:
                 tf.TensorSpec(shape=(None, 48, 9), dtype=tf.float32)).graph)
         
         logging.info(f"TensorBoard logs directory: {log_dir}")
-        logging.info("To view TensorBoard, run: tensorboard --logdir models/logs")
+        logging.info(f"To view TensorBoard, run: tensorboard --logdir {self.logs_dir}")
         
         return tensorboard_callback
     
@@ -106,14 +127,18 @@ class ModelVisualizer:
     def visualize_model(self, model=None, save=True, launch_tb=True):
         """Create visualization of the model architecture"""
         if model is None:
-            try:
-                # Try to load saved model
-                model = load_model(self.models_dir / "best_model.keras")
-                logging.info("Using saved model for visualization")
-            except:
-                # Create new model if loading fails
-                model = self.create_model()
-                logging.info("Using new model for visualization")
+            if self.model is not None:
+                model = self.model
+                logging.info("Using loaded model for visualization")
+            else:
+                try:
+                    # Try to load saved model
+                    model = load_model(self.models_dir / f"price_model{self.model_suffix}.keras")
+                    logging.info("Using saved model for visualization")
+                except:
+                    # Create new model if loading fails
+                    model = self.create_model()
+                    logging.info("Using new model for visualization")
         
         # Color scheme with proper format
         color_map = {
@@ -159,7 +184,7 @@ class ModelVisualizer:
             except Exception as e:
                 logging.error(f"Failed to launch TensorBoard: {str(e)}")
                 print("\nTo manually start TensorBoard, run:")
-                print("python -m tensorboard --logdir models/logs")
+                print(f"python -m tensorboard --logdir {self.logs_dir}")
         
         # Print model summary
         print("\nModel Summary:")

@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import numpy as np
 import os
-
+project_root = Path(__file__).resolve().parents[3]
 class FeatureConfig:
     def __init__(self):
         self.config_path = Path(__file__).parent / "config.json"
@@ -100,71 +100,71 @@ class FeatureConfig:
 
 def update_price_data(project_root):
     """Update the price data from the API and calculate features"""
-    csv_file_path = project_root / 'data' / 'processed' / 'SE3prices.csv'
+csv_file_path = project_root / 'data' / 'processed' / 'SE3prices.csv'
 
-    # Check if the file exists
-    if not csv_file_path.exists():
+# Check if the file exists
+if not csv_file_path.exists():
         df = pd.DataFrame(columns=['HourSE', 'PriceArea', 'SE3_price_ore'])
         latest_timestamp = pd.Timestamp('2020-01-01')  # Start from 2020 if no file exists
-    else:
-        # Read the existing CSV file
-        df = pd.read_csv(csv_file_path)
-        df['HourSE'] = pd.to_datetime(df['HourSE'])
-        latest_timestamp = df['HourSE'].max()
+else:
+    # Read the existing CSV file
+    df = pd.read_csv(csv_file_path)
+    df['HourSE'] = pd.to_datetime(df['HourSE'])
+    latest_timestamp = df['HourSE'].max()
 
-    # Get the current time
-    current_time = datetime.now()
-    new_data = []
+# Get the current time
+current_time = datetime.now()
+new_data = []
 
-    # Loop through missing hours until the present
-    while latest_timestamp < current_time:
-        latest_timestamp += timedelta(hours=1)
-        next_date_str = latest_timestamp.strftime('%Y-%m-%d')
-        next_hour_int = latest_timestamp.hour
-        next_hour_str = latest_timestamp.strftime('%H:00:00')
+# Loop through missing hours until the present
+while latest_timestamp < current_time:
+    latest_timestamp += timedelta(hours=1)
+    next_date_str = latest_timestamp.strftime('%Y-%m-%d')
+    next_hour_int = latest_timestamp.hour
+    next_hour_str = latest_timestamp.strftime('%H:00:00')
 
         # Fetch data from the API
-        api_url = f'https://mgrey.se/espot?format=json&date={next_date_str}'
-        response = requests.get(api_url)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if 'SE3' in data:
-                se3_data = data['SE3']
-                hour_data = next((item for item in se3_data if item['hour'] == next_hour_int), None)
-                
-                if hour_data:
-                    new_data.append({
-                        'HourSE': f'{next_date_str} {next_hour_str}',
-                        'PriceArea': 'SE3',
+    api_url = f'https://mgrey.se/espot?format=json&date={next_date_str}'
+    response = requests.get(api_url)
+    
+    if response.status_code == 200:
+        data = response.json()
+        if 'SE3' in data:
+            se3_data = data['SE3']
+            hour_data = next((item for item in se3_data if item['hour'] == next_hour_int), None)
+            
+            if hour_data:
+                new_data.append({
+                    'HourSE': f'{next_date_str} {next_hour_str}',
+                    'PriceArea': 'SE3',
                         'SE3_price_ore': hour_data['price_sek'],
-                    })
-                else:
-                    print(f"No data available for {next_date_str} {next_hour_str}")
+                })
             else:
-                print(f"No SE3 data available for {next_date_str}")
+                print(f"No data available for {next_date_str} {next_hour_str}")
         else:
+            print(f"No SE3 data available for {next_date_str}")
+    else:
             print(f"Failed to fetch price data for {next_date_str}. Status code: {response.status_code}")
             break
 
     # Update DataFrame with new data
-    if new_data:
-        new_df = pd.DataFrame(new_data)
-        new_df['HourSE'] = pd.to_datetime(new_df['HourSE'])
-        df = pd.concat([df, new_df], ignore_index=True)
-        df = df.sort_values(by="HourSE")
+if new_data:
+    new_df = pd.DataFrame(new_data)
+    new_df['HourSE'] = pd.to_datetime(new_df['HourSE'])
+    df = pd.concat([df, new_df], ignore_index=True)
+    df = df.sort_values(by="HourSE")
 
-        # Calculate features
-        df["price_24h_avg"] = df["SE3_price_ore"].rolling(window=24, min_periods=1).mean()
-        df["price_168h_avg"] = df["SE3_price_ore"].rolling(window=168, min_periods=1).mean()
-        df["price_24h_std"] = df["SE3_price_ore"].rolling(window=24, min_periods=1).std()
-        df["hour_avg_price"] = df.groupby(df["HourSE"].dt.hour)["SE3_price_ore"].transform("mean")
-        df["price_vs_hour_avg"] = df["SE3_price_ore"] / df["hour_avg_price"]
+    # Calculate features
+    df["price_24h_avg"] = df["SE3_price_ore"].rolling(window=24, min_periods=1).mean()
+    df["price_168h_avg"] = df["SE3_price_ore"].rolling(window=168, min_periods=1).mean()
+    df["price_24h_std"] = df["SE3_price_ore"].rolling(window=24, min_periods=1).std()
+    df["hour_avg_price"] = df.groupby(df["HourSE"].dt.hour)["SE3_price_ore"].transform("mean")
+    df["price_vs_hour_avg"] = df["SE3_price_ore"] / df["hour_avg_price"]
 
-        df.to_csv(csv_file_path, index=False)
-        print(f'Successfully added {len(new_data)} missing hourly price records and updated features.')
-    else:
-        print("Price data is already up-to-date.")
+    df.to_csv(csv_file_path, index=False)
+    print(f'Successfully added {len(new_data)} missing hourly price records and updated features.')
+else:
+    print("Price data is already up-to-date.")
 
 
 

@@ -19,7 +19,6 @@ class HolidayProcessor:
         
         # Create DataFrame with dates as index
         df = pd.DataFrame(index=dates)
-        
         # Add holiday features
         df['is_holiday'] = df.index.map(lambda x: x.date() in self.holidays).astype(int)
         df['is_holiday_eve'] = df.index.map(self._is_holiday_eve).astype(int)

@@ -1,6 +1,6 @@
 # Solar Production Prediction System
 
-This system predicts and visualizes solar energy production for a solar panel installation in Herrängen, Stockholm. It uses the [forecast.solar](https://forecast.solar/) API for predictions and can compare these predictions with actual production data fetchedfrom Home Assistant.
+This system predicts and visualizes solar energy production for a solar panel installation in Herrängen, Stockholm. It uses the [forecast.solar](https://forecast.solar/) API for predictions and can compare these predictions with actual production data from Home Assistant.
 
 ## System Overview
 
@@ -12,123 +12,139 @@ The solar prediction system consists of several components:
 
 ### Solar Panel Installation Specifications
 
-The system is configured for a specific installation with the following parameters gathered from the user:
+The system is configured for a specific installation with the following parameters:
 - Total Capacity: 20.3 kW
 - Panel Count: 50 panels
   - 30 panels facing Southeast
   - 20 panels facing Northwest
 - Individual Panel Power: 405W
 - Panel Tilt: 27 degrees
-- Azimuth: 50 degrees
-- Location: Herrängen, Stockholm (59.273..., 17.958...)
-- Shading Loss: 1%
+- Location: Herrängen, Stockholm
+
+### API Integration and Panel Grouping
+
+The system makes intelligent use of the forecast.solar API by:
+1. **Panel Grouping**: Panels are grouped by orientation
+   - Southeast group: 30 panels (12.15 kW total)
+   - Northwest group: 20 panels (8.1 kW total)
+
+2. **Multiple API Calls**: The system makes separate API calls for each panel group:
+   ```
+   /estimate/watthours/{lat}/{lon}/27/135/8.1    # Northwest panels
+   /estimate/watthours/{lat}/{lon}/27/-45/12.15  # Southeast panels
+   ```
+
+3. **Data Combination**: Results from both API calls are:
+   - Automatically aggregated by timestamp
+   - Combined to give total system production
+   - Handled for any duplicate timestamps
+   - Stored in a single CSV file per day
+
+This approach ensures accurate predictions by accounting for different sun exposure patterns for each panel orientation.
 
 ## Directory Structure
 
 ```
 solar/
-├── config.json          # Solar system
+├── config.json          # Solar system configuration
 ├── prediction.py        # Main prediction script
 ├── plot_solar.py        # Visualization script
 ├── data/                # Predicted data storage
-│   └── YYYYMMDD.csv     
+│   └── YYYYMMDD.csv     # Daily prediction files
 ├── actual/              # Actual production data
-│   └── YYYYMMDD.csv     
+│   └── YYYYMMDD.csv     # Daily actual data files
 └── images/              # Generated plots
-    └── YYYYMMDD.png     # Daily comparison plots
-```
-
-## File Formats
-
-### Prediction Data (data/YYYYMMDD.csv)
-```csv
-timestamp,watt_hours,kilowatt_hours
-2024-02-24 00:00:00,0.0,0.0
-2024-02-24 01:00:00,0.0,0.0
-...
-```
-
-### Actual Data (actual/YYYYMMDD.csv)
-```csv
-entity_id,state,last_changed
-sensor.solar_production,1234.5,2024-02-24 10:15:00
-...
+    └── YYYYMMDD/        # Date-based folders
+        ├── YYYYMMDD.png # Daily visualization
+        ├── last_week_hourly.png
+        ├── last_week_summary.png
+        └── last_week_heatmap.png
 ```
 
 ## Usage
 
 ### Generating Predictions
 
-Run the prediction script to generate predictions for today or a specific date (cannot be historic dates). You can specify the date in either YYYYMMDD or YYYY-MM-DD format, and optionally specify the forecast horizon (1-8 days):
+Run the prediction script to generate predictions for today or a specific date:
 
 ```bash
-# Generate predictions for today (only today's data will be stored)
+# Generate predictions for today
 python prediction.py
 
-# Generate predictions for a specific date (YYYYMMDD format)
-python prediction.py 20250227        # Only Feb 27, 2025 data will be stored
+# Generate predictions for a specific date
+python prediction.py 20240227
 
-# Generate predictions for a specific date with custom horizon
-python prediction.py 20250227 3      # Only Feb 27, 2025 data will be stored,
-                                    # but API will fetch 3 days of data
-
-# Generate predictions for a specific date (YYYY-MM-DD format)
-python prediction.py 2025-02-27      # Only Feb 27, 2025 data will be stored
+# Generate predictions for multiple days
+python prediction.py 20240227 3      # Generate for 3 days starting Feb 27, 2024
 ```
 
-The script will:
-1. Accept the date in either format (YYYYMMDD or YYYY-MM-DD)
-2. Accept an optional horizon window (1-8 days, default is 7)
-3. Query the forecast.solar API for predictions over the specified horizon
-4. **Filter and save only the data for the requested date**
-5. Save the results in the data/ directory with the format YYYYMMDD.csv
+### Visualizing Solar Production
 
-> Note: The horizon parameter only affects how far ahead the API looks for predictions. Regardless of the horizon value, only data for the specified date will be saved to the CSV file.
-
-### Visualizing Predictions and Actual Production
-
-Run the plotting script to create visualizations. You can specify the date in either YYYYMMDD or YYYY-MM-DD format:
+The system provides multiple visualization options:
 
 ```bash
-# Plot today's predictions
-python plot_solar.py
+# Visualize a single day's production
+python plot_solar.py 20240227
 
-# Plot predictions for a specific date (YYYYMMDD format)
-python plot_solar.py 20240224
+# Visualize the last 7 days
+python plot_solar.py last_week
 
-# Plot predictions for a specific date (YYYY-MM-DD format)
-python plot_solar.py 2024-02-24
+# Visualize the last 30 days
+python plot_solar.py last_month
 ```
 
-The script will:
-1. Load prediction data from the corresponding CSV file (must be generated first using prediction.py)
-2. Look for actual production data in the actual/ directory
-3. Generate a plot comparing predicted and actual production
-4. Save the plot as a PNG file in the images/ directory
+All visualizations are automatically saved in date-based folders under the `images/` directory, making it easy to locate and review historical data.
 
-Note: Make sure to run prediction.py first to generate the prediction data for the date you want to plot.
+## Visualization Types
 
-### Visualization Features
+### Single Day View
+- Hourly production data with color-coded bars
+- Actual vs predicted comparison when available
+- Clear hour and value labels
+- Daily total production summary
 
-The generated plots include:
-- Hourly predicted production as orange gradient bars
-- Hourly actual production as blue bars (when available)
-- Value labels for significant production values (>0.1 kWh)
-- Daily totals for both predicted and actual production
-- Clear date and time labels
-- Legend indicating predicted vs actual values
+### Weekly View
+When using `last_week`, the system generates:
+1. **Detailed Hourly Visualization** (`last_week_hourly.png`)
+   - Shows every hour across the week
+   - Day separators with alternating background colors
+   - Predicted vs actual data comparison
+   - Hourly and daily production values
+
+2. **Daily Summary** (`last_week_summary.png`)
+   - One bar per day showing total production
+   - Daily values and overall weekly total
+   - Percentage difference between prediction and actual
+
+3. **Heatmap View** (`last_week_heatmap.png`)
+   - Shows production patterns by hour and day
+   - Color intensity indicates production level
+
+### Monthly View
+When using `last_month`, the system generates:
+1. **Monthly Summary** (`last_month_summary.png`)
+   - Daily totals across the month
+   - Overall monthly production
+
+2. **Monthly Heatmap** (`last_month_heatmap.png`)
+   - Shows production patterns across all days of the month
+   - Hour-by-day grid with color intensity
 
 ## Data Processing
 
 ### Prediction Data
 - Retrieved from forecast.solar API
-- Hourly resolution
-- Values in kilowatt-hours (kWh)
-- Stored in CSV format
+- Hourly resolution in kilowatt-hours (kWh)
 
 ### Actual Data
 - Exported from Home Assistant
-- Raw data in watts at variable intervals
 - Processed to hourly means
 - Converted to kilowatt-hours for comparison
-- Original timestamps preserved with timezone handling
+
+## Error Handling
+
+The system includes robust error handling for:
+- Duplicate timestamps in data sources
+- Missing or incomplete data
+- Date formatting and validation
+- Non-numeric data in aggregation operations

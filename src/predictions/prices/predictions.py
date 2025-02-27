@@ -31,16 +31,18 @@ class PricePredictor:
         
         # Setup paths
         self.project_root = Path(__file__).resolve().parents[3]
-        self.models_dir = self.project_root / "models/saved"
+        # Update models directory path to the new location
+        self.models_dir = Path(__file__).resolve().parent / "models"
+        self.prod_dir = self.models_dir / "production" / "saved"
         self.data_dir = self.project_root / "data/processed"
         
         # Load feature configuration
         self.feature_config = feature_config
         
         # Load production model and scalers for future predictions
-        self.model = load_model(self.models_dir / "price_model_production.keras")
-        self.price_scaler = joblib.load(self.models_dir / "price_scaler_production.save")
-        self.grid_scaler = joblib.load(self.models_dir / "grid_scaler_production.save")
+        self.model = load_model(self.prod_dir / "price_model_production.keras")
+        self.price_scaler = joblib.load(self.prod_dir / "price_scaler.save")
+        self.grid_scaler = joblib.load(self.prod_dir / "grid_scaler.save")
         
         # Load processed data
         self._load_preprocessed_data()

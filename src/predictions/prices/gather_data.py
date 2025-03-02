@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import numpy as np
 import os
+
 project_root = Path(__file__).resolve().parents[3]
 class FeatureConfig:
     def __init__(self):
@@ -174,7 +175,8 @@ def update_grid_data(project_root):
     grid_file_path = project_root / 'data' / 'processed' / 'SwedenGrid.csv'
     
     # Load API key from env file
-    load_dotenv()
+    dotenv_path = project_root / 'api.env'
+    load_dotenv(dotenv_path=dotenv_path)
     api_key = os.getenv('ELECTRICITYMAPS')
     
     # Load config to ensure correct columns
@@ -193,13 +195,19 @@ def update_grid_data(project_root):
     
     # Define the power sources matching config
     power_sources = ['nuclear', 'wind', 'hydro', 'solar', 'unknown']
-    
-    # Make API request
-    try:
+    # Make API request for history data
+    try: 
+        # response = requests.get(
+        #     "https://api.electricitymap.org/v3/power-breakdown/history?zone=SE-SE3",
+        #     headers={
+        #         "auth-token": api_key
+        #     }
+        # )
+        # Make API request for current data
         response = requests.get(
-            "https://api.electricitymap.org/v3/power-breakdown/history?zone=SE-SE3",
+            "https://api.electricitymap.org/v3/power-breakdown/latest?zone=SE",
             headers={
-                "auth-token": api_key
+                "auth-token": f"{api_key}"
             }
         )
         

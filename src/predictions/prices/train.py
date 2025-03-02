@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
@@ -481,88 +482,304 @@ class PriceModelTrainer:
         
         # Calculate metrics
         test_loss = self.model.evaluate(X_test, y_test, verbose=0)
+        test_mae = test_loss[1] if len(test_loss) > 1 else None
         
-        # Create a small sample for visualization (first 5 test examples)
-        sample_size = min(5, len(X_test))
+        # Set consistent style for plots
+        plt.style.use('seaborn-v0_8-whitegrid')
         
-        fig, axes = plt.subplots(sample_size, 1, figsize=(15, 5*sample_size))
+        # Create a 2x2 dashboard with key evaluation insights
+        fig = plt.figure(figsize=(16, 14), dpi=100)
         
-        # If only one sample, axes is not iterable
-        if sample_size == 1:
-            axes = [axes]
+        # Define a consistent color scheme
+        colors = {
+            'actual': '#1F77B4',    # Blue
+            'predicted': '#FF7F0E', # Orange
+            'error': '#D62728',     # Red
+            'grid': '#BDBDBD'       # Light gray
+        }
         
-        # Plot each sample
-        for i in range(sample_size):
-            # Get the true and predicted values
-            true_vals = y_test[i]
-            pred_vals = y_pred[i]
-            
-            # Reshape for inverse transform
-            true_dummy = np.zeros((len(true_vals), len(self.price_scaler.scale_)))
-            true_dummy[:, 0] = true_vals
-            pred_dummy = np.zeros((len(pred_vals), len(self.price_scaler.scale_)))
-            pred_dummy[:, 0] = pred_vals
+        # 1. Top left: Representative sample with prediction
+        ax1 = plt.subplot2grid((2, 2), (0, 0))
+        
+        # Get a representative sample from middle of test set
+        sample_idx = len(y_test) // 2  # Middle sample is often more representative
+        true_vals = y_test[sample_idx]
+        pred_vals = y_pred[sample_idx]
+        
+        # Inverse transform the values for realistic prices
+        true_dummy = np.zeros((len(true_vals), len(self.price_scaler.scale_)))
+        true_dummy[:, 0] = true_vals
+        pred_dummy = np.zeros((len(pred_vals), len(self.price_scaler.scale_)))
+        pred_dummy[:, 0] = pred_vals
+        
+        true_inv = self.price_scaler.inverse_transform(true_dummy)[:, 0]
+        pred_inv = self.price_scaler.inverse_transform(pred_dummy)[:, 0]
+        
+        # Calculate error for this sample
+        error = np.abs(true_inv - pred_inv)
+        
+        # Plot sample with error band
+        hours = range(len(true_vals))
+        ax1.plot(hours, true_inv, '-', color=colors['actual'], label='Actual', linewidth=2.5)
+        ax1.plot(hours, pred_inv, '--', color=colors['predicted'], label='Predicted', linewidth=2.5)
+        
+        # Add error shading
+        ax1.fill_between(hours, pred_inv - error/2, pred_inv + error/2, color=colors['predicted'], alpha=0.2)
+        
+        # Format plot
+        ax1.set_title('Representative 24-Hour Prediction Sample', fontsize=14, fontweight='bold')
+        ax1.set_xlabel('Hour of Day', fontsize=12)
+        ax1.set_ylabel('Price (öre/kWh)', fontsize=12)
+        ax1.grid(True, linestyle='--', alpha=0.7, color=colors['grid'])
+        ax1.legend(fontsize=10)
+        
+        # Add metrics annotation for this sample
+        sample_mae = np.mean(error)
+        sample_mape = np.mean(np.abs(error / (true_inv + 1e-8))) * 100
+        metrics_text = f"Sample MAE: {sample_mae:.2f} öre/kWh\nSample MAPE: {sample_mape:.2f}%"
+        ax1.annotate(metrics_text, xy=(0.05, 0.95), xycoords='axes fraction', 
+                    verticalalignment='top', fontsize=10,
+                    bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8))
+        
+        # 2. Top right: Error distribution histogram
+        ax2 = plt.subplot2grid((2, 2), (0, 1))
+        
+        # Calculate all errors across test set
+        all_errors = []
+        for i in range(min(len(y_test), 100)):  # Use up to 100 samples for efficiency
+            true_sample = y_test[i]
+            pred_sample = y_pred[i]
             
             # Inverse transform
+            true_dummy = np.zeros((len(true_sample), len(self.price_scaler.scale_)))
+            true_dummy[:, 0] = true_sample
+            pred_dummy = np.zeros((len(pred_sample), len(self.price_scaler.scale_)))
+            pred_dummy[:, 0] = pred_sample
+            
             true_inv = self.price_scaler.inverse_transform(true_dummy)[:, 0]
             pred_inv = self.price_scaler.inverse_transform(pred_dummy)[:, 0]
             
-            # Plot
-            hours = range(len(true_vals))
-            axes[i].plot(hours, true_inv, 'b-', label='Actual', linewidth=2)
-            axes[i].plot(hours, pred_inv, 'r--', label='Predicted', linewidth=2)
-            axes[i].set_title(f'Test Sample {i+1}')
-            axes[i].set_xlabel('Hours')
-            axes[i].set_ylabel('Price (öre/kWh)')
-            axes[i].legend()
-            axes[i].grid(True)
+            # Add errors to list
+            all_errors.extend(np.abs(true_inv - pred_inv))
         
-        plt.tight_layout()
-        plt.savefig(self.saved_dir / 'quick_evaluation.png')
+        # Plot error distribution
+        ax2.hist(all_errors, bins=30, color=colors['error'], alpha=0.7)
+        ax2.set_title('Error Distribution', fontsize=14, fontweight='bold')
+        ax2.set_xlabel('Absolute Error (öre/kWh)', fontsize=12)
+        ax2.set_ylabel('Frequency', fontsize=12)
+        ax2.grid(True, linestyle='--', alpha=0.7, color=colors['grid'])
+        
+        # Add distribution statistics
+        mean_error = np.mean(all_errors)
+        median_error = np.median(all_errors)
+        p90_error = np.percentile(all_errors, 90)
+        stats_text = f"Mean Error: {mean_error:.2f}\nMedian Error: {median_error:.2f}\n90th Percentile: {p90_error:.2f}"
+        ax2.annotate(stats_text, xy=(0.95, 0.95), xycoords='axes fraction', 
+                    ha='right', va='top', fontsize=10,
+                    bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8))
+        
+        # 3. Bottom left: Hourly pattern analysis
+        ax3 = plt.subplot2grid((2, 2), (1, 0))
+        
+        # Analyze error patterns by hour of day
+        hourly_errors = [[] for _ in range(24)]
+        for i in range(min(len(y_test), 100)):  # Use up to 100 samples
+            true_sample = y_test[i]
+            pred_sample = y_pred[i]
+            
+            # Inverse transform
+            true_dummy = np.zeros((len(true_sample), len(self.price_scaler.scale_)))
+            true_dummy[:, 0] = true_sample
+            pred_dummy = np.zeros((len(pred_sample), len(self.price_scaler.scale_)))
+            pred_dummy[:, 0] = pred_sample
+            
+            true_inv = self.price_scaler.inverse_transform(true_dummy)[:, 0]
+            pred_inv = self.price_scaler.inverse_transform(pred_dummy)[:, 0]
+            
+            # Group errors by hour
+            for h in range(min(24, len(true_inv))):
+                hourly_errors[h].append(abs(true_inv[h] - pred_inv[h]))
+        
+        # Calculate mean and std for each hour
+        hourly_means = [np.mean(errors) for errors in hourly_errors if errors]
+        hourly_stds = [np.std(errors) for errors in hourly_errors if errors]
+        hours = range(len(hourly_means))
+        
+        # Plot hourly patterns
+        ax3.bar(hours, hourly_means, yerr=hourly_stds, color=colors['error'], alpha=0.7, 
+               error_kw=dict(ecolor='black', lw=1, capsize=5, capthick=1))
+        
+        # Highlight peak hours (typically morning and evening)
+        peak_hours = [7, 8, 9, 17, 18, 19, 20]
+        for hour in peak_hours:
+            if hour < len(hourly_means):
+                ax3.axvspan(hour-0.4, hour+0.4, color='yellow', alpha=0.2)
+        
+        ax3.set_title('Error by Hour of Day', fontsize=14, fontweight='bold')
+        ax3.set_xlabel('Hour', fontsize=12)
+        ax3.set_ylabel('Mean Absolute Error (öre/kWh)', fontsize=12)
+        ax3.set_xticks(hours)
+        ax3.grid(True, linestyle='--', alpha=0.7, color=colors['grid'])
+        
+        # Annotate peak hours
+        ax3.annotate('Morning Peak', xy=(8, ax3.get_ylim()[1]*0.95), 
+                    ha='center', fontsize=9, 
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.2))
+        ax3.annotate('Evening Peak', xy=(18.5, ax3.get_ylim()[1]*0.95), 
+                    ha='center', fontsize=9,
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.2))
+        
+        # 4. Bottom right: Overall metrics summary
+        ax4 = plt.subplot2grid((2, 2), (1, 1))
+        ax4.axis('off')
+        
+        # Calculate additional metrics
+        mean_abs_error = np.mean(all_errors)
+        median_abs_error = np.median(all_errors)
+        p90_error = np.percentile(all_errors, 90)
+        max_error = np.max(all_errors)
+        
+        # Create metrics summary
+        metrics_summary = [
+            f"Test Dataset Metrics:",
+            f"",
+            f"Mean Absolute Error: {mean_abs_error:.2f} öre/kWh",
+            f"Median Absolute Error: {median_abs_error:.2f} öre/kWh",
+            f"90th Percentile Error: {p90_error:.2f} öre/kWh",
+            f"Maximum Error: {max_error:.2f} öre/kWh",
+            f"",
+            f"Model Loss: {test_loss[0]:.6f}",
+        ]
+        
+        if test_mae is not None:
+            metrics_summary.append(f"Model MAE (scaled): {test_mae:.6f}")
+        
+        # Add error pattern insights
+        highest_error_hour = np.argmax(hourly_means)
+        lowest_error_hour = np.argmin(hourly_means)
+        
+        insights = [
+            f"",
+            f"Key Insights:",
+            f"",
+            f"• Hardest to predict: Hour {highest_error_hour}:00 (MAE: {hourly_means[highest_error_hour]:.2f})",
+            f"• Most accurate: Hour {lowest_error_hour}:00 (MAE: {hourly_means[lowest_error_hour]:.2f})",
+        ]
+        
+        # Determine if morning or evening peaks have higher errors
+        morning_peak_error = np.mean([hourly_means[h] for h in [7, 8, 9] if h < len(hourly_means)])
+        evening_peak_error = np.mean([hourly_means[h] for h in [17, 18, 19, 20] if h < len(hourly_means)])
+        
+        if morning_peak_error > evening_peak_error:
+            insights.append(f"• Morning peak hours are more challenging to predict")
+        else:
+            insights.append(f"• Evening peak hours are more challenging to predict")
+        
+        # Create a text box with all metrics
+        ax4.text(0.5, 0.5, '\n'.join(metrics_summary + insights), 
+                ha='center', va='center', fontsize=12,
+                bbox=dict(boxstyle='round,pad=1', facecolor='#f0f0f0', edgecolor='gray', alpha=0.9),
+                transform=ax4.transAxes)
+        
+        # Add overall title
+        plt.suptitle('Model Quick Evaluation Dashboard', fontsize=18, fontweight='bold', y=0.98)
+        
+        # Adjust layout
+        plt.tight_layout(rect=[0, 0, 1, 0.97])
+        
+        # Save figure
+        plt.savefig(self.saved_dir / 'quick_evaluation.png', dpi=300, bbox_inches='tight')
         plt.close()
         
-        logging.info("Quick evaluation complete. Saved to quick_evaluation.png")
-        logging.info(f"Test Loss: {test_loss[0]:.4f}")
-        
-        # Save more detailed metrics
+        # Save metrics to file
         metrics = {
             'test_loss': test_loss[0],
-            'test_mae': test_loss[1] if len(test_loss) > 1 else None
+            'test_mae': test_mae,
+            'mean_abs_error': mean_abs_error,
+            'median_abs_error': median_abs_error,
+            'p90_error': p90_error,
+            'max_error': max_error
         }
         
         # Save metrics to file
         with open(self.saved_dir / 'test_metrics.txt', 'w') as f:
             for key, value in metrics.items():
                 f.write(f"{key}: {value}\n")
+        
+        logging.info(f"Quick evaluation complete. Saved to quick_evaluation.png")
+        logging.info(f"Test Loss: {test_loss[0]:.4f}")
+        if test_mae is not None:
+            logging.info(f"Test MAE: {test_mae:.4f}")
+        logging.info(f"Mean Absolute Error: {mean_abs_error:.2f} öre/kWh")
 
     def plot_training_history(self, history, model_type=''):
-        """Plot and save training history"""
-        plt.figure(figsize=(15, 5))
+        """Plot and save training history with improved styling"""
+        # Create a larger figure with better resolution
+        plt.figure(figsize=(16, 6), dpi=100)
         
-        # Plot loss
+        # Set a consistent style for better readability
+        plt.style.use('seaborn-v0_8-whitegrid')
+        
+        # Plot loss with improved styling
         plt.subplot(1, 2, 1)
-        plt.plot(history.history['loss'], label='Training Loss')
-        plt.plot(history.history['val_loss'], label='Validation Loss')
-        plt.title(f'{model_type.capitalize()} Model - Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.legend()
-        plt.grid(True)
+        plt.plot(history.history['loss'], linewidth=2.5, label='Training Loss', color='#2471A3')
+        plt.plot(history.history['val_loss'], linewidth=2.5, label='Validation Loss', color='#E67E22', linestyle='--')
+        plt.title(f'{model_type.capitalize()} Model - Loss', fontsize=16, fontweight='bold', pad=15)
+        plt.xlabel('Epoch', fontsize=12, fontweight='bold')
+        plt.ylabel('Loss', fontsize=12, fontweight='bold')
+        plt.legend(fontsize=10, frameon=True, facecolor='white', edgecolor='gray')
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.tight_layout()
         
-        # Plot MAE if available
+        # Add minor gridlines for better readability
+        plt.minorticks_on()
+        plt.grid(True, which='minor', linestyle=':', alpha=0.4)
+        
+        # Plot MAE if available with consistent styling
         if 'mae' in history.history:
             plt.subplot(1, 2, 2)
-            plt.plot(history.history['mae'], label='Training MAE')
-            plt.plot(history.history['val_mae'], label='Validation MAE')
-            plt.title(f'{model_type.capitalize()} Model - MAE')
-            plt.xlabel('Epoch')
-            plt.ylabel('MAE')
-            plt.legend()
-            plt.grid(True)
+            plt.plot(history.history['mae'], linewidth=2.5, label='Training MAE', color='#2471A3')
+            plt.plot(history.history['val_mae'], linewidth=2.5, label='Validation MAE', color='#E67E22', linestyle='--')
+            plt.title(f'{model_type.capitalize()} Model - MAE', fontsize=16, fontweight='bold', pad=15)
+            plt.xlabel('Epoch', fontsize=12, fontweight='bold')
+            plt.ylabel('MAE', fontsize=12, fontweight='bold')
+            plt.legend(fontsize=10, frameon=True, facecolor='white', edgecolor='gray')
+            plt.grid(True, linestyle='--', alpha=0.7)
+            
+            # Add minor gridlines for better readability
+            plt.minorticks_on()
+            plt.grid(True, which='minor', linestyle=':', alpha=0.4)
         
-        plt.tight_layout()
-        plt.savefig(self.saved_dir / f'{model_type}_training_history.png')
-        plt.show()
+        # Add a dataset text to show data splits
+        if not self.train_from_all_data:
+            train_ratio = self.feature_config.data_split["train_ratio"]
+            val_ratio = self.feature_config.data_split["val_ratio"]
+            test_ratio = self.feature_config.data_split["test_ratio"]
+            plt.figtext(0.5, 0.01, 
+                       f"Data split: Training {train_ratio*100:.1f}% | Validation {val_ratio*100:.1f}% | Test {test_ratio*100:.1f}%",
+                       ha="center", fontsize=10, bbox={"facecolor":"white", "alpha":0.8, "pad":5, "edgecolor":"gray"})
+        else:
+            plt.figtext(0.5, 0.01, 
+                       "Production model: Trained on all available data with small validation sample",
+                       ha="center", fontsize=10, bbox={"facecolor":"white", "alpha":0.8, "pad":5, "edgecolor":"gray"})
+        
+        # Adjust layout and save with higher quality
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Make room for the text at the bottom
+        plt.savefig(self.saved_dir / f'{model_type}_training_history.png', dpi=300, bbox_inches='tight')
+        
+        # Additional informative plot: Learning rate if available
+        if 'lr' in history.history:
+            plt.figure(figsize=(10, 4))
+            plt.plot(history.history['lr'], 'o-', color='#16A085', linewidth=2)
+            plt.title('Learning Rate Schedule', fontsize=14, fontweight='bold')
+            plt.xlabel('Epoch', fontsize=12)
+            plt.ylabel('Learning Rate', fontsize=12)
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.yscale('log')  # Log scale makes it easier to see learning rate decay
+            plt.savefig(self.saved_dir / f'{model_type}_learning_rate.png', dpi=300, bbox_inches='tight')
+            
+        # Don't show plots during automated training
+        plt.close('all')
 
 def main():
     # Set up argument parser

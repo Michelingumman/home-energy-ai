@@ -1,2 +1,5 @@
 venv
 api.env
+
+data/raw
+data/processed

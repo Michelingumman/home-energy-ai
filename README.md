@@ -1,6 +1,7 @@
 <div align="center">
   <h1>🏠 Home Energy AI Optimizer 💡</h1>
-  <p><em>An AI-driven system for optimizing home energy usage, reducing costs, and minimizing energy peaks</em></p>
+  <p><Strong>Heavily ongoing!!!!</strong></p>
+  <p><em>My Bachelor Thesis @Chalmers, Its an AI-Driven Home Energy Management System for Profit and Grid Stability</em></p>
 
   <p>
     <img src="https://img.shields.io/badge/Energy-Optimization-FDB813?style=flat-square&logo=energy" alt="Energy"/>
@@ -10,27 +11,6 @@
     <img src="https://img.shields.io/badge/Battery-Management-00B388?style=flat-square&logo=power" alt="Battery"/>
   </p>
 </div>
-
-<!-- <div align="center">
-  <table>
-    <tr>
-      <td width="70%">
-        <img src="docs/images/dashboard.png" width="100%" alt="Energy Dashboard"/>
-        <p align="center"><strong>Energy Dashboard</strong> - Real-time monitoring and optimization</p>
-      </td>
-      <td width="50%">
-        <img src="docs/images/prediction.png" width="100%" alt="Energy Prediction"/>
-        <p align="center"><strong>AI Predictions</strong> - Smart energy forecasting</p>
-      </td>
-    </tr>
-  </table>
-</div>
-
-<p align="center">
-  <img src="docs/images/system-overview.png" width="90%" alt="System Overview"/>
-  <br>
-  <em>Home Energy AI System Architecture and Data Flow</em>
-</p> -->
 
 ---
 
@@ -57,10 +37,6 @@
       <td>Core automation platform and data hub</td>
     </tr>
     <tr>
-      <td>Node-RED Instance</td>
-      <td>Flow-based programming for device control</td>
-    </tr>
-    <tr>
       <td>Python Environment</td>
       <td>For running machine learning models and optimization algorithms</td>
     </tr>
@@ -82,68 +58,6 @@
     </tr>
   </table>
 </div>
-
-## 📚 Software Dependencies
-
-- **Python 3.8+** with the following libraries:
-  - `TensorFlow` or `PyTorch` - For machine learning models
-  - `pandas`, `numpy` - For data processing
-  - `scikit-learn` - For feature engineering and model evaluation
-  - `requests` - For API interactions
-  - `paho-mqtt` - For MQTT communication
-  - `aiohttp` - For async HTTP requests
-  - `plotly` - For visualization (if enabled)
-
-- **Home Assistant** with integrations:
-  - Energy monitoring
-  - MQTT
-  - RESTful sensors
-  - History stats
-
-- **Node-RED** with nodes:
-  - node-red-contrib-home-assistant-websocket
-  - node-red-contrib-mqtt
-  - node-red-contrib-schedex
-
-## 🚀 Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/Michelingumman/home-energy-ai.git
-   cd home-energy-ai
-   ```
-
-2. **Install Python dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure the system**:
-   - Copy `config.example.yaml` to `config.yaml`
-   - Update with your specific settings:
-     ```yaml
-     home_assistant:
-       url: "http://your-home-assistant:8123"
-       token: "your_long_lived_access_token"
-     
-     mqtt:
-       broker: "mqtt-broker-address"
-       port: 1883
-       username: "your_mqtt_username"
-       password: "your_mqtt_password"
-     
-     # Additional configuration options...
-     ```
-
-4. **Train the prediction model** (optional):
-   ```bash
-   python src/models/lstm/train.py
-   ```
-
-5. **Start the main application**:
-   ```bash
-   python src/main.py
-   ```
 
 ## 📖 Usage
 
@@ -192,19 +106,6 @@ home-energy-ai/
 ├── tests/                      # Unit/integration tests
 └── simulations/                # Simulation environments
 ```
-
-## 📄 License
-
-MIT License
-
-## 🤝 Contributing
-
-Contributions are welcome as branches! Please feel free to submit a Pull Request.
-
-## 🙏 Acknowledgments
-
-- Thanks to the Home Assistant and Node-RED communities
-- Inspired by various smart energy management projects
 
 ---
 

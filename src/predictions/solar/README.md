@@ -184,22 +184,8 @@ The system provides three types of visualizations, all available with a single c
 - Continuously accumulated in the merged predictions file
 
 ### Actual Data
-- Exported from Home Assistant
+- Exported from Home Assistant / SolarEdge
 - Contains `last_changed` timestamp and `state` value in Watts
-- Converted to kilowatt-hours for accurate comparison with predictions
 
-The system automatically handles unit conversion between Watts and kilowatt-hours to ensure consistent comparison between predicted and actual data.
 
-## Advanced Options
 
-The visualization script supports additional options for advanced users:
-
-```bash
-# Specify custom data directories
-python src/predictions/solar/plot_solar.py --date 2025-03-15 --forecast_dir /path/to/forecast --actual_dir /path/to/actual
-
-# Generate only specific plot types
-python src/predictions/solar/plot_solar.py --date 2025-03-15 --plot_type hourly
-```
-
-Available plot types: `hourly`, `summary`, `heatmap`, or `all` (default).

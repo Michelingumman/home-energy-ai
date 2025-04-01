@@ -352,72 +352,124 @@ def plot_hourly_data(data: dict, output_path: Path = None, show_plot: bool = Tru
     date_separators = []
     date_labels = []
     day_start_indices = []
-    minor_ticks = []
-    minor_labels = []
+    hour_ticks = []  # All hour ticks
+    hour_labels = []  # All hour labels
+    key_hours = [6, 12, 18]  # Keep these as emphasized hours
     prev_date = None
 
     # Determine tick frequency based on number of days
     num_days_plot = (hourly_index.max() - hourly_index.min()).days + 1
     major_tick_freq = 1 if num_days_plot <= 10 else (2 if num_days_plot <= 20 else (7 if num_days_plot <= 60 else 14))
-    minor_tick_hour_interval = 6 if num_days_plot <= 3 else (12 if num_days_plot <= 30 else 24) # Show fewer minor ticks for long ranges
-
+    
     current_day_count = 0
+    day_start_hour_positions = {}  # Track start position of each day for hours
+    
     for i, timestamp in enumerate(hourly_index):
         current_date = timestamp.date()
+        current_hour = timestamp.hour
+        
         # Major ticks and day separators
         if current_date != prev_date:
             current_day_count += 1
-            if (current_day_count -1) % major_tick_freq == 0:
+            if (current_day_count - 1) % major_tick_freq == 0:
                 date_separators.append(i)
                 # Show year if major tick frequency is high (e.g., weekly/bi-weekly)
                 date_format = '%a\n%b %d' if major_tick_freq < 7 else '%b %d\n%Y'
                 date_labels.append(current_date.strftime(date_format))
             day_start_indices.append(i)
             prev_date = current_date
-            # Add 00:00 label for the new day as a minor tick only if very few days
-            if num_days_plot <= 2 and minor_tick_hour_interval < 24:
-                minor_ticks.append(i)
-                minor_labels.append("00:00")
+            day_start_hour_positions[current_date] = i  # Record day start position
 
-        # Minor ticks
-        if timestamp.hour % minor_tick_hour_interval == 0 and minor_tick_hour_interval < 24:
-            # Avoid adding 00:00 again if already added
-            if not (timestamp.hour == 0 and num_days_plot <= 2):
-                minor_ticks.append(i)
-                minor_labels.append(f"{timestamp.hour:02d}:00")  # Fixed format string
+        # Add ALL hours as ticks
+        hour_ticks.append(i)
+        hour_labels.append(f"{current_hour:02d}:00")
 
     # Set major ticks for day starts (or less frequent)
     ax.set_xticks(date_separators)
-    ax.set_xticklabels(date_labels, fontsize=10, fontweight='bold')
+    ax.set_xticklabels(date_labels, fontsize=11, fontweight='bold')
 
-    # Set minor ticks for hours
-    ax.set_xticks(minor_ticks, minor=True)
-    ax.set_xticklabels(minor_labels, minor=True, fontsize=8, rotation=45, ha='right')
+    # Set hour ticks for ALL hours
+    ax.set_xticks(hour_ticks, minor=True)
+    
+    # For plots with many days, we need to be selective about which labels to show
+    # to avoid extreme label density
+    if num_days_plot <= 3:
+        # For 1-3 days: show all hours
+        ax.set_xticklabels(hour_labels, minor=True, fontsize=7, rotation=45, ha='right')
+    elif num_days_plot <= 7:
+        # For 4-7 days: show every 2 hours
+        filtered_labels = []
+        for i, label in enumerate(hour_labels):
+            if int(label.split(':')[0]) % 2 == 0:  # Every even hour
+                filtered_labels.append(label)
+            else:
+                filtered_labels.append('')  # Empty label for odd hours
+        ax.set_xticklabels(filtered_labels, minor=True, fontsize=7, rotation=45, ha='right')
+    else:
+        # For more days: show every 3 or 4 hours depending on density
+        hour_interval = 3 if num_days_plot <= 14 else 4
+        filtered_labels = []
+        for i, label in enumerate(hour_labels):
+            if int(label.split(':')[0]) % hour_interval == 0:
+                filtered_labels.append(label)
+            else:
+                filtered_labels.append('')  # Empty label for skipped hours
+        ax.set_xticklabels(filtered_labels, minor=True, fontsize=7, rotation=45, ha='right')
+    
+    # Add vertical lines and prominent labels for key hours (6, 12, 18)
+    for i, timestamp in enumerate(hourly_index):
+        current_hour = timestamp.hour
+        
+        # Add vertical marker lines for all 6-hour intervals
+        if current_hour % 6 == 0 and current_hour > 0:  # Skip midnight (already has day separator)
+            ax.axvline(x=i, color='#AAAAAA', linestyle=':', linewidth=0.6, alpha=0.4, zorder=1)
+            
+            # For key hours, add more prominent labels with background
+            if current_hour in key_hours and num_days_plot <= 14:
+                # Place below the x-axis
+                ax.text(
+                    i, -0.02, 
+                    f"{current_hour:02d}:00", 
+                    transform=ax.get_xaxis_transform(),
+                    ha='center', 
+                    va='top', 
+                    fontsize=8,
+                    fontweight='bold', 
+                    color='#444444',
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.9, ec='none')
+                )
+    
+    # Adjust padding for overlapping labels
+    ax.tick_params(axis='x', which='major', pad=25)  # More padding for day labels
+    ax.tick_params(axis='x', which='minor', pad=7)  # Less padding for hour labels
+    
+    # Add alternating background shading for days
+    for i, pos in enumerate(day_start_indices):
+        if i < len(day_start_indices) - 1:
+            end_pos = day_start_indices[i+1]
+        else:
+            end_pos = len(hourly_index)
+            
+        if i % 2 == 0:  # Every other day gets shaded
+            ax.axvspan(pos - 0.5, end_pos - 0.5, color='#F5F5F5', alpha=0.5, zorder=0)
 
-    # Remove overlapping ticks if necessary (optional)
-    ax.tick_params(axis='x', which='major', pad=15) # Pad major ticks down
-
-    # Add vertical lines for ALL day separators, lightly
+    # Add vertical lines for day separators with prominent styling
     for i, pos in enumerate(day_start_indices):
         if i > 0:
-            ax.axvline(x=pos - 0.5, color='#AAAAAA', linestyle='--', linewidth=0.6, alpha=0.5)
+            ax.axvline(x=pos - 0.5, color='#444444', linestyle='-', linewidth=1.0, alpha=0.7, zorder=1)
 
     # Customize grid and background
     ax.grid(True, axis='y', linestyle='--', alpha=0.4)
     ax.set_axisbelow(True)
-    ax.set_facecolor('#F8F9FA')
+    ax.set_facecolor('#FFFFFF')  # Use white background with shading instead
     fig.patch.set_facecolor('white')
     
     # Add legend
     if has_predictions or has_actuals:
         ax.legend(loc='upper right')
 
-    # Completely replace the tight_layout approach
-    try:
-        # Use a much simpler layout approach
-        plt.subplots_adjust(left=0.1, right=0.95, top=0.9, bottom=0.15)
-    except Exception as e:
-        print(f"Warning: layout adjustment failed: {e}")
+    # Adjust subplot to make room for hour labels - increase bottom margin
+    plt.subplots_adjust(left=0.1, right=0.95, top=0.9, bottom=0.22)
     
     # Save or show the plot
     if output_path:

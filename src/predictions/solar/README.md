@@ -12,6 +12,8 @@ The solar prediction system consists of several components:
 - Continuous data storage in merged files
 
 ### Solar Panel Installation Specifications
+![image](https://github.com/user-attachments/assets/f11e901e-36b5-4208-8c99-0420377e566f)
+
 
 The system is configured for a specific installation with the following parameters:
 - Total Capacity: 20.3 kW

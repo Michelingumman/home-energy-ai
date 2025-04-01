@@ -1,22 +1,23 @@
 # Solar Production Prediction System
 
-This system predicts and visualizes solar energy production for a solar panel installation in Herrängen, Stockholm. It uses the [forecast.solar](https://forecast.solar/) API for predictions and can compare these predictions with actual production data from Home Assistant.
+This system predicts and visualizes solar energy production for a solar panel installation in Herrängen, Stockholm. It uses the [forecast.solar](https://forecast.solar/) API for predictions and compares these predictions with actual production data from Home Assistant / SolarEdge.
 
 ## System Overview
 
 The solar prediction system consists of several components:
 - Solar panel configuration management
-- API-based production predictions
+- API-based production predictions (5-day forecasts)
 - Actual production data processing
 - Visualization of predicted vs actual production
+- Continuous data storage in merged files
 
 ### Solar Panel Installation Specifications
 
 The system is configured for a specific installation with the following parameters:
 - Total Capacity: 20.3 kW
 - Panel Count: 50 panels
-  - 30 panels facing Southeast
-  - 20 panels facing Northwest
+  - 24 panels facing Southeast
+  - 26 panels facing Northwest
 - Individual Panel Power: 405W
 - Panel Tilt: 27 degrees
 - Location: Herrängen, Stockholm
@@ -34,11 +35,14 @@ The system makes intelligent use of the forecast.solar API by:
    /estimate/watthours/{lat}/{lon}/27/-45/12.15  # Southeast panels
    ```
 
-3. **Data Combination**: Results from both API calls are:
+3. **5-Day Forecasts**: Each API call retrieves predictions for the current day plus 4 days ahead
+
+4. **Data Combination**: Results from both API calls are:
    - Automatically aggregated by timestamp
    - Combined to give total system production
    - Handled for any duplicate timestamps
-   - Stored in a single CSV file per day
+   - Stored in individual CSV files per day
+   - Accumulated in a master merged file
 
 This approach ensures accurate predictions by accounting for different sun exposure patterns for each panel orientation.
 
@@ -46,105 +50,110 @@ This approach ensures accurate predictions by accounting for different sun expos
 
 ```
 solar/
-├── config.json          # Solar system configuration
-├── prediction.py        # Main prediction script
+├── prediction.py        # Main prediction script for API calls
 ├── plot_solar.py        # Visualization script
-├── data/                # Predicted data storage
-│   └── YYYYMMDD.csv     # Daily prediction files
+├── merge_predictions.py # Script to merge prediction CSVs
+├── data/                # Predicted data storage (individual days)
+│   ├── YYYYMMDD.csv     # Daily prediction files
+│   └── ...
+├── forecasted_data/     # Contains the merged prediction data
+│   └── merged_predictions.csv # Combined predictions file (all days)
 ├── actual/              # Actual production data
-│   └── YYYYMMDD.csv     # Daily actual data files
-└── images/              # Generated plots
-    └── YYYYMMDD/        # Date-based folders
-        ├── YYYYMMDD.png # Daily visualization
-        ├── last_week_hourly.png
-        ├── last_week_summary.png
-        └── last_week_heatmap.png
+│   ├── per_day/         # Daily actual data files
+│   │   └── YYYYMMDD.csv
+│   └── merged_cleaned_actual_data.csv # Combined actual data
+└── plots/               # Generated plots when saving is enabled
 ```
 
 ## Usage
 
 ### Generating Predictions
 
-Run the prediction script to generate predictions for today or a specific date:
+Run the prediction script to generate 5-day forecasts starting from today or a specific date:
 
 ```bash
-# Generate predictions for today
-python prediction.py
+# Generate 5-day forecast starting from today
+python src/predictions/solar/prediction.py
 
-# Generate predictions for a specific date
-python prediction.py 20240227
-
-# Generate predictions for multiple days
-python prediction.py 20240227 3      # Generate for 3 days starting Feb 27, 2024
+# Generate 5-day forecast starting from a specific date
+python src/predictions/solar/prediction.py 2025-03-15
 ```
+
+The prediction script will:
+1. Create individual CSV files in the `data` directory for each day in the forecast
+2. Automatically append all predictions to `forecasted_data/merged_predictions.csv`
+3. Handle any duplicates when adding to the merged file (newer predictions replace older ones)
+
+### API Rate Limiting
+
+The forecast.solar API has rate limits that may affect frequent usage:
+
+- The free public API tier is limited to approximately 12 requests per hour
+- If you encounter HTTP 429 "Too Many Requests" errors, wait before making additional requests
+- For more intensive usage, consider signing up for a [paid plan](https://doc.forecast.solar/api:estimate) with higher rate limits
 
 ### Visualizing Solar Production
 
-The system provides multiple visualization options:
+The visualization script allows you to plot solar production data with a simplified interface focused on date selection:
 
 ```bash
-# Visualize a single day's production
-python plot_solar.py 20240227
+# Visualize a single day
+python src/predictions/solar/plot_solar.py 2025-03-15
 
-# Visualize the last 7 days
-python plot_solar.py last_week
-
-# Visualize the last 30 days
-python plot_solar.py last_month
+# Visualize a date range
+python src/predictions/solar/plot_solar.py 2025-03-01:2025-03-15
 ```
 
-All visualizations are automatically saved in date-based folders under the `images/` directory, making it easy to locate and review historical data.
+By default, plots are displayed interactively in matplotlib windows.
 
 ## Visualization Types
 
-### Single Day View
-- Hourly production data with color-coded bars
-- Actual vs predicted comparison when available
-- Clear hour and value labels
-- Daily total production summary
+The system provides three types of visualizations, all available with a single command:
 
-### Weekly View
-When using `last_week`, the system generates:
-1. **Detailed Hourly Visualization** (`last_week_hourly.png`)
-   - Shows every hour across the week
-   - Day separators with alternating background colors
-   - Predicted vs actual data comparison
-   - Hourly and daily production values
+### 1. Hourly Comparison
+- Detailed hourly data showing predicted vs actual production
+- Color-coded bars for easy comparison
+- Time-of-day labels on the x-axis
+- Daily production totals in the title
 
-2. **Daily Summary** (`last_week_summary.png`)
-   - One bar per day showing total production
-   - Daily values and overall weekly total
-   - Percentage difference between prediction and actual
+### 2. Daily Summary
+- Bar chart showing daily total production
+- Side-by-side comparison of predicted and actual values
+- Daily totals with numerical labels
+- Clear visual indication of forecast accuracy
 
-3. **Heatmap View** (`last_week_heatmap.png`)
-   - Shows production patterns by hour and day
-   - Color intensity indicates production level
-
-### Monthly View
-When using `last_month`, the system generates:
-1. **Monthly Summary** (`last_month_summary.png`)
-   - Daily totals across the month
-   - Overall monthly production
-
-2. **Monthly Heatmap** (`last_month_heatmap.png`)
-   - Shows production patterns across all days of the month
-   - Hour-by-day grid with color intensity
+### 3. Heatmap View
+- Shows production patterns by hour and day
+- Color intensity indicates production level
+- Helps identify peak production hours
+- Useful for spotting patterns across multiple days
 
 ## Data Processing
 
 ### Prediction Data
 - Retrieved from forecast.solar API
+- Covers 5 days (current day plus 4 days ahead)
 - Hourly resolution in kilowatt-hours (kWh)
+- Stored in CSV files with `timestamp`, `watt_hours`, and `kilowatt_hours` columns
+- Continuously accumulated in the merged predictions file
 
 ### Actual Data
 - Exported from Home Assistant
-- Processed to hourly means
-- Converted to kilowatt-hours for comparison
+- Contains `last_changed` timestamp and `state` value in Watts
+- Converted to kilowatt-hours for accurate comparison with predictions
 
-## Error Handling
+The system automatically handles unit conversion between Watts and kilowatt-hours to ensure consistent comparison between predicted and actual data.
 
-The system includes robust error handling for:
-- Duplicate timestamps in data sources
-- Missing or incomplete data
-- Date formatting and validation
-- Non-numeric data in aggregation operations
+## Advanced Options
+
+The visualization script supports additional options for advanced users:
+
+```bash
+# Specify custom data directories
+python src/predictions/solar/plot_solar.py --date 2025-03-15 --forecast_dir /path/to/forecast --actual_dir /path/to/actual
+
+# Generate only specific plot types
+python src/predictions/solar/plot_solar.py --date 2025-03-15 --plot_type hourly
+```
+
+Available plot types: `hourly`, `summary`, `heatmap`, or `all` (default).

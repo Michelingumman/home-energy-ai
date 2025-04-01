@@ -5,6 +5,7 @@ import datetime
 from typing import Dict, List
 from pathlib import Path
 import sys
+import os
 
 
 # Define direction to azimuth mapping   
@@ -102,14 +103,16 @@ class SolarPrediction:
             start: When to start the forecast ("now" or time like "12:00")
             
         Returns:
-            Dictionary containing hourly energy predictions
+            Dictionary containing hourly energy predictions for the next 5 days
         """
         total_power_kw = (panel_count * panel_power_w) / 1000
         
         # Construct the API URL for watthours with parameters
+        # According to https://doc.forecast.solar/api:estimate
         params = {
-            'full': 1,  # Get full 24-hour data with 0 values outside daylight
-            'limit': 1  # Get only current day
+            'full': 1,    # Get full 24-hour data with 0 values outside daylight
+            'limit': 5,   # Get forecast for 5 days (today + 4 days ahead)
+            'damping': 1  # Use default damping factor for realistic forecasts
         }
         
         base_url = f"{self.base_url}/watthours/{self.latitude}/{self.longitude}/{tilt}/{azimuth}/{total_power_kw}"
@@ -119,7 +122,7 @@ class SolarPrediction:
         try:
             direction = list(azimuth_map.keys())[list(azimuth_map.values()).index(azimuth)]
             print(f"Making API request for {panel_count} panels facing {direction} (azimuth {azimuth}°)...")
-            print(f"Parameters: Start={start}")
+            print(f"Parameters: Start={start}, Days=5")
             
             # Request JSON format
             headers = {
@@ -209,17 +212,66 @@ class SolarPrediction:
             return combined_df
         
         return None
+
+    def append_to_merged_file(self, df: pd.DataFrame, forecasted_dir: Path) -> None:
+        """
+        Append new predictions to a merged CSV file, handling potential duplicates.
+        
+        Args:
+            df: DataFrame with new predictions
+            forecasted_dir: Directory to save the merged file
+        """
+        # Ensure forecasted_dir exists
+        forecasted_dir.mkdir(parents=True, exist_ok=True)
+        merged_file_path = forecasted_dir / "merged_predictions.csv"
+        
+        # Reset index to make timestamp a column for easier CSV handling
+        df_to_save = df.reset_index()
+        
+        # If merged file already exists, read it and append new data
+        if merged_file_path.exists():
+            try:
+                print(f"Reading existing merged file: {merged_file_path}")
+                existing_df = pd.read_csv(merged_file_path)
+                
+                # Convert timestamp column to datetime
+                existing_df['timestamp'] = pd.to_datetime(existing_df['timestamp'])
+                
+                # Remove any existing entries with the same timestamps as new data
+                existing_timestamps = set(df_to_save['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S'))
+                existing_df = existing_df[~existing_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S').isin(existing_timestamps)]
+                
+                # Append new data
+                merged_df = pd.concat([existing_df, df_to_save], ignore_index=True)
+                
+                # Sort by timestamp
+                merged_df = merged_df.sort_values('timestamp')
+                
+                # Save back to file
+                merged_df.to_csv(merged_file_path, index=False)
+                print(f"Added {len(df_to_save)} new entries to merged file. Total entries: {len(merged_df)}")
+                
+            except Exception as e:
+                print(f"Error appending to merged file: {e}")
+                # If error occurs, just save the new data (overwriting existing file)
+                df_to_save.to_csv(merged_file_path, index=False)
+                print(f"Saved new predictions to {merged_file_path} (overwrote due to error)")
+        else:
+            # If file doesn't exist, create it with the new data
+            df_to_save.to_csv(merged_file_path, index=False)
+            print(f"Created new merged file with {len(df_to_save)} entries: {merged_file_path}")
     
-    def run_prediction(self, output_dir=None, start="now"):
+    def run_prediction(self, output_dir=None, forecasted_dir=None, start="now"):
         """
         Run the prediction process and save results to CSV.
         
         Args:
-            output_dir: Directory to save the CSV file
+            output_dir: Directory to save individual date CSV files
+            forecasted_dir: Directory to save the merged CSV file 
             start: When to start the forecast ("now" or time like "12:00")
         
         Returns:
-            Dictionary of DataFrames with hourly energy predictions for each date
+            Dictionary of DataFrames with hourly energy predictions for each date (up to 5 days)
         """
         # Get panel groups
         panel_groups = self.get_panel_groups()
@@ -260,7 +312,7 @@ class SolarPrediction:
             # Get all unique dates in the prediction
             unique_dates = pd.Series(combined_df.index.date).unique()
             
-            print(f"\nProcessing predictions for {len(unique_dates)} days:")
+            print(f"\nProcessing predictions for {len(unique_dates)} days (5-day forecast):")
             
             # Process each date
             for date in unique_dates:
@@ -286,6 +338,10 @@ class SolarPrediction:
                 else:
                     print(f"No prediction data available for {date}.")
             
+            # Append to merged file if forecasted_dir is provided
+            if forecasted_dir and combined_df is not None:
+                self.append_to_merged_file(combined_df, forecasted_dir)
+            
             return date_dfs
         else:
             print("Failed to get predictions.")
@@ -293,8 +349,10 @@ class SolarPrediction:
 
 
 def main():
-    config_path = Path(__file__).parent / "config.json"
-    data_dir = Path(__file__).parent / "data"
+    script_dir = Path(__file__).parent
+    config_path = script_dir / "config.json"
+    data_dir = script_dir / "data"
+    forecasted_dir = script_dir / "forecasted_data"
     
     try:
         # Get the date from command line argument or use today
@@ -311,21 +369,32 @@ def main():
         
         # Show date that will be processed
         start_datetime = datetime.datetime.strptime(start_date, "%Y-%m-%d")
-        print(f"Date: {start_datetime.strftime('%Y-%m-%d')}")
+        print(f"Starting date: {start_datetime.strftime('%Y-%m-%d')}")
+        print(f"Fetching 5-day forecast (today + 4 days ahead)")
         
         # Initialize solar prediction with config file
         solar = SolarPrediction(config_path=config_path)
         
-        # Run prediction with specific parameters
+        # Run prediction with specific parameters and also save to merged file
         date_dfs = solar.run_prediction(
             output_dir=data_dir,
-            start=start_date  # Use the formatted date
+            forecasted_dir=forecasted_dir,
+            start=start_date
         )
         
         if date_dfs:
             print(f"\nSummary: Generated predictions for {len(date_dfs)} days:")
             for date, df in date_dfs.items():
                 print(f"  - {date}: {len(df)} hourly values, saved to {data_dir / date.strftime('%Y%m%d')}.csv")
+            print(f"  - All predictions also added to {forecasted_dir / 'merged_predictions.csv'}")
+            
+            # Show forecast range
+            dates = list(date_dfs.keys())
+            if dates:
+                min_date = min(dates)
+                max_date = max(dates)
+                if min_date != max_date:
+                    print(f"\nForecast period: {min_date} to {max_date} (5-day forecast)")
         
     except ValueError as e:
         print(f"Error: Invalid date format. Please use YYYYMMDD or YYYY-MM-DD format.")

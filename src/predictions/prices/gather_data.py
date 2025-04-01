@@ -223,7 +223,7 @@ def update_grid_data_hourly(project_root):
                 
         # Make API request for history data (past 24 hours)
         print("Fetching power breakdown history for Sweden...")
-        api_url = "https://api.electricitymap.org/v3/power-breakdown/history?zone=SE"
+        api_url = "https://api.electricitymap.org/v3/power-breakdown/history?zone=SE-SE3"
         print(f"API URL: {api_url}")
         
         response = requests.get(

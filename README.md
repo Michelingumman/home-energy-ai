@@ -7,6 +7,8 @@ This project is an AI-driven system for optimizing home energy usage, with a foc
 - Optimize battery charging and discharging based on energy prices, solar generation, and demand forecasts.
 - Control home appliances (e.g., floor heating, water radiators, EV chargers) to reduce energy peaks.
 - Minimize electricity costs under the Swedish energy pricing model (power tariff).
+- Forecast solar energy production for 5 days using the forecast.solar API, with customized predictions for multi-orientation panel arrays.
+- Visualize and compare predicted vs actual solar production with hourly detail, daily summaries, and heatmap views.
 
 
 ## How to Use
@@ -39,6 +41,15 @@ AI-Driven-Home-Energy-Management-System/
 │   │
 │   ├── data/                   # Data-related scripts
 │   │   └── preprocess.py       # Data cleaning/preprocessing code
+│   │
+│   ├── predictions/            # Production forecasting modules
+│   │   ├── prices/             # Electricity price prediction
+│   │   │   └── README.md       # Price prediction documentation
+│   │   └── solar/              # Solar energy production prediction
+│   │       ├── README.md       # Solar prediction documentation
+│   │       ├── prediction.py   # 5-day solar forecasting with API
+│   │       ├── plot_solar.py   # Visualization of solar predictions vs actual
+│   │       └── data/           # Solar prediction data storage
 │   │
 │   ├── models/                 # Machine learning models
 │   │   ├── __init__.py         # (Empty file to mark as a package)

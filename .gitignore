@@ -4,3 +4,6 @@ api.env
 data/raw
 data/processed
 
+
+src/predictions/prices/models/evaluation/test_data/X_test.npy
+src/predictions/prices/models/evaluation/test_data/X_val.npy

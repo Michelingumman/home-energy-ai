@@ -2988,3 +2988,47 @@ Total records in file: 481
 Data range: 2025-03-02 23:00:00 to 2025-03-31 22:00:00
 
 [2025-04-01 00:00:12] ################################## END OF SCRIPT ##################################
+[2025-04-01 20:00:01] ################################## START OF SCRIPT 2025-04-01 20:00:01 ##################################
+[2025-04-01 20:00:01] Starting Solar Prediction...
+[2025-04-01 20:00:04] Solar Prediction completed successfully.
+[2025-04-01 20:00:04] Output:
+Starting predictions from today: 2025-04-01
+Starting date: 2025-04-01
+Fetching 5-day forecast (today + 4 days ahead)
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=5&damping=1 
+
+Making API request for 24 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-04-01, Days=5
+Error making API request: 429 Client Error: Too Many Requests for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=5&damping=1
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=5&damping=1 
+
+Making API request for 26 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-04-01, Days=5
+Error making API request: 429 Client Error: Too Many Requests for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=5&damping=1
+
+Processing predictions from each panel group:
+Failed to get predictions.
+
+[2025-04-01 20:00:04] Starting Price Gathering...
+[2025-04-01 20:00:07] Price Gathering completed successfully.
+[2025-04-01 20:00:07] Output:
+Successfully added 5 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-04-01 13:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE-SE3
+Received 24 records from API
+Time range: 2025-03-31T19:00:00.000Z to 2025-04-01T18:00:00.000Z
+Fetched 5 new records (skipped 19 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 5 new records
+Total records in file: 501
+Data range: 2025-03-02 23:00:00 to 2025-04-01 18:00:00
+
+[2025-04-01 20:00:07] ################################## END OF SCRIPT ##################################

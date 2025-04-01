@@ -139,7 +139,8 @@ The system provides three types of visualizations, all available with a single c
 </div>
 <div style="flex: 1;">
 
-![image](https://github.com/user-attachments/assets/e3ab5187-f793-40cf-a403-ba027b9fccbe)
+![image](https://github.com/user-attachments/assets/2c79c4d0-6973-4a81-a4ca-455c4001c7c8)
+
 
 </div>
 </div>

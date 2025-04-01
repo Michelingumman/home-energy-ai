@@ -6,6 +6,7 @@ from typing import Dict, List
 from pathlib import Path
 import sys
 import os
+from dotenv import load_dotenv
 
 
 # Define direction to azimuth mapping   
@@ -36,8 +37,11 @@ class SolarPrediction:
         self.latitude = location["latitude"]
         self.longitude = location["longitude"]
         
+        # Load API key from environment variables
+        self.api_key = self.load_api_key()
+        
         # Base URL for the forecast.solar API
-        self.base_url = "https://api.forecast.solar/estimate"
+        self.base_url = "https://api.forecast.solar"
         
     def load_config(self, config_path):
         """Load configuration from a JSON file."""
@@ -47,6 +51,38 @@ class SolarPrediction:
         except Exception as e:
             print(f"Error loading configuration: {e}")
             raise
+            
+    def load_api_key(self):
+        """Load API key from env file."""
+        # Try to load from environment variable first
+        api_key = os.environ.get("FORECASTSOLAR")
+        
+        # If not found, try to load from api.env file
+        if not api_key:
+            try:
+                # Look for api.env in project root or current directory
+                env_paths = [
+                    Path.cwd() / "api.env",
+                    Path.cwd().parent.parent.parent / "api.env",  # Try project root
+                    Path(__file__).parent.parent.parent.parent / "api.env"  # Another approach
+                ]
+                
+                for env_path in env_paths:
+                    if env_path.exists():
+                        # Load the .env file
+                        load_dotenv(env_path)
+                        api_key = os.environ.get("FORECASTSOLAR")
+                        if api_key:
+                            print(f"Loaded API key from {env_path}")
+                            break
+                
+                if not api_key:
+                    print("Warning: FORECASTSOLAR API key not found. Using public API with limited features.")
+            except Exception as e:
+                print(f"Error loading API key: {e}")
+                print("Continuing with public API (limited features)")
+        
+        return api_key
     
     def get_panel_groups(self):
         """
@@ -100,46 +136,72 @@ class SolarPrediction:
             azimuth: Panel azimuth in degrees (0 = north, 90 = east, 180 = south, 270 = west)
             panel_count: Number of panels in this group
             panel_power_w: Power rating of each panel in watts
-            start: When to start the forecast ("now" or time like "12:00")
+            start: When to start the forecast (API only supports "now")
             
         Returns:
-            Dictionary containing hourly energy predictions for the next 5 days
+            Dictionary containing hourly energy predictions for the next 3 days
         """
         total_power_kw = (panel_count * panel_power_w) / 1000
         
-        # Construct the API URL for watthours with parameters
-        # According to https://doc.forecast.solar/api:estimate
+        # Parameters for the API request
         params = {
-            'full': 1,    # Get full 24-hour data with 0 values outside daylight
-            'limit': 5,   # Get forecast for 5 days (today + 4 days ahead)
-            'damping': 1  # Use default damping factor for realistic forecasts
+            'full': 1,     # Get full 24-hour data with 0 values outside daylight
+            'limit': 4,    # Get forecast for 4 days (today + 3 days ahead)
+            'damping': 1,  # Use default damping factor for realistic forecasts
+            'resolution': 60  # Request hourly data (60 minutes)
         }
         
-        base_url = f"{self.base_url}/watthours/{self.latitude}/{self.longitude}/{tilt}/{azimuth}/{total_power_kw}"
-        url = f"{base_url}?" + "&".join(f"{k}={v}" for k, v in params.items())
+        # Construct the URL differently based on whether API key is available
+        if self.api_key:
+            # Authenticated API call using personal API key
+            base_endpoint = f"{self.base_url}/{self.api_key}/estimate/watthours/{self.latitude}/{self.longitude}/{tilt}/{azimuth}/{total_power_kw}"
+        else:
+            # Public API call (limited features)
+            base_endpoint = f"{self.base_url}/estimate/watthours/{self.latitude}/{self.longitude}/{tilt}/{azimuth}/{total_power_kw}"
+        
+        # Add query parameters
+        url = f"{base_endpoint}?" + "&".join(f"{k}={v}" for k, v in params.items())
         print("URL", url, '\n')
         
         try:
             direction = list(azimuth_map.keys())[list(azimuth_map.values()).index(azimuth)]
-            print(f"Making API request for {panel_count} panels facing {direction} (azimuth {azimuth}°)...")
-            print(f"Parameters: Start={start}, Days=5")
+            if self.api_key:
+                print(f"Making authenticated API request for {panel_count} panels facing {direction} (azimuth {azimuth}°)...")
+            else:
+                print(f"Making public API request for {panel_count} panels facing {direction} (azimuth {azimuth}°)...")
+            print(f"Parameters: Start=now, Days=4, Resolution=hourly")
             
             # Request JSON format
             headers = {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
             }
+            
+            # Make the request
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             
             # Parse JSON response
             data = response.json()
+            
+            # Check for rate limiting info in response
+            if 'message' in data and 'ratelimit' in data['message']:
+                rate_info = data['message']['ratelimit']
+                print(f"API Rate Limit: {rate_info.get('remaining', 'N/A')}/{rate_info.get('limit', 'N/A')} requests remaining in this period")
+            
             # Check if we have a result section
             if 'result' in data:
-                # The result section directly contains timestamp: value pairs
+                # Extract the raw result (could be directly in 'result' or in 'result.watt_hours_period')
                 predictions = data['result']
-                if predictions:  # Check if we have any predictions
-                    return {"watt_hours_period": predictions}
+                
+                # Check different possible structures of the response
+                if isinstance(predictions, dict):
+                    # Direct timestamp-value pairs in the result
+                    if predictions and any(isinstance(v, (int, float)) for v in predictions.values()):
+                        return {"watt_hours_period": predictions}
+                    # Check if watt_hours_period key exists
+                    elif 'watt_hours_period' in predictions and predictions['watt_hours_period']:
+                        return {"watt_hours_period": predictions['watt_hours_period']}
             
             print("No valid predictions found in response")
             print("API Response:", data)
@@ -268,11 +330,17 @@ class SolarPrediction:
         Args:
             output_dir: Directory to save individual date CSV files
             forecasted_dir: Directory to save the merged CSV file 
-            start: When to start the forecast ("now" or time like "12:00")
+            start: When to start the forecast (API only supports "now")
         
         Returns:
-            Dictionary of DataFrames with hourly energy predictions for each date (up to 5 days)
+            Dictionary of DataFrames with hourly energy predictions for the current and next 3 days
         """
+        # Display warning if start is not "now"
+        if start != "now":
+            print("Warning: The forecast.solar API only supports forecasts starting from the current day.")
+            print("The provided start date will be ignored and today's date will be used instead.")
+            start = "now"
+            
         # Get panel groups
         panel_groups = self.get_panel_groups()
         
@@ -312,7 +380,7 @@ class SolarPrediction:
             # Get all unique dates in the prediction
             unique_dates = pd.Series(combined_df.index.date).unique()
             
-            print(f"\nProcessing predictions for {len(unique_dates)} days (5-day forecast):")
+            print(f"\nProcessing predictions for {len(unique_dates)} days (4-day forecast):")
             
             # Process each date
             for date in unique_dates:
@@ -351,33 +419,31 @@ class SolarPrediction:
 def main():
     script_dir = Path(__file__).parent
     config_path = script_dir / "config.json"
-    data_dir = script_dir / "data"
+    
+    # New directory structure for individual day files
     forecasted_dir = script_dir / "forecasted_data"
+    per_day_dir = forecasted_dir / "per_day"
     
     try:
-        # Get the date from command line argument or use today
+        # Check for command line arguments but only for backward compatibility
         if len(sys.argv) > 1:
-            # Accept either YYYYMMDD or YYYY-MM-DD format
-            date_str = sys.argv[1].replace('-', '')
-            # Convert to YYYY-MM-DD format for the API
-            start_date = datetime.datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
-            print(f"Starting predictions from: {start_date}")
-        else:
-            # Use today's date
-            start_date = datetime.datetime.now().strftime("%Y-%m-%d")
-            print(f"Starting predictions from today: {start_date}")
+            print("WARNING: The forecast.solar API only supports forecasts starting from the current day.")
+            print("The provided date argument will be ignored.")
+            
+        # Use today's date
+        start_date = "now"
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        print(f"Starting predictions from today: {today}")
         
-        # Show date that will be processed
-        start_datetime = datetime.datetime.strptime(start_date, "%Y-%m-%d")
-        print(f"Starting date: {start_datetime.strftime('%Y-%m-%d')}")
-        print(f"Fetching 5-day forecast (today + 4 days ahead)")
+        # Show forecast period
+        print(f"Fetching 4-day forecast (today + 3 days ahead)")
         
         # Initialize solar prediction with config file
         solar = SolarPrediction(config_path=config_path)
         
         # Run prediction with specific parameters and also save to merged file
         date_dfs = solar.run_prediction(
-            output_dir=data_dir,
+            output_dir=per_day_dir,
             forecasted_dir=forecasted_dir,
             start=start_date
         )
@@ -385,7 +451,7 @@ def main():
         if date_dfs:
             print(f"\nSummary: Generated predictions for {len(date_dfs)} days:")
             for date, df in date_dfs.items():
-                print(f"  - {date}: {len(df)} hourly values, saved to {data_dir / date.strftime('%Y%m%d')}.csv")
+                print(f"  - {date}: {len(df)} hourly values, saved to {per_day_dir / date.strftime('%Y%m%d')}.csv")
             print(f"  - All predictions also added to {forecasted_dir / 'merged_predictions.csv'}")
             
             # Show forecast range
@@ -394,11 +460,8 @@ def main():
                 min_date = min(dates)
                 max_date = max(dates)
                 if min_date != max_date:
-                    print(f"\nForecast period: {min_date} to {max_date} (5-day forecast)")
-        
-    except ValueError as e:
-        print(f"Error: Invalid date format. Please use YYYYMMDD or YYYY-MM-DD format.")
-        print(f"Example: python prediction.py 20250227 or python prediction.py 2025-02-27")
+                    print(f"\nForecast period: {min_date} to {max_date} (4-day forecast)")
+                    
     except Exception as e:
         print(f"Error running solar prediction: {e}")
 

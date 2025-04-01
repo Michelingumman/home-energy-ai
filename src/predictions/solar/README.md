@@ -131,10 +131,6 @@ By default, plots are displayed interactively in matplotlib windows.
 The system provides three types of visualizations, all available with a single command:
 
 ### 1. Hourly Comparison
-
-<div style="display: flex; align-items: top;">
-<div style="flex: 1;">
-
 - Detailed hourly data showing predicted vs actual production
 - Color-coded bars for easy comparison
 - Time-of-day labels on the x-axis
@@ -149,10 +145,6 @@ The system provides three types of visualizations, all available with a single c
 </div>
 
 ### 2. Daily Summary
-
-<div style="display: flex; align-items: top;">
-<div style="flex: 1;">
-
 - Bar chart showing daily total production
 - Side-by-side comparison of predicted and actual values
 - Daily totals with numerical labels
@@ -167,10 +159,6 @@ The system provides three types of visualizations, all available with a single c
 </div>
 
 ### 3. Heatmap View
-
-<div style="display: flex; align-items: top;">
-<div style="flex: 1;">
-
 - Shows production patterns by hour and day
 - Color intensity indicates production level
 - Helps identify peak production hours

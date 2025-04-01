@@ -170,18 +170,28 @@ else:
 
 
 
-def update_grid_data(project_root):
-    """Update the grid data using Electricity Maps API"""
+def update_grid_data_hourly(project_root):
+    """Update the grid data using Electricity Maps API with hourly resolution for the past 24 hours"""
     grid_file_path = project_root / 'data' / 'processed' / 'SwedenGrid.csv'
+    
+    # Create processed data directory if it doesn't exist
+    processed_dir = project_root / 'data' / 'processed'
+    processed_dir.mkdir(parents=True, exist_ok=True)
     
     # Load API key from env file
     dotenv_path = project_root / 'api.env'
     load_dotenv(dotenv_path=dotenv_path)
     api_key = os.getenv('ELECTRICITYMAPS')
     
+    if not api_key:
+        print("Error: ELECTRICITYMAPS API key not found in api.env file")
+        return
+    
+    print(f"API key loaded: {api_key[:4]}...{api_key[-4:] if len(api_key) > 8 else ''}")
+    
     # Load config to ensure correct columns
     config = FeatureConfig()
-    grid_cols = config.grid_cols
+    grid_cols = config.grid_cols if hasattr(config, 'grid_cols') else None
     
     # Define the essential zones for import/export
     zones = {
@@ -193,170 +203,194 @@ def update_grid_data(project_root):
         'AX': 'Åland connection'
     }
     
-    # Define the power sources matching config
+    # Define the power sources
     power_sources = ['nuclear', 'wind', 'hydro', 'solar', 'unknown']
-    # Make API request for history data
-    try: 
-        # response = requests.get(
-        #     "https://api.electricitymap.org/v3/power-breakdown/history?zone=SE-SE3",
-        #     headers={
-        #         "auth-token": api_key
-        #     }
-        # )
-        # Make API request for current data
-        response = requests.get(
-            "https://api.electricitymap.org/v3/power-breakdown/latest?zone=SE",
-            headers={
-                "auth-token": f"{api_key}"
-            }
-        )
-        
-        if response.status_code != 200:
-            print(f"Failed to fetch grid data. Status code: {response.status_code}")
-            print("Response content:", response.content.decode() if hasattr(response, 'content') else "No response content")
-            return
-            
-        data = response.json()
-        
-        # Group records by date for daily averaging
-        daily_records = {}
-        
-        for entry in data['history']:
-            # Convert datetime to date for grouping
-            entry_date = pd.to_datetime(entry['datetime']).date()
-            
-            # Initialize daily record if not exists
-            if entry_date not in daily_records:
-                daily_records[entry_date] = {
-                    'count': 0,
-                    'fossilFreePercentage': 0,
-                    'renewablePercentage': 0,
-                    'powerConsumptionTotal': 0,
-                    'powerProductionTotal': 0,
-                    'powerImportTotal': 0,
-                    'powerExportTotal': 0
-                }
-                # Initialize power sources
-                for source in power_sources:
-                    daily_records[entry_date][source] = 0
-                # Initialize import/export for each zone
-                for zone in zones:
-                    daily_records[entry_date][f'import_{zone}'] = 0
-                    daily_records[entry_date][f'export_{zone}'] = 0
-            
-            # Get production breakdown
-            prod = entry['powerProductionBreakdown']
-            
-            # Update running sums for the day
-            record = daily_records[entry_date]
-            record['count'] += 1
-            record['fossilFreePercentage'] += entry['fossilFreePercentage']
-            record['renewablePercentage'] += entry['renewablePercentage']
-            record['powerConsumptionTotal'] += entry['powerConsumptionTotal']
-            record['powerProductionTotal'] += entry['powerProductionTotal']
-            record['powerImportTotal'] += entry['powerImportTotal']
-            record['powerExportTotal'] += entry['powerExportTotal']
-            
-            # Update power sources
-            for source in power_sources:
-                record[source] += prod.get(source, 0) or 0
-            
-            # Update import/export values
-            import_breakdown = entry.get('powerImportBreakdown', {})
-            export_breakdown = entry.get('powerExportBreakdown', {})
-            
-            for zone in zones:
-                record[f'import_{zone}'] += import_breakdown.get(zone, 0) or 0
-                record[f'export_{zone}'] += export_breakdown.get(zone, 0) or 0
-        
-        # Calculate daily averages and create records
-        records = []
-        for date, sums in daily_records.items():
-            count = sums['count']
-            if count > 0:  # Only process if we have data for the day
-                record = {col: 0 for col in grid_cols}  # Initialize all columns from config
-                record['date'] = pd.Timestamp(date)
-                
-                # Calculate averages for core metrics and round to 2 decimals
-                record['fossilFreePercentage'] = round(sums['fossilFreePercentage'] / count, 2)
-                record['renewablePercentage'] = round(sums['renewablePercentage'] / count, 2)
-                record['powerConsumptionTotal'] = round(sums['powerConsumptionTotal'] / count, 2)
-                record['powerProductionTotal'] = round(sums['powerProductionTotal'] / count, 2)
-                record['powerImportTotal'] = round(sums['powerImportTotal'] / count, 2)
-                record['powerExportTotal'] = round(sums['powerExportTotal'] / count, 2)
-                
-                # Average power sources and round
-                for source in power_sources:
-                    record[source] = round(sums[source] / count, 2)
-                
-                # Average import/export for each zone and round
-                for zone in zones:
-                    record[f'import_{zone}'] = round(sums[f'import_{zone}'] / count, 2)
-                    record[f'export_{zone}'] = round(sums[f'export_{zone}'] / count, 2)
-                
-                records.append(record)
-        
-        # Create DataFrame with specified columns from config
-        df = pd.DataFrame(records)
-        df.set_index('date', inplace=True)
-        df = df[grid_cols]  # Ensure columns are in correct order
-        df.sort_index(inplace=True)
-        
-        # Fill any missing values with 0
-        df = df.fillna(0)
-        
-        # Merge with existing data if it exists and is not empty
+    
+    try:
+        # Determine the latest timestamp in existing data to avoid gaps
+        latest_timestamp = None
         if grid_file_path.exists():
             try:
                 existing_df = pd.read_csv(grid_file_path, index_col=0)
                 if not existing_df.empty:
                     existing_df.index = pd.to_datetime(existing_df.index)
-                    # Ensure existing data has all required columns
-                    for col in grid_cols:
+                    latest_timestamp = pd.to_datetime(existing_df.index.max()).tz_localize('UTC')
+                    print(f"Latest data timestamp: {latest_timestamp}")
+            except pd.errors.EmptyDataError:
+                print("Existing file was empty, will create new file with current data.")
+            except Exception as e:
+                print(f"Warning: Could not read existing file: {str(e)}")
+                
+        # Make API request for history data (past 24 hours)
+        print("Fetching power breakdown history for Sweden...")
+        api_url = "https://api.electricitymap.org/v3/power-breakdown/history?zone=SE"
+        print(f"API URL: {api_url}")
+        
+        response = requests.get(
+            api_url,
+            headers={
+                "auth-token": api_key
+            }
+        )
+        
+        if response.status_code != 200:
+            print(f"Failed to fetch grid data. Status code: {response.status_code}")
+            error_info = response.json() if response.content else "No error details"
+            print(f"API Error: {error_info.get('message', str(error_info)[:100]) if isinstance(error_info, dict) else str(error_info)[:100]}")
+            return
+            
+        data = response.json()
+        
+        if 'history' not in data or not data['history']:
+            print("No history data found in API response")
+            print(f"Response keys: {list(data.keys())}")
+            print(f"Response sample: {str(data)[:200]}...")
+            return
+            
+        # Show some debug info about the data
+        history_length = len(data['history'])
+        first_entry = data['history'][0] if history_length > 0 else {}
+        last_entry = data['history'][-1] if history_length > 0 else {}
+        
+        print(f"Received {history_length} records from API")
+        if history_length > 0:
+            print(f"Time range: {first_entry.get('datetime', 'N/A')} to {last_entry.get('datetime', 'N/A')}")
+        
+        # Process each hourly record
+        records = []
+        skipped_records = 0
+        
+        for entry in data['history']:
+            # Create a record for each hourly data point
+            timestamp = pd.to_datetime(entry['datetime'])  # This will preserve the UTC timezone
+            
+            # Skip if we already have this timestamp in the existing data
+            if latest_timestamp is not None and timestamp <= latest_timestamp:
+                skipped_records += 1
+                continue
+                
+            record = {}
+            
+            # Add core metrics
+            record['fossilFreePercentage'] = entry.get('fossilFreePercentage', 0)
+            record['renewablePercentage'] = entry.get('renewablePercentage', 0)
+            record['powerConsumptionTotal'] = entry.get('powerConsumptionTotal', 0)
+            record['powerProductionTotal'] = entry.get('powerProductionTotal', 0)
+            record['powerImportTotal'] = entry.get('powerImportTotal', 0)
+            record['powerExportTotal'] = entry.get('powerExportTotal', 0)
+            
+            # Get production breakdown
+            prod = entry.get('powerProductionBreakdown', {})
+            
+            # Add power sources
+            for source in power_sources:
+                record[source] = prod.get(source, 0) or 0
+            
+            # Add import/export values
+            import_breakdown = entry.get('powerImportBreakdown', {})
+            export_breakdown = entry.get('powerExportBreakdown', {})
+            
+            for zone in zones:
+                record[f'import_{zone}'] = import_breakdown.get(zone, 0) or 0
+                record[f'export_{zone}'] = export_breakdown.get(zone, 0) or 0
+            
+            # Add to records with timestamp as key
+            records.append((timestamp, record))
+        
+        print(f"Fetched {len(records)} new records (skipped {skipped_records} existing records)")
+        
+        if not records:
+            print("No new data to add. Data is already up-to-date.")
+            return
+            
+        # Create DataFrame with hourly data
+        new_df = pd.DataFrame([record for _, record in records], 
+                             index=[timestamp.tz_localize(None) for timestamp, _ in records])  # Remove timezone for consistency
+        
+        # Round values to 2 decimals
+        new_df = new_df.round(2)
+        
+        # Fill any missing values with 0
+        new_df = new_df.fillna(0)
+        
+        # Merge with existing data if file exists and has content
+        final_df = new_df.copy()
+        if grid_file_path.exists():
+            try:
+                existing_df = pd.read_csv(grid_file_path, index_col=0)
+                if not existing_df.empty:
+                    # Ensure index is datetime without timezone
+                    existing_df.index = pd.to_datetime(existing_df.index)
+                    
+                    # Get all columns from both dataframes
+                    all_columns = list(set(existing_df.columns).union(set(new_df.columns)))
+                    
+                    # Ensure both dataframes have all columns
+                    for col in all_columns:
                         if col not in existing_df.columns:
                             existing_df[col] = 0
+                        if col not in new_df.columns:
+                            new_df[col] = 0
                     
-                    # Keep only config columns and ensure order
-                    existing_df = existing_df[grid_cols]
+                    # Combine dataframes
+                    combined_df = pd.concat([existing_df, new_df])
                     
-                    # Round existing data to 2 decimals
-                    existing_df = existing_df.round(2)
+                    # Remove duplicates, keeping the newer data
+                    combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
                     
-                    # Fill any missing values with 0
-                    existing_df = existing_df.fillna(0)
+                    # Sort by timestamp
+                    combined_df = combined_df.sort_index()
                     
-                    df = pd.concat([existing_df, df])
-                    df = df[~df.index.duplicated(keep='last')]  # Remove duplicates
-            except pd.errors.EmptyDataError:
-                print("Existing file was empty, creating new file with current data.")
+                    # Save the final combined dataframe
+                    final_df = combined_df
+                    print(f"Successfully merged new data with existing data")
+                    
+            except Exception as e:
+                print(f"Error processing existing data: {str(e)}")
+                print("Creating new file with current data.")
+                
+        # Sort by datetime, round values
+        final_df.sort_index(inplace=True)
+        final_df = final_df.round(2)
         
-        # Sort by date, round all values, and save
-        df.sort_index(inplace=True)
-        df = df.round(2)  # Final rounding of all values
-        df.to_csv(grid_file_path)
-        print(f"Successfully updated grid data through {df.index.max().strftime('%Y-%m-%d')}")
-        
-        # Print feature correlation analysis
-        if 'SE3_price_ore' in df.columns:
-            correlations = df.corr()['SE3_price_ore'].sort_values(ascending=False)
-            print("\nFeature correlations with price:")
-            print(correlations)
+        # Apply column order if grid_cols is available
+        if grid_cols:
+            # Ensure all required columns exist
+            missing_cols = []
+            for col in grid_cols:
+                if col not in final_df.columns:
+                    final_df[col] = 0
+                    missing_cols.append(col)
             
-            # Print specific analysis of import/export correlations
-            print("\nImport/Export correlations with price:")
-            import_export_corr = correlations[
-                [col for col in correlations.index if col.startswith(('import_', 'export_'))]
-            ]
-            print(import_export_corr)
+            if missing_cols:
+                print(f"Added missing columns: {missing_cols}")
+                
+            # Order columns according to configuration
+            final_df = final_df[grid_cols]
+        
+        # Save to file
+        try:
+            final_df.to_csv(grid_file_path)
+            print(f"Successfully saved data to {grid_file_path}")
+            print(f"Updated hourly grid data with {len(records)} new records")
+            print(f"Total records in file: {len(final_df)}")
+            print(f"Data range: {final_df.index.min()} to {final_df.index.max()}")
+        except Exception as e:
+            print(f"Error saving data to {grid_file_path}: {str(e)}")
+            # Try saving to a backup file
+            backup_path = str(grid_file_path) + ".backup"
+            try:
+                final_df.to_csv(backup_path)
+                print(f"Saved data to backup file: {backup_path}")
+            except Exception as e2:
+                print(f"Error saving to backup file: {str(e2)}")
         
     except Exception as e:
-        print(f"Error updating grid data: {str(e)}")
-        if 'response' in locals():
-            print("Response content:", response.content.decode() if hasattr(response, 'content') else "No response")
+        print(f"Error updating hourly grid data: {str(e)}")
+        import traceback
+        print(traceback.format_exc().splitlines()[-3:])  # Only show last 3 lines of traceback for brevity
 
 def main():
-    
-
     feature_config = FeatureConfig() 
     print(feature_config.get_ordered_features())
     
@@ -367,12 +401,12 @@ def main():
     processed_dir = project_root / 'data' / 'processed'
     processed_dir.mkdir(parents=True, exist_ok=True)
     
-    # Update both datasets
+    # Update datasets
     print("\nUpdating price data...")
     update_price_data(project_root)
     
-    print("\nUpdating grid data...")
-    update_grid_data(project_root)
+    print("\nUpdating grid data (hourly resolution)...")
+    update_grid_data_hourly(project_root)
 
 if __name__ == "__main__":
     main()

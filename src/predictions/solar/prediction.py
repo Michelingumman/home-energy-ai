@@ -89,9 +89,7 @@ class SolarPrediction:
         azimuth: float, 
         panel_count: int, 
         panel_power_w: int,
-        start: str = "now",
-        days_horizon: int = 7,
-        resolution_minutes: int = 60
+        start: str = "now"
     ) -> Dict:
         """
         Get prediction for a group of panels with the same orientation.
@@ -102,26 +100,16 @@ class SolarPrediction:
             panel_count: Number of panels in this group
             panel_power_w: Power rating of each panel in watts
             start: When to start the forecast ("now" or time like "12:00")
-            days_horizon: Number of days to forecast (1-8)
-            resolution_minutes: Time resolution in minutes (15, 30, or 60)
             
         Returns:
             Dictionary containing hourly energy predictions
         """
         total_power_kw = (panel_count * panel_power_w) / 1000
         
-        # Validate parameters
-        if days_horizon < 1 or days_horizon > 8:
-            raise ValueError("days_horizon must be between 1 and 8")
-        if resolution_minutes not in [15, 30, 60]:
-            raise ValueError("resolution_minutes must be 15, 30, or 60")
-        
         # Construct the API URL for watthours with parameters
         params = {
             'full': 1,  # Get full 24-hour data with 0 values outside daylight
-            'limit': days_horizon,  # Number of days to forecast
-            'start': start,  # Start time
-            'resolution': resolution_minutes  # Time resolution
+            'limit': 1  # Get only current day
         }
         
         base_url = f"{self.base_url}/watthours/{self.latitude}/{self.longitude}/{tilt}/{azimuth}/{total_power_kw}"
@@ -131,7 +119,7 @@ class SolarPrediction:
         try:
             direction = list(azimuth_map.keys())[list(azimuth_map.values()).index(azimuth)]
             print(f"Making API request for {panel_count} panels facing {direction} (azimuth {azimuth}°)...")
-            print(f"Parameters: Start={start}, Horizon={days_horizon} days, Resolution={resolution_minutes} minutes")
+            print(f"Parameters: Start={start}")
             
             # Request JSON format
             headers = {
@@ -222,15 +210,13 @@ class SolarPrediction:
         
         return None
     
-    def run_prediction(self, output_dir=None, start="now", days_horizon=1, resolution_minutes=60):
+    def run_prediction(self, output_dir=None, start="now"):
         """
         Run the prediction process and save results to CSV.
         
         Args:
             output_dir: Directory to save the CSV file
             start: When to start the forecast ("now" or time like "12:00")
-            days_horizon: Number of days to forecast (1-8)
-            resolution_minutes: Time resolution in minutes (15, 30, or 60)
         
         Returns:
             Dictionary of DataFrames with hourly energy predictions for each date
@@ -250,9 +236,7 @@ class SolarPrediction:
                 group["azimuth"], 
                 group["panel_count"], 
                 group["panel_power_w"],
-                start=start,
-                days_horizon=days_horizon,
-                resolution_minutes=resolution_minutes
+                start=start
             )
             predictions.append(prediction)
         
@@ -276,12 +260,7 @@ class SolarPrediction:
             # Get all unique dates in the prediction
             unique_dates = pd.Series(combined_df.index.date).unique()
             
-            # Ensure we're only processing the requested number of days
-            # If we have more dates than requested, trim to the first 'days_horizon' days
-            if len(unique_dates) > days_horizon:
-                unique_dates = unique_dates[:days_horizon]
-            
-            print(f"\nProcessing {len(unique_dates)} days of predictions:")
+            print(f"\nProcessing predictions for {len(unique_dates)} days:")
             
             # Process each date
             for date in unique_dates:
@@ -329,27 +308,10 @@ def main():
             # Use today's date
             start_date = datetime.datetime.now().strftime("%Y-%m-%d")
             print(f"Starting predictions from today: {start_date}")
-            
-        # Get the horizon window from command line argument or use default (1 day)
-        days_horizon = 1  # Default to 1 day if not specified
-        if len(sys.argv) > 2:
-            try:
-                days_horizon = int(sys.argv[2])
-                if days_horizon < 1 or days_horizon > 8:
-                    raise ValueError("Horizon must be between 1 and 8 days")
-                print(f"Calculating predictions for {days_horizon} days")
-            except ValueError as e:
-                print(f"Error: Invalid horizon value. {str(e)}")
-                print("Please specify a number between 1 and 8 days.")
-                return
-        else:
-            print(f"Using default horizon: {days_horizon} day")
         
-        # Show date range that will be processed
+        # Show date that will be processed
         start_datetime = datetime.datetime.strptime(start_date, "%Y-%m-%d")
-        end_datetime = start_datetime + datetime.timedelta(days=days_horizon-1)
-        print(f"Date range: {start_datetime.strftime('%Y-%m-%d')} to {end_datetime.strftime('%Y-%m-%d')}")
-        print(f"A separate CSV file will be created for each day in this range.")
+        print(f"Date: {start_datetime.strftime('%Y-%m-%d')}")
         
         # Initialize solar prediction with config file
         solar = SolarPrediction(config_path=config_path)
@@ -357,9 +319,7 @@ def main():
         # Run prediction with specific parameters
         date_dfs = solar.run_prediction(
             output_dir=data_dir,
-            start=start_date,  # Use the formatted date
-            days_horizon=days_horizon,  # Use specified or default horizon
-            resolution_minutes=60
+            start=start_date  # Use the formatted date
         )
         
         if date_dfs:
@@ -369,8 +329,7 @@ def main():
         
     except ValueError as e:
         print(f"Error: Invalid date format. Please use YYYYMMDD or YYYY-MM-DD format.")
-        print(f"Example: python prediction.py 20250227 [days] or python prediction.py 2025-02-27 [days]")
-        print(f"Where [days] is optional and specifies the number of days to predict (default is 1)")
+        print(f"Example: python prediction.py 20250227 or python prediction.py 2025-02-27")
     except Exception as e:
         print(f"Error running solar prediction: {e}")
 

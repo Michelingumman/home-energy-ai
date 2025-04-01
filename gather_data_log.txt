@@ -1,0 +1,2990 @@
+[2025-03-03 23:59:38] Starting Solar Prediction...
+[2025-03-03 23:59:41] Solar Prediction completed successfully.
+[2025-03-03 23:59:41] Output:
+Starting predictions from today: 2025-03-03
+Using default horizon: 1 day
+Date range: 2025-03-03 to 2025-03-03
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-03&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-03, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-03&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-03, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-03 00:00:00 to 2025-03-04 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-03 00:00:00 to 2025-03-04 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-03 00:00:00 to 2025-03-04 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-03:
+                     kilowatt_hours
+timestamp                          
+2025-03-03 00:00:00           0.000
+2025-03-03 01:00:00           0.000
+2025-03-03 02:00:00           0.000
+2025-03-03 03:00:00           0.000
+2025-03-03 04:00:00           0.000
+2025-03-03 05:00:00           0.000
+2025-03-03 06:00:00           0.000
+2025-03-03 07:00:00           0.545
+2025-03-03 08:00:00           2.064
+2025-03-03 09:00:00           3.906
+2025-03-03 10:00:00           5.442
+2025-03-03 11:00:00           6.421
+2025-03-03 12:00:00           6.644
+2025-03-03 13:00:00           6.109
+2025-03-03 14:00:00           5.060
+2025-03-03 15:00:00           3.686
+2025-03-03 16:00:00           2.358
+2025-03-03 17:00:00           1.164
+2025-03-03 18:00:00           0.265
+2025-03-03 19:00:00           0.000
+2025-03-03 20:00:00           0.000
+2025-03-03 21:00:00           0.000
+2025-03-03 22:00:00           0.000
+2025-03-03 23:00:00           0.000
+Predictions for 2025-03-03 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250303.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-03: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250303.csv
+
+[2025-03-03 23:59:41] Starting Price Gathering...
+[2025-03-03 23:59:42] Price Gathering completed successfully.
+[2025-03-03 23:59:42] Output:
+Price data is already up-to-date.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-03 22:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-02T23:00:00.000Z to 2025-03-03T22:00:00.000Z
+Fetched 0 new records (skipped 24 existing records)
+No new data to add. Data is already up-to-date.
+
+[2025-03-04 00:00:01] Starting Solar Prediction...
+[2025-03-04 00:00:07] Solar Prediction completed successfully.
+[2025-03-04 00:00:07] Output:
+Starting predictions from today: 2025-03-04
+Using default horizon: 1 day
+Date range: 2025-03-04 to 2025-03-04
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-04&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-04, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-04&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-04, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-04 00:00:00 to 2025-03-05 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-04 00:00:00 to 2025-03-05 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-04 00:00:00 to 2025-03-05 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-04:
+                     kilowatt_hours
+timestamp                          
+2025-03-04 00:00:00           0.000
+2025-03-04 01:00:00           0.000
+2025-03-04 02:00:00           0.000
+2025-03-04 03:00:00           0.000
+2025-03-04 04:00:00           0.000
+2025-03-04 05:00:00           0.000
+2025-03-04 06:00:00           0.000
+2025-03-04 07:00:00           0.198
+2025-03-04 08:00:00           0.690
+2025-03-04 09:00:00           1.237
+2025-03-04 10:00:00           1.650
+2025-03-04 11:00:00           1.876
+2025-03-04 12:00:00           1.932
+2025-03-04 13:00:00           1.841
+2025-03-04 14:00:00           1.612
+2025-03-04 15:00:00           1.255
+2025-03-04 16:00:00           0.872
+2025-03-04 17:00:00           0.482
+2025-03-04 18:00:00           0.132
+2025-03-04 19:00:00           0.000
+2025-03-04 20:00:00           0.000
+2025-03-04 21:00:00           0.000
+2025-03-04 22:00:00           0.000
+2025-03-04 23:00:00           0.000
+Predictions for 2025-03-04 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250304.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-04: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250304.csv
+
+[2025-03-04 00:00:07] Starting Price Gathering...
+[2025-03-04 00:00:10] Price Gathering completed successfully.
+[2025-03-04 00:00:10] Output:
+Successfully added 1 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-03 22:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-03T00:00:00.000Z to 2025-03-03T23:00:00.000Z
+Fetched 1 new records (skipped 23 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 1 new records
+Total records in file: 25
+Data range: 2025-03-02 23:00:00 to 2025-03-03 23:00:00
+
+[2025-03-04 23:51:24] Starting Solar Prediction...
+[2025-03-04 23:51:30] ################################## START OF SCRIPT 2025-03-04 23:51:30 ##################################
+[2025-03-04 23:51:30] Solar Prediction completed successfully.
+[2025-03-04 23:51:30] Output:
+Starting predictions from today: 2025-03-04
+Using default horizon: 1 day
+Date range: 2025-03-04 to 2025-03-04
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-04&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-04, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-04&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-04, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-04 00:00:00 to 2025-03-05 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-04 00:00:00 to 2025-03-05 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-04 00:00:00 to 2025-03-05 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-04:
+                     kilowatt_hours
+timestamp                          
+2025-03-04 00:00:00           0.000
+2025-03-04 01:00:00           0.000
+2025-03-04 02:00:00           0.000
+2025-03-04 03:00:00           0.000
+2025-03-04 04:00:00           0.000
+2025-03-04 05:00:00           0.000
+2025-03-04 06:00:00           0.000
+2025-03-04 07:00:00           0.662
+2025-03-04 08:00:00           2.110
+2025-03-04 09:00:00           3.644
+2025-03-04 10:00:00           4.811
+2025-03-04 11:00:00           5.144
+2025-03-04 12:00:00           4.537
+2025-03-04 13:00:00           3.579
+2025-03-04 14:00:00           2.824
+2025-03-04 15:00:00           2.093
+2025-03-04 16:00:00           1.386
+2025-03-04 17:00:00           0.739
+2025-03-04 18:00:00           0.193
+2025-03-04 19:00:00           0.000
+2025-03-04 20:00:00           0.000
+2025-03-04 21:00:00           0.000
+2025-03-04 22:00:00           0.000
+2025-03-04 23:00:00           0.000
+Predictions for 2025-03-04 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250304.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-04: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250304.csv
+
+[2025-03-04 23:51:30] ################################## END OF SCRIPT ##################################
+[2025-03-04 23:51:30] Starting Price Gathering...
+[2025-03-04 23:51:38] ################################## START OF SCRIPT 2025-03-04 23:51:38 ##################################
+[2025-03-04 23:51:38] Price Gathering completed successfully.
+[2025-03-04 23:51:38] Output:
+Successfully added 23 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-03 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-03T22:00:00.000Z to 2025-03-04T21:00:00.000Z
+Fetched 22 new records (skipped 2 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 22 new records
+Total records in file: 47
+Data range: 2025-03-02 23:00:00 to 2025-03-04 21:00:00
+
+[2025-03-04 23:51:38] ################################## END OF SCRIPT ##################################
+[2025-03-05 01:00:03] ################################## START OF SCRIPT 2025-03-05 01:00:03 ##################################
+[2025-03-05 01:00:03] Starting Solar Prediction...
+[2025-03-05 01:00:10] Solar Prediction completed successfully.
+[2025-03-05 01:00:10] Output:
+Starting predictions from today: 2025-03-05
+Using default horizon: 1 day
+Date range: 2025-03-05 to 2025-03-05
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-05&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-05, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-05&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-05, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-05 00:00:00 to 2025-03-06 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-05 00:00:00 to 2025-03-06 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-05 00:00:00 to 2025-03-06 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-05:
+                     kilowatt_hours
+timestamp                          
+2025-03-05 00:00:00           0.000
+2025-03-05 01:00:00           0.000
+2025-03-05 02:00:00           0.000
+2025-03-05 03:00:00           0.000
+2025-03-05 04:00:00           0.000
+2025-03-05 05:00:00           0.000
+2025-03-05 06:00:00           0.000
+2025-03-05 07:00:00           0.205
+2025-03-05 08:00:00           0.706
+2025-03-05 09:00:00           1.253
+2025-03-05 10:00:00           1.663
+2025-03-05 11:00:00           1.890
+2025-03-05 12:00:00           1.949
+2025-03-05 13:00:00           1.861
+2025-03-05 14:00:00           1.633
+2025-03-05 15:00:00           1.278
+2025-03-05 16:00:00           0.892
+2025-03-05 17:00:00           0.496
+2025-03-05 18:00:00           0.137
+2025-03-05 19:00:00           0.000
+2025-03-05 20:00:00           0.000
+2025-03-05 21:00:00           0.000
+2025-03-05 22:00:00           0.000
+2025-03-05 23:00:00           0.000
+Predictions for 2025-03-05 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250305.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-05: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250305.csv
+
+[2025-03-05 01:00:10] ################################## END OF SCRIPT ##################################
+[2025-03-05 01:00:10] ################################## START OF SCRIPT 2025-03-05 01:00:10 ##################################
+[2025-03-05 01:00:10] Starting Price Gathering...
+[2025-03-05 01:00:14] Price Gathering completed successfully.
+[2025-03-05 01:00:14] Output:
+Successfully added 2 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-04 21:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-04T00:00:00.000Z to 2025-03-04T23:00:00.000Z
+Fetched 2 new records (skipped 22 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 2 new records
+Total records in file: 49
+Data range: 2025-03-02 23:00:00 to 2025-03-04 23:00:00
+
+[2025-03-05 01:00:14] ################################## END OF SCRIPT ##################################
+[2025-03-06 00:00:02] ################################## START OF SCRIPT 2025-03-06 00:00:02 ##################################
+[2025-03-06 00:00:02] Starting Solar Prediction...
+[2025-03-06 00:00:15] Solar Prediction completed successfully.
+[2025-03-06 00:00:15] Output:
+Starting predictions from today: 2025-03-06
+Using default horizon: 1 day
+Date range: 2025-03-06 to 2025-03-06
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-06&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-06, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-06&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-06, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-06 00:00:00 to 2025-03-07 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-06 00:00:00 to 2025-03-07 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-06 00:00:00 to 2025-03-07 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-06:
+                     kilowatt_hours
+timestamp                          
+2025-03-06 00:00:00           0.000
+2025-03-06 01:00:00           0.000
+2025-03-06 02:00:00           0.000
+2025-03-06 03:00:00           0.000
+2025-03-06 04:00:00           0.000
+2025-03-06 05:00:00           0.000
+2025-03-06 06:00:00           0.000
+2025-03-06 07:00:00           0.214
+2025-03-06 08:00:00           0.726
+2025-03-06 09:00:00           1.270
+2025-03-06 10:00:00           1.671
+2025-03-06 11:00:00           1.899
+2025-03-06 12:00:00           2.006
+2025-03-06 13:00:00           2.118
+2025-03-06 14:00:00           2.310
+2025-03-06 15:00:00           2.283
+2025-03-06 16:00:00           1.867
+2025-03-06 17:00:00           1.136
+2025-03-06 18:00:00           0.341
+2025-03-06 19:00:00           0.000
+2025-03-06 20:00:00           0.000
+2025-03-06 21:00:00           0.000
+2025-03-06 22:00:00           0.000
+2025-03-06 23:00:00           0.000
+Predictions for 2025-03-06 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250306.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-06: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250306.csv
+
+[2025-03-06 00:00:15] ################################## END OF SCRIPT ##################################
+[2025-03-06 00:00:15] ################################## START OF SCRIPT 2025-03-06 00:00:15 ##################################
+[2025-03-06 00:00:15] Starting Price Gathering...
+[2025-03-06 00:00:20] Price Gathering completed successfully.
+[2025-03-06 00:00:20] Output:
+Successfully added 23 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-04 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-05T00:00:00.000Z to 2025-03-05T23:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 73
+Data range: 2025-03-02 23:00:00 to 2025-03-05 23:00:00
+
+[2025-03-06 00:00:20] ################################## END OF SCRIPT ##################################
+[2025-03-07 00:00:02] ################################## START OF SCRIPT 2025-03-07 00:00:02 ##################################
+[2025-03-07 00:00:02] Starting Solar Prediction...
+[2025-03-07 00:00:11] Solar Prediction completed successfully.
+[2025-03-07 00:00:11] Output:
+Starting predictions from today: 2025-03-07
+Using default horizon: 1 day
+Date range: 2025-03-07 to 2025-03-07
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-07&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-07, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-07&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-07, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-07 00:00:00 to 2025-03-08 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-07 00:00:00 to 2025-03-08 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-07 00:00:00 to 2025-03-08 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-07:
+                     kilowatt_hours
+timestamp                          
+2025-03-07 00:00:00           0.000
+2025-03-07 01:00:00           0.000
+2025-03-07 02:00:00           0.000
+2025-03-07 03:00:00           0.000
+2025-03-07 04:00:00           0.000
+2025-03-07 05:00:00           0.000
+2025-03-07 06:00:00           0.000
+2025-03-07 07:00:00           0.240
+2025-03-07 08:00:00           0.804
+2025-03-07 09:00:00           1.395
+2025-03-07 10:00:00           1.826
+2025-03-07 11:00:00           2.330
+2025-03-07 12:00:00           3.435
+2025-03-07 13:00:00           4.542
+2025-03-07 14:00:00           4.568
+2025-03-07 15:00:00           3.699
+2025-03-07 16:00:00           2.612
+2025-03-07 17:00:00           1.408
+2025-03-07 18:00:00           0.370
+2025-03-07 19:00:00           0.000
+2025-03-07 20:00:00           0.000
+2025-03-07 21:00:00           0.000
+2025-03-07 22:00:00           0.000
+2025-03-07 23:00:00           0.000
+Predictions for 2025-03-07 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250307.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-07: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250307.csv
+
+[2025-03-07 00:00:11] ################################## END OF SCRIPT ##################################
+[2025-03-07 00:00:11] ################################## START OF SCRIPT 2025-03-07 00:00:11 ##################################
+[2025-03-07 00:00:11] Starting Price Gathering...
+[2025-03-07 00:00:17] Price Gathering completed successfully.
+[2025-03-07 00:00:17] Output:
+Successfully added 24 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-05 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-06T00:00:00.000Z to 2025-03-06T23:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 97
+Data range: 2025-03-02 23:00:00 to 2025-03-06 23:00:00
+
+[2025-03-07 00:00:17] ################################## END OF SCRIPT ##################################
+[2025-03-08 00:00:02] ################################## START OF SCRIPT 2025-03-08 00:00:02 ##################################
+[2025-03-08 00:00:02] Starting Solar Prediction...
+[2025-03-08 00:00:19] Solar Prediction completed successfully.
+[2025-03-08 00:00:19] Output:
+Starting predictions from today: 2025-03-08
+Using default horizon: 1 day
+Date range: 2025-03-08 to 2025-03-08
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-08&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-08, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-08&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-08, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-08 00:00:00 to 2025-03-09 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-08 00:00:00 to 2025-03-09 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-08 00:00:00 to 2025-03-09 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-08:
+                     kilowatt_hours
+timestamp                          
+2025-03-08 00:00:00           0.000
+2025-03-08 01:00:00           0.000
+2025-03-08 02:00:00           0.000
+2025-03-08 03:00:00           0.000
+2025-03-08 04:00:00           0.000
+2025-03-08 05:00:00           0.000
+2025-03-08 06:00:00           0.000
+2025-03-08 07:00:00           0.650
+2025-03-08 08:00:00           2.184
+2025-03-08 09:00:00           3.418
+2025-03-08 10:00:00           3.723
+2025-03-08 11:00:00           3.496
+2025-03-08 12:00:00           3.085
+2025-03-08 13:00:00           2.531
+2025-03-08 14:00:00           1.994
+2025-03-08 15:00:00           1.619
+2025-03-08 16:00:00           1.371
+2025-03-08 17:00:00           0.953
+2025-03-08 18:00:00           0.312
+2025-03-08 19:00:00           0.000
+2025-03-08 20:00:00           0.000
+2025-03-08 21:00:00           0.000
+2025-03-08 22:00:00           0.000
+2025-03-08 23:00:00           0.000
+Predictions for 2025-03-08 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250308.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-08: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250308.csv
+
+[2025-03-08 00:00:19] ################################## END OF SCRIPT ##################################
+[2025-03-08 00:00:19] ################################## START OF SCRIPT 2025-03-08 00:00:19 ##################################
+[2025-03-08 00:00:19] Starting Price Gathering...
+[2025-03-08 00:00:24] Price Gathering completed successfully.
+[2025-03-08 00:00:24] Output:
+Successfully added 24 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-06 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-07T00:00:00.000Z to 2025-03-07T23:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 121
+Data range: 2025-03-02 23:00:00 to 2025-03-07 23:00:00
+
+[2025-03-08 00:00:24] ################################## END OF SCRIPT ##################################
+[2025-03-09 00:00:02] ################################## START OF SCRIPT 2025-03-09 00:00:02 ##################################
+[2025-03-09 00:00:02] Starting Solar Prediction...
+[2025-03-09 00:00:10] Solar Prediction completed successfully.
+[2025-03-09 00:00:10] Output:
+Starting predictions from today: 2025-03-09
+Using default horizon: 1 day
+Date range: 2025-03-09 to 2025-03-09
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-09&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-09, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-09&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-09, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-09 00:00:00 to 2025-03-10 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-09 00:00:00 to 2025-03-10 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-09 00:00:00 to 2025-03-10 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-09:
+                     kilowatt_hours
+timestamp                          
+2025-03-09 00:00:00           0.000
+2025-03-09 01:00:00           0.000
+2025-03-09 02:00:00           0.000
+2025-03-09 03:00:00           0.000
+2025-03-09 04:00:00           0.000
+2025-03-09 05:00:00           0.000
+2025-03-09 06:00:00           0.000
+2025-03-09 07:00:00           0.296
+2025-03-09 08:00:00           0.971
+2025-03-09 09:00:00           1.665
+2025-03-09 10:00:00           2.221
+2025-03-09 11:00:00           2.605
+2025-03-09 12:00:00           2.765
+2025-03-09 13:00:00           2.636
+2025-03-09 14:00:00           2.239
+2025-03-09 15:00:00           1.723
+2025-03-09 16:00:00           1.249
+2025-03-09 17:00:00           0.740
+2025-03-09 18:00:00           0.221
+2025-03-09 19:00:00           0.000
+2025-03-09 20:00:00           0.000
+2025-03-09 21:00:00           0.000
+2025-03-09 22:00:00           0.000
+2025-03-09 23:00:00           0.000
+Predictions for 2025-03-09 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250309.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-09: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250309.csv
+
+[2025-03-09 00:00:10] ################################## END OF SCRIPT ##################################
+[2025-03-09 00:00:10] ################################## START OF SCRIPT 2025-03-09 00:00:10 ##################################
+[2025-03-09 00:00:10] Starting Price Gathering...
+[2025-03-09 00:00:16] Price Gathering completed successfully.
+[2025-03-09 00:00:16] Output:
+Successfully added 24 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-07 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-08T00:00:00.000Z to 2025-03-08T23:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 145
+Data range: 2025-03-02 23:00:00 to 2025-03-08 23:00:00
+
+[2025-03-09 00:00:16] ################################## END OF SCRIPT ##################################
+[2025-03-12 00:00:03] ################################## START OF SCRIPT 2025-03-12 00:00:03 ##################################
+[2025-03-12 00:00:03] Starting Solar Prediction...
+[2025-03-12 00:00:10] Solar Prediction completed successfully.
+[2025-03-12 00:00:10] Output:
+Starting predictions from today: 2025-03-12
+Using default horizon: 1 day
+Date range: 2025-03-12 to 2025-03-12
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-12&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-12, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-12&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-12, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-12 00:00:00 to 2025-03-13 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-12 00:00:00 to 2025-03-13 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-12 00:00:00 to 2025-03-13 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-12:
+                     kilowatt_hours
+timestamp                          
+2025-03-12 00:00:00           0.000
+2025-03-12 01:00:00           0.000
+2025-03-12 02:00:00           0.000
+2025-03-12 03:00:00           0.000
+2025-03-12 04:00:00           0.000
+2025-03-12 05:00:00           0.000
+2025-03-12 06:00:00           0.000
+2025-03-12 07:00:00           0.335
+2025-03-12 08:00:00           1.065
+2025-03-12 09:00:00           1.757
+2025-03-12 10:00:00           2.229
+2025-03-12 11:00:00           2.479
+2025-03-12 12:00:00           2.548
+2025-03-12 13:00:00           2.450
+2025-03-12 14:00:00           2.184
+2025-03-12 15:00:00           1.755
+2025-03-12 16:00:00           1.278
+2025-03-12 17:00:00           0.749
+2025-03-12 18:00:00           0.221
+2025-03-12 19:00:00           0.000
+2025-03-12 20:00:00           0.000
+2025-03-12 21:00:00           0.000
+2025-03-12 22:00:00           0.000
+2025-03-12 23:00:00           0.000
+Predictions for 2025-03-12 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250312.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-12: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250312.csv
+
+[2025-03-12 00:00:10] ################################## END OF SCRIPT ##################################
+[2025-03-12 00:00:10] ################################## START OF SCRIPT 2025-03-12 00:00:10 ##################################
+[2025-03-12 00:00:10] Starting Price Gathering...
+[2025-03-12 00:00:21] Price Gathering completed successfully.
+[2025-03-12 00:00:21] Output:
+Successfully added 72 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-08 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-11T00:00:00.000Z to 2025-03-11T23:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 169
+Data range: 2025-03-02 23:00:00 to 2025-03-11 23:00:00
+
+[2025-03-12 00:00:21] ################################## END OF SCRIPT ##################################
+[2025-03-12 20:31:00] ################################## START OF SCRIPT 2025-03-12 20:31:00 ##################################
+[2025-03-12 20:31:00] Starting Solar Prediction...
+[2025-03-12 20:31:05] Solar Prediction completed successfully.
+[2025-03-12 20:31:05] Output:
+Starting predictions from today: 2025-03-12
+Using default horizon: 1 day
+Date range: 2025-03-12 to 2025-03-12
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-12&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45ï¿½)...
+Parameters: Start=2025-03-12, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-12&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135ï¿½)...
+Parameters: Start=2025-03-12, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-12 00:00:00 to 2025-03-13 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-12 00:00:00 to 2025-03-13 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-12 00:00:00 to 2025-03-13 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-12:
+                     kilowatt_hours
+timestamp                          
+2025-03-12 00:00:00           0.000
+2025-03-12 01:00:00           0.000
+2025-03-12 02:00:00           0.000
+2025-03-12 03:00:00           0.000
+2025-03-12 04:00:00           0.000
+2025-03-12 05:00:00           0.000
+2025-03-12 06:00:00           0.000
+2025-03-12 07:00:00           1.033
+2025-03-12 08:00:00           3.266
+2025-03-12 09:00:00           5.353
+2025-03-12 10:00:00           6.792
+2025-03-12 11:00:00           7.583
+2025-03-12 12:00:00           7.722
+2025-03-12 13:00:00           7.164
+2025-03-12 14:00:00           6.073
+2025-03-12 15:00:00           4.575
+2025-03-12 16:00:00           2.996
+2025-03-12 17:00:00           1.365
+2025-03-12 18:00:00           0.224
+2025-03-12 19:00:00           0.000
+2025-03-12 20:00:00           0.000
+2025-03-12 21:00:00           0.000
+2025-03-12 22:00:00           0.000
+2025-03-12 23:00:00           0.000
+Predictions for 2025-03-12 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250312.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-12: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250312.csv
+
+[2025-03-12 20:31:05] ################################## END OF SCRIPT ##################################
+[2025-03-12 20:31:05] ################################## START OF SCRIPT 2025-03-12 20:31:05 ##################################
+[2025-03-12 20:31:05] Starting Price Gathering...
+[2025-03-12 20:31:10] Price Gathering completed successfully.
+[2025-03-12 20:31:10] Output:
+Successfully added 20 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-11 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-11T20:00:00.000Z to 2025-03-12T19:00:00.000Z
+Fetched 20 new records (skipped 4 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 20 new records
+Total records in file: 189
+Data range: 2025-03-02 23:00:00 to 2025-03-12 19:00:00
+
+[2025-03-12 20:31:10] ################################## END OF SCRIPT ##################################
+[2025-03-14 13:48:16] ################################## START OF SCRIPT 2025-03-14 13:48:16 ##################################
+[2025-03-14 13:48:16] Starting Solar Prediction...
+[2025-03-14 13:48:21] Solar Prediction completed successfully.
+[2025-03-14 13:48:21] Output:
+Starting predictions from today: 2025-03-14
+Using default horizon: 1 day
+Date range: 2025-03-14 to 2025-03-14
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-14&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-14, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-14&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-14, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-14 00:00:00 to 2025-03-15 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-14 00:00:00 to 2025-03-15 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-14 00:00:00 to 2025-03-15 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-14:
+                     kilowatt_hours
+timestamp                          
+2025-03-14 00:00:00           0.000
+2025-03-14 01:00:00           0.000
+2025-03-14 02:00:00           0.000
+2025-03-14 03:00:00           0.000
+2025-03-14 04:00:00           0.000
+2025-03-14 05:00:00           0.000
+2025-03-14 06:00:00           0.000
+2025-03-14 07:00:00           1.149
+2025-03-14 08:00:00           3.539
+2025-03-14 09:00:00           5.554
+2025-03-14 10:00:00           6.737
+2025-03-14 11:00:00           7.461
+2025-03-14 12:00:00           7.705
+2025-03-14 13:00:00           7.137
+2025-03-14 14:00:00           5.789
+2025-03-14 15:00:00           3.918
+2025-03-14 16:00:00           2.461
+2025-03-14 17:00:00           1.399
+2025-03-14 18:00:00           0.388
+2025-03-14 19:00:00           0.000
+2025-03-14 20:00:00           0.000
+2025-03-14 21:00:00           0.000
+2025-03-14 22:00:00           0.000
+2025-03-14 23:00:00           0.000
+Predictions for 2025-03-14 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250314.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-14: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250314.csv
+
+[2025-03-14 13:48:21] ################################## END OF SCRIPT ##################################
+[2025-03-14 13:48:21] ################################## START OF SCRIPT 2025-03-14 13:48:21 ##################################
+[2025-03-14 13:48:21] Starting Price Gathering...
+[2025-03-14 13:48:29] Price Gathering completed successfully.
+[2025-03-14 13:48:29] Output:
+Successfully added 41 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-12 19:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-13T13:00:00.000Z to 2025-03-14T12:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 213
+Data range: 2025-03-02 23:00:00 to 2025-03-14 12:00:00
+
+[2025-03-14 13:48:29] ################################## END OF SCRIPT ##################################
+[2025-03-14 20:33:20] ################################## START OF SCRIPT 2025-03-14 20:33:20 ##################################
+[2025-03-14 20:33:20] Starting Solar Prediction...
+[2025-03-14 20:33:30] Solar Prediction completed successfully.
+[2025-03-14 20:33:30] Output:
+Starting predictions from today: 2025-03-14
+Using default horizon: 1 day
+Date range: 2025-03-14 to 2025-03-14
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-14&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-14, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-14&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-14, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-14 00:00:00 to 2025-03-15 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-14 00:00:00 to 2025-03-15 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-14 00:00:00 to 2025-03-15 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-14:
+                     kilowatt_hours
+timestamp                          
+2025-03-14 00:00:00           0.000
+2025-03-14 01:00:00           0.000
+2025-03-14 02:00:00           0.000
+2025-03-14 03:00:00           0.000
+2025-03-14 04:00:00           0.000
+2025-03-14 05:00:00           0.000
+2025-03-14 06:00:00           0.000
+2025-03-14 07:00:00           1.144
+2025-03-14 08:00:00           3.530
+2025-03-14 09:00:00           5.644
+2025-03-14 10:00:00           7.044
+2025-03-14 11:00:00           7.790
+2025-03-14 12:00:00           7.888
+2025-03-14 13:00:00           7.293
+2025-03-14 14:00:00           6.180
+2025-03-14 15:00:00           4.689
+2025-03-14 16:00:00           3.169
+2025-03-14 17:00:00           1.675
+2025-03-14 18:00:00           0.425
+2025-03-14 19:00:00           0.000
+2025-03-14 20:00:00           0.000
+2025-03-14 21:00:00           0.000
+2025-03-14 22:00:00           0.000
+2025-03-14 23:00:00           0.000
+Predictions for 2025-03-14 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250314.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-14: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250314.csv
+
+[2025-03-14 20:33:30] ################################## END OF SCRIPT ##################################
+[2025-03-14 20:33:30] ################################## START OF SCRIPT 2025-03-14 20:33:30 ##################################
+[2025-03-14 20:33:30] Starting Price Gathering...
+[2025-03-14 20:33:34] Price Gathering completed successfully.
+[2025-03-14 20:33:34] Output:
+Successfully added 7 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-14 12:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-13T20:00:00.000Z to 2025-03-14T19:00:00.000Z
+Fetched 7 new records (skipped 17 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 7 new records
+Total records in file: 220
+Data range: 2025-03-02 23:00:00 to 2025-03-14 19:00:00
+
+[2025-03-14 20:33:34] ################################## END OF SCRIPT ##################################
+[2025-03-15 00:00:03] ################################## START OF SCRIPT 2025-03-15 00:00:03 ##################################
+[2025-03-15 00:00:03] Starting Solar Prediction...
+[2025-03-15 00:00:09] Solar Prediction completed successfully.
+[2025-03-15 00:00:09] Output:
+Starting predictions from today: 2025-03-15
+Using default horizon: 1 day
+Date range: 2025-03-15 to 2025-03-15
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-15&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-15, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-15&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-15, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-15 00:00:00 to 2025-03-16 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-15 00:00:00 to 2025-03-16 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-15 00:00:00 to 2025-03-16 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-15:
+                     kilowatt_hours
+timestamp                          
+2025-03-15 00:00:00           0.000
+2025-03-15 01:00:00           0.000
+2025-03-15 02:00:00           0.000
+2025-03-15 03:00:00           0.000
+2025-03-15 04:00:00           0.000
+2025-03-15 05:00:00           0.000
+2025-03-15 06:00:00           0.000
+2025-03-15 07:00:00           1.108
+2025-03-15 08:00:00           3.429
+2025-03-15 09:00:00           4.843
+2025-03-15 10:00:00           4.199
+2025-03-15 11:00:00           3.039
+2025-03-15 12:00:00           2.656
+2025-03-15 13:00:00           2.644
+2025-03-15 14:00:00           2.924
+2025-03-15 15:00:00           2.905
+2025-03-15 16:00:00           2.115
+2025-03-15 17:00:00           1.048
+2025-03-15 18:00:00           0.264
+2025-03-15 19:00:00           0.000
+2025-03-15 20:00:00           0.000
+2025-03-15 21:00:00           0.000
+2025-03-15 22:00:00           0.000
+2025-03-15 23:00:00           0.000
+Predictions for 2025-03-15 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250315.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-15: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250315.csv
+
+[2025-03-15 00:00:09] ################################## END OF SCRIPT ##################################
+[2025-03-15 00:00:09] ################################## START OF SCRIPT 2025-03-15 00:00:09 ##################################
+[2025-03-15 00:00:09] Starting Price Gathering...
+[2025-03-15 00:00:12] Price Gathering completed successfully.
+[2025-03-15 00:00:12] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-14 19:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-14T00:00:00.000Z to 2025-03-14T23:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 224
+Data range: 2025-03-02 23:00:00 to 2025-03-14 23:00:00
+
+[2025-03-15 00:00:12] ################################## END OF SCRIPT ##################################
+[2025-03-15 20:00:02] ################################## START OF SCRIPT 2025-03-15 20:00:02 ##################################
+[2025-03-15 20:00:02] Starting Solar Prediction...
+[2025-03-15 20:00:09] Solar Prediction completed successfully.
+[2025-03-15 20:00:09] Output:
+Starting predictions from today: 2025-03-15
+Using default horizon: 1 day
+Date range: 2025-03-15 to 2025-03-15
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-15&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-15, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-15&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-15, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-15 00:00:00 to 2025-03-16 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-15 00:00:00 to 2025-03-16 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-15 00:00:00 to 2025-03-16 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-15:
+                     kilowatt_hours
+timestamp                          
+2025-03-15 00:00:00           0.000
+2025-03-15 01:00:00           0.000
+2025-03-15 02:00:00           0.000
+2025-03-15 03:00:00           0.000
+2025-03-15 04:00:00           0.000
+2025-03-15 05:00:00           0.000
+2025-03-15 06:00:00           0.000
+2025-03-15 07:00:00           1.159
+2025-03-15 08:00:00           3.527
+2025-03-15 09:00:00           5.562
+2025-03-15 10:00:00           6.884
+2025-03-15 11:00:00           7.602
+2025-03-15 12:00:00           7.723
+2025-03-15 13:00:00           7.170
+2025-03-15 14:00:00           6.102
+2025-03-15 15:00:00           4.654
+2025-03-15 16:00:00           3.157
+2025-03-15 17:00:00           1.645
+2025-03-15 18:00:00           0.400
+2025-03-15 19:00:00           0.000
+2025-03-15 20:00:00           0.000
+2025-03-15 21:00:00           0.000
+2025-03-15 22:00:00           0.000
+2025-03-15 23:00:00           0.000
+Predictions for 2025-03-15 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250315.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-15: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250315.csv
+
+[2025-03-15 20:00:09] ################################## END OF SCRIPT ##################################
+[2025-03-15 20:00:09] ################################## START OF SCRIPT 2025-03-15 20:00:09 ##################################
+[2025-03-15 20:00:09] Starting Price Gathering...
+[2025-03-15 20:00:14] Price Gathering completed successfully.
+[2025-03-15 20:00:14] Output:
+Successfully added 20 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-14 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-14T20:00:00.000Z to 2025-03-15T19:00:00.000Z
+Fetched 20 new records (skipped 4 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 20 new records
+Total records in file: 244
+Data range: 2025-03-02 23:00:00 to 2025-03-15 19:00:00
+
+[2025-03-15 20:00:14] ################################## END OF SCRIPT ##################################
+[2025-03-16 00:00:02] ################################## START OF SCRIPT 2025-03-16 00:00:02 ##################################
+[2025-03-16 00:00:02] Starting Solar Prediction...
+[2025-03-16 00:00:09] Solar Prediction completed successfully.
+[2025-03-16 00:00:09] Output:
+Starting predictions from today: 2025-03-16
+Using default horizon: 1 day
+Date range: 2025-03-16 to 2025-03-16
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-16&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-16, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-16&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-16, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-16 00:00:00 to 2025-03-17 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-16 00:00:00 to 2025-03-17 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-16 00:00:00 to 2025-03-17 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-16:
+                     kilowatt_hours
+timestamp                          
+2025-03-16 00:00:00           0.000
+2025-03-16 01:00:00           0.000
+2025-03-16 02:00:00           0.000
+2025-03-16 03:00:00           0.000
+2025-03-16 04:00:00           0.000
+2025-03-16 05:00:00           0.000
+2025-03-16 06:00:00           0.067
+2025-03-16 07:00:00           0.541
+2025-03-16 08:00:00           1.691
+2025-03-16 09:00:00           3.776
+2025-03-16 10:00:00           6.122
+2025-03-16 11:00:00           6.748
+2025-03-16 12:00:00           5.437
+2025-03-16 13:00:00           4.915
+2025-03-16 14:00:00           5.222
+2025-03-16 15:00:00           4.188
+2025-03-16 16:00:00           2.265
+2025-03-16 17:00:00           1.003
+2025-03-16 18:00:00           0.439
+2025-03-16 19:00:00           0.073
+2025-03-16 20:00:00           0.000
+2025-03-16 21:00:00           0.000
+2025-03-16 22:00:00           0.000
+2025-03-16 23:00:00           0.000
+Predictions for 2025-03-16 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250316.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-16: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250316.csv
+
+[2025-03-16 00:00:09] ################################## END OF SCRIPT ##################################
+[2025-03-16 00:00:09] ################################## START OF SCRIPT 2025-03-16 00:00:09 ##################################
+[2025-03-16 00:00:09] Starting Price Gathering...
+[2025-03-16 00:00:12] Price Gathering completed successfully.
+[2025-03-16 00:00:12] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-15 19:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-15T00:00:00.000Z to 2025-03-15T23:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 248
+Data range: 2025-03-02 23:00:00 to 2025-03-15 23:00:00
+
+[2025-03-16 00:00:12] ################################## END OF SCRIPT ##################################
+[2025-03-16 20:00:02] ################################## START OF SCRIPT 2025-03-16 20:00:02 ##################################
+[2025-03-16 20:00:02] Starting Solar Prediction...
+[2025-03-16 20:00:09] Solar Prediction completed successfully.
+[2025-03-16 20:00:09] Output:
+Starting predictions from today: 2025-03-16
+Using default horizon: 1 day
+Date range: 2025-03-16 to 2025-03-16
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-16&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-16, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-16&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-16, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-16 00:00:00 to 2025-03-17 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-16 00:00:00 to 2025-03-17 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-16 00:00:00 to 2025-03-17 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-16:
+                     kilowatt_hours
+timestamp                          
+2025-03-16 00:00:00           0.000
+2025-03-16 01:00:00           0.000
+2025-03-16 02:00:00           0.000
+2025-03-16 03:00:00           0.000
+2025-03-16 04:00:00           0.000
+2025-03-16 05:00:00           0.000
+2025-03-16 06:00:00           0.171
+2025-03-16 07:00:00           1.506
+2025-03-16 08:00:00           3.759
+2025-03-16 09:00:00           5.685
+2025-03-16 10:00:00           7.056
+2025-03-16 11:00:00           7.832
+2025-03-16 12:00:00           7.983
+2025-03-16 13:00:00           7.437
+2025-03-16 14:00:00           6.353
+2025-03-16 15:00:00           4.860
+2025-03-16 16:00:00           3.081
+2025-03-16 17:00:00           1.642
+2025-03-16 18:00:00           0.669
+2025-03-16 19:00:00           0.109
+2025-03-16 20:00:00           0.000
+2025-03-16 21:00:00           0.000
+2025-03-16 22:00:00           0.000
+2025-03-16 23:00:00           0.000
+Predictions for 2025-03-16 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250316.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-16: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250316.csv
+
+[2025-03-16 20:00:09] ################################## END OF SCRIPT ##################################
+[2025-03-16 20:00:09] ################################## START OF SCRIPT 2025-03-16 20:00:09 ##################################
+[2025-03-16 20:00:09] Starting Price Gathering...
+[2025-03-16 20:00:15] Price Gathering completed successfully.
+[2025-03-16 20:00:15] Output:
+Successfully added 20 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-15 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-15T20:00:00.000Z to 2025-03-16T19:00:00.000Z
+Fetched 20 new records (skipped 4 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 20 new records
+Total records in file: 268
+Data range: 2025-03-02 23:00:00 to 2025-03-16 19:00:00
+
+[2025-03-16 20:00:15] ################################## END OF SCRIPT ##################################
+[2025-03-17 22:02:59] ################################## START OF SCRIPT 2025-03-17 22:02:59 ##################################
+[2025-03-17 22:02:59] Starting Solar Prediction...
+[2025-03-17 22:03:06] Solar Prediction completed successfully.
+[2025-03-17 22:03:06] Output:
+Starting predictions from today: 2025-03-17
+Using default horizon: 1 day
+Date range: 2025-03-17 to 2025-03-17
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-17&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-17, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-17&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-17, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-17 00:00:00 to 2025-03-18 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-17 00:00:00 to 2025-03-18 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-17 00:00:00 to 2025-03-18 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-17:
+                     kilowatt_hours
+timestamp                          
+2025-03-17 00:00:00           0.000
+2025-03-17 01:00:00           0.000
+2025-03-17 02:00:00           0.000
+2025-03-17 03:00:00           0.000
+2025-03-17 04:00:00           0.000
+2025-03-17 05:00:00           0.000
+2025-03-17 06:00:00           0.219
+2025-03-17 07:00:00           1.645
+2025-03-17 08:00:00           3.966
+2025-03-17 09:00:00           5.918
+2025-03-17 10:00:00           7.275
+2025-03-17 11:00:00           8.001
+2025-03-17 12:00:00           8.084
+2025-03-17 13:00:00           7.475
+2025-03-17 14:00:00           6.351
+2025-03-17 15:00:00           4.857
+2025-03-17 16:00:00           3.154
+2025-03-17 17:00:00           1.818
+2025-03-17 18:00:00           0.824
+2025-03-17 19:00:00           0.158
+2025-03-17 20:00:00           0.000
+2025-03-17 21:00:00           0.000
+2025-03-17 22:00:00           0.000
+2025-03-17 23:00:00           0.000
+Predictions for 2025-03-17 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250317.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-17: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250317.csv
+
+[2025-03-17 22:03:06] ################################## END OF SCRIPT ##################################
+[2025-03-17 22:03:06] ################################## START OF SCRIPT 2025-03-17 22:03:06 ##################################
+[2025-03-17 22:03:06] Starting Price Gathering...
+[2025-03-17 22:03:16] Price Gathering completed successfully.
+[2025-03-17 22:03:16] Output:
+Successfully added 26 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-16 19:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-16T22:00:00.000Z to 2025-03-17T21:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 292
+Data range: 2025-03-02 23:00:00 to 2025-03-17 21:00:00
+
+[2025-03-17 22:03:16] ################################## END OF SCRIPT ##################################
+[2025-03-18 00:00:04] ################################## START OF SCRIPT 2025-03-18 00:00:04 ##################################
+[2025-03-18 00:00:04] Starting Solar Prediction...
+[2025-03-18 00:00:14] Solar Prediction completed successfully.
+[2025-03-18 00:00:14] Output:
+Starting predictions from today: 2025-03-18
+Using default horizon: 1 day
+Date range: 2025-03-18 to 2025-03-18
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-18&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-18, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-18&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-18, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-18 00:00:00 to 2025-03-19 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-18 00:00:00 to 2025-03-19 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-18 00:00:00 to 2025-03-19 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-18:
+                     kilowatt_hours
+timestamp                          
+2025-03-18 00:00:00           0.000
+2025-03-18 01:00:00           0.000
+2025-03-18 02:00:00           0.000
+2025-03-18 03:00:00           0.000
+2025-03-18 04:00:00           0.000
+2025-03-18 05:00:00           0.000
+2025-03-18 06:00:00           0.155
+2025-03-18 07:00:00           0.942
+2025-03-18 08:00:00           2.466
+2025-03-18 09:00:00           4.161
+2025-03-18 10:00:00           5.323
+2025-03-18 11:00:00           5.965
+2025-03-18 12:00:00           5.822
+2025-03-18 13:00:00           4.798
+2025-03-18 14:00:00           3.850
+2025-03-18 15:00:00           3.125
+2025-03-18 16:00:00           2.125
+2025-03-18 17:00:00           1.150
+2025-03-18 18:00:00           0.479
+2025-03-18 19:00:00           0.079
+2025-03-18 20:00:00           0.000
+2025-03-18 21:00:00           0.000
+2025-03-18 22:00:00           0.000
+2025-03-18 23:00:00           0.000
+Predictions for 2025-03-18 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250318.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-18: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250318.csv
+
+[2025-03-18 00:00:14] ################################## END OF SCRIPT ##################################
+[2025-03-18 00:00:14] ################################## START OF SCRIPT 2025-03-18 00:00:14 ##################################
+[2025-03-18 00:00:14] Starting Price Gathering...
+[2025-03-18 00:00:17] Price Gathering completed successfully.
+[2025-03-18 00:00:17] Output:
+Successfully added 2 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-17 21:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-17T00:00:00.000Z to 2025-03-17T23:00:00.000Z
+Fetched 2 new records (skipped 22 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 2 new records
+Total records in file: 294
+Data range: 2025-03-02 23:00:00 to 2025-03-17 23:00:00
+
+[2025-03-18 00:00:17] ################################## END OF SCRIPT ##################################
+[2025-03-18 20:00:02] ################################## START OF SCRIPT 2025-03-18 20:00:02 ##################################
+[2025-03-18 20:00:02] Starting Solar Prediction...
+[2025-03-18 20:00:16] Solar Prediction completed successfully.
+[2025-03-18 20:00:16] Output:
+Starting predictions from today: 2025-03-18
+Using default horizon: 1 day
+Date range: 2025-03-18 to 2025-03-18
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-18&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-18, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-18&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-18, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-18 00:00:00 to 2025-03-19 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-18 00:00:00 to 2025-03-19 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-18 00:00:00 to 2025-03-19 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-18:
+                     kilowatt_hours
+timestamp                          
+2025-03-18 00:00:00           0.000
+2025-03-18 01:00:00           0.000
+2025-03-18 02:00:00           0.000
+2025-03-18 03:00:00           0.000
+2025-03-18 04:00:00           0.000
+2025-03-18 05:00:00           0.000
+2025-03-18 06:00:00           0.274
+2025-03-18 07:00:00           1.833
+2025-03-18 08:00:00           4.303
+2025-03-18 09:00:00           6.393
+2025-03-18 10:00:00           7.854
+2025-03-18 11:00:00           8.626
+2025-03-18 12:00:00           8.694
+2025-03-18 13:00:00           8.027
+2025-03-18 14:00:00           6.819
+2025-03-18 15:00:00           5.213
+2025-03-18 16:00:00           3.338
+2025-03-18 17:00:00           1.833
+2025-03-18 18:00:00           0.801
+2025-03-18 19:00:00           0.159
+2025-03-18 20:00:00           0.000
+2025-03-18 21:00:00           0.000
+2025-03-18 22:00:00           0.000
+2025-03-18 23:00:00           0.000
+Predictions for 2025-03-18 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250318.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-18: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250318.csv
+
+[2025-03-18 20:00:16] ################################## END OF SCRIPT ##################################
+[2025-03-18 20:00:16] ################################## START OF SCRIPT 2025-03-18 20:00:16 ##################################
+[2025-03-18 20:00:16] Starting Price Gathering...
+[2025-03-18 20:00:21] Price Gathering completed successfully.
+[2025-03-18 20:00:21] Output:
+Successfully added 20 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-17 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-17T20:00:00.000Z to 2025-03-18T19:00:00.000Z
+Fetched 20 new records (skipped 4 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 20 new records
+Total records in file: 314
+Data range: 2025-03-02 23:00:00 to 2025-03-18 19:00:00
+
+[2025-03-18 20:00:21] ################################## END OF SCRIPT ##################################
+[2025-03-19 00:00:03] ################################## START OF SCRIPT 2025-03-19 00:00:03 ##################################
+[2025-03-19 00:00:03] Starting Solar Prediction...
+[2025-03-19 00:00:08] Solar Prediction completed successfully.
+[2025-03-19 00:00:08] Output:
+Starting predictions from today: 2025-03-19
+Using default horizon: 1 day
+Date range: 2025-03-19 to 2025-03-19
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-19&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-19, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-19&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-19, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-19 00:00:00 to 2025-03-20 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-19 00:00:00 to 2025-03-20 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-19 00:00:00 to 2025-03-20 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-19:
+                     kilowatt_hours
+timestamp                          
+2025-03-19 00:00:00           0.000
+2025-03-19 01:00:00           0.000
+2025-03-19 02:00:00           0.000
+2025-03-19 03:00:00           0.000
+2025-03-19 04:00:00           0.000
+2025-03-19 05:00:00           0.000
+2025-03-19 06:00:00           0.141
+2025-03-19 07:00:00           1.074
+2025-03-19 08:00:00           2.826
+2025-03-19 09:00:00           4.561
+2025-03-19 10:00:00           5.788
+2025-03-19 11:00:00           6.504
+2025-03-19 12:00:00           6.842
+2025-03-19 13:00:00           6.571
+2025-03-19 14:00:00           5.532
+2025-03-19 15:00:00           4.056
+2025-03-19 16:00:00           2.663
+2025-03-19 17:00:00           1.643
+2025-03-19 18:00:00           0.785
+2025-03-19 19:00:00           0.169
+2025-03-19 20:00:00           0.000
+2025-03-19 21:00:00           0.000
+2025-03-19 22:00:00           0.000
+2025-03-19 23:00:00           0.000
+Predictions for 2025-03-19 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250319.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-19: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250319.csv
+
+[2025-03-19 00:00:08] ################################## END OF SCRIPT ##################################
+[2025-03-19 00:00:08] ################################## START OF SCRIPT 2025-03-19 00:00:08 ##################################
+[2025-03-19 00:00:08] Starting Price Gathering...
+[2025-03-19 00:00:12] Price Gathering completed successfully.
+[2025-03-19 00:00:12] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-18 19:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-18T00:00:00.000Z to 2025-03-18T23:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 318
+Data range: 2025-03-02 23:00:00 to 2025-03-18 23:00:00
+
+[2025-03-19 00:00:12] ################################## END OF SCRIPT ##################################
+[2025-03-19 20:00:02] ################################## START OF SCRIPT 2025-03-19 20:00:02 ##################################
+[2025-03-19 20:00:02] Starting Solar Prediction...
+[2025-03-19 20:00:08] Solar Prediction completed successfully.
+[2025-03-19 20:00:08] Output:
+Starting predictions from today: 2025-03-19
+Using default horizon: 1 day
+Date range: 2025-03-19 to 2025-03-19
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-19&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-19, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-19&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-19, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-19 00:00:00 to 2025-03-20 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-19 00:00:00 to 2025-03-20 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-19 00:00:00 to 2025-03-20 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-19:
+                     kilowatt_hours
+timestamp                          
+2025-03-19 00:00:00           0.000
+2025-03-19 01:00:00           0.000
+2025-03-19 02:00:00           0.000
+2025-03-19 03:00:00           0.000
+2025-03-19 04:00:00           0.000
+2025-03-19 05:00:00           0.000
+2025-03-19 06:00:00           0.322
+2025-03-19 07:00:00           1.974
+2025-03-19 08:00:00           4.544
+2025-03-19 09:00:00           6.720
+2025-03-19 10:00:00           8.224
+2025-03-19 11:00:00           9.016
+2025-03-19 12:00:00           9.079
+2025-03-19 13:00:00           8.362
+2025-03-19 14:00:00           7.084
+2025-03-19 15:00:00           5.429
+2025-03-19 16:00:00           3.549
+2025-03-19 17:00:00           2.063
+2025-03-19 18:00:00           0.966
+2025-03-19 19:00:00           0.206
+2025-03-19 20:00:00           0.000
+2025-03-19 21:00:00           0.000
+2025-03-19 22:00:00           0.000
+2025-03-19 23:00:00           0.000
+Predictions for 2025-03-19 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250319.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-19: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250319.csv
+
+[2025-03-19 20:00:08] ################################## END OF SCRIPT ##################################
+[2025-03-19 20:00:08] ################################## START OF SCRIPT 2025-03-19 20:00:08 ##################################
+[2025-03-19 20:00:08] Starting Price Gathering...
+[2025-03-19 20:00:14] Price Gathering completed successfully.
+[2025-03-19 20:00:14] Output:
+Successfully added 20 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-18 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-18T20:00:00.000Z to 2025-03-19T19:00:00.000Z
+Fetched 20 new records (skipped 4 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 20 new records
+Total records in file: 338
+Data range: 2025-03-02 23:00:00 to 2025-03-19 19:00:00
+
+[2025-03-19 20:00:14] ################################## END OF SCRIPT ##################################
+[2025-03-20 00:00:02] ################################## START OF SCRIPT 2025-03-20 00:00:02 ##################################
+[2025-03-20 00:00:02] Starting Solar Prediction...
+[2025-03-20 00:00:09] Solar Prediction completed successfully.
+[2025-03-20 00:00:09] Output:
+Starting predictions from today: 2025-03-20
+Using default horizon: 1 day
+Date range: 2025-03-20 to 2025-03-20
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-20&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-20, Horizon=1 days, Resolution=60 minutes
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-20&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-20, Horizon=1 days, Resolution=60 minutes
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-20 00:00:00 to 2025-03-21 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-20 00:00:00 to 2025-03-21 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-20 00:00:00 to 2025-03-21 00:00:00
+Total entries: 25
+
+Processing 1 days of predictions:
+
+Hourly Energy Production (kWh) for 2025-03-20:
+                     kilowatt_hours
+timestamp                          
+2025-03-20 00:00:00           0.000
+2025-03-20 01:00:00           0.000
+2025-03-20 02:00:00           0.000
+2025-03-20 03:00:00           0.000
+2025-03-20 04:00:00           0.000
+2025-03-20 05:00:00           0.000
+2025-03-20 06:00:00           0.120
+2025-03-20 07:00:00           0.610
+2025-03-20 08:00:00           1.323
+2025-03-20 09:00:00           1.927
+2025-03-20 10:00:00           2.339
+2025-03-20 11:00:00           2.770
+2025-03-20 12:00:00           3.849
+2025-03-20 13:00:00           4.834
+2025-03-20 14:00:00           3.807
+2025-03-20 15:00:00           2.348
+2025-03-20 16:00:00           2.133
+2025-03-20 17:00:00           1.789
+2025-03-20 18:00:00           0.945
+2025-03-20 19:00:00           0.239
+2025-03-20 20:00:00           0.000
+2025-03-20 21:00:00           0.000
+2025-03-20 22:00:00           0.000
+2025-03-20 23:00:00           0.000
+Predictions for 2025-03-20 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250320.csv
+
+Summary: Generated predictions for 1 days:
+  - 2025-03-20: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250320.csv
+
+[2025-03-20 00:00:09] ################################## END OF SCRIPT ##################################
+[2025-03-20 00:00:09] ################################## START OF SCRIPT 2025-03-20 00:00:09 ##################################
+[2025-03-20 00:00:09] Starting Price Gathering...
+[2025-03-20 00:00:12] Price Gathering completed successfully.
+[2025-03-20 00:00:12] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-19 19:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-19T00:00:00.000Z to 2025-03-19T23:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 342
+Data range: 2025-03-02 23:00:00 to 2025-03-19 23:00:00
+
+[2025-03-20 00:00:12] ################################## END OF SCRIPT ##################################
+[2025-03-26 16:46:59] ################################## START OF SCRIPT 2025-03-26 16:46:59 ##################################
+[2025-03-26 16:46:59] Starting Solar Prediction...
+[2025-03-26 16:47:10] Solar Prediction completed successfully.
+[2025-03-26 16:47:10] Output:
+Starting predictions from today: 2025-03-26
+Using default horizon: 1 day
+Date range: 2025-03-26 to 2025-03-26
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-26&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-26, Horizon=1 days, Resolution=60 minutes
+Error making API request: 422 Client Error: Unprocessable Entity for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-26&resolution=60
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-26&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-26, Horizon=1 days, Resolution=60 minutes
+Error making API request: 422 Client Error: Unprocessable Entity for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-26&resolution=60
+
+Processing predictions from each panel group:
+Failed to get predictions.
+
+[2025-03-26 16:47:10] ################################## END OF SCRIPT ##################################
+[2025-03-26 16:47:10] ################################## START OF SCRIPT 2025-03-26 16:47:10 ##################################
+[2025-03-26 16:47:10] Starting Price Gathering...
+[2025-03-26 16:48:00] Price Gathering completed successfully.
+[2025-03-26 16:48:00] Output:
+Successfully added 160 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-19 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-25T16:00:00.000Z to 2025-03-26T15:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 366
+Data range: 2025-03-02 23:00:00 to 2025-03-26 15:00:00
+
+[2025-03-26 16:48:00] ################################## END OF SCRIPT ##################################
+[2025-03-26 20:00:02] ################################## START OF SCRIPT 2025-03-26 20:00:02 ##################################
+[2025-03-26 20:00:02] Starting Solar Prediction...
+[2025-03-26 20:00:12] Solar Prediction completed successfully.
+[2025-03-26 20:00:12] Output:
+Starting predictions from today: 2025-03-26
+Using default horizon: 1 day
+Date range: 2025-03-26 to 2025-03-26
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-26&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-26, Horizon=1 days, Resolution=60 minutes
+Error making API request: 422 Client Error: Unprocessable Entity for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-26&resolution=60
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-26&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-26, Horizon=1 days, Resolution=60 minutes
+Error making API request: 422 Client Error: Unprocessable Entity for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-26&resolution=60
+
+Processing predictions from each panel group:
+Failed to get predictions.
+
+[2025-03-26 20:00:12] ################################## END OF SCRIPT ##################################
+[2025-03-26 20:00:12] ################################## START OF SCRIPT 2025-03-26 20:00:12 ##################################
+[2025-03-26 20:00:12] Starting Price Gathering...
+[2025-03-26 20:00:15] Price Gathering completed successfully.
+[2025-03-26 20:00:15] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-26 15:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-25T20:00:00.000Z to 2025-03-26T19:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 370
+Data range: 2025-03-02 23:00:00 to 2025-03-26 19:00:00
+
+[2025-03-26 20:00:15] ################################## END OF SCRIPT ##################################
+[2025-03-27 00:00:03] ################################## START OF SCRIPT 2025-03-27 00:00:03 ##################################
+[2025-03-27 00:00:03] Starting Solar Prediction...
+[2025-03-27 00:00:15] Solar Prediction completed successfully.
+[2025-03-27 00:00:15] Output:
+Starting predictions from today: 2025-03-27
+Using default horizon: 1 day
+Date range: 2025-03-27 to 2025-03-27
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-27&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-27, Horizon=1 days, Resolution=60 minutes
+Error making API request: 422 Client Error: Unprocessable Entity for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-27&resolution=60
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-27&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-27, Horizon=1 days, Resolution=60 minutes
+Error making API request: 422 Client Error: Unprocessable Entity for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-27&resolution=60
+
+Processing predictions from each panel group:
+Failed to get predictions.
+
+[2025-03-27 00:00:15] ################################## END OF SCRIPT ##################################
+[2025-03-27 00:00:15] ################################## START OF SCRIPT 2025-03-27 00:00:15 ##################################
+[2025-03-27 00:00:15] Starting Price Gathering...
+[2025-03-27 00:00:19] Price Gathering completed successfully.
+[2025-03-27 00:00:19] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-26 19:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-26T00:00:00.000Z to 2025-03-26T23:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 374
+Data range: 2025-03-02 23:00:00 to 2025-03-26 23:00:00
+
+[2025-03-27 00:00:19] ################################## END OF SCRIPT ##################################
+[2025-03-28 12:08:46] ################################## START OF SCRIPT 2025-03-28 12:08:46 ##################################
+[2025-03-28 12:08:46] Starting Solar Prediction...
+[2025-03-28 12:08:51] Solar Prediction completed successfully.
+[2025-03-28 12:08:51] Output:
+Starting predictions from today: 2025-03-28
+Using default horizon: 1 day
+Date range: 2025-03-28 to 2025-03-28
+A separate CSV file will be created for each day in this range.
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-28&resolution=60 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-28, Horizon=1 days, Resolution=60 minutes
+Error making API request: 422 Client Error: Unprocessable Entity for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1&start=2025-03-28&resolution=60
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-28&resolution=60 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-28, Horizon=1 days, Resolution=60 minutes
+Error making API request: 422 Client Error: Unprocessable Entity for url: https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1&start=2025-03-28&resolution=60
+
+Processing predictions from each panel group:
+Failed to get predictions.
+
+[2025-03-28 12:08:51] ################################## END OF SCRIPT ##################################
+[2025-03-28 12:08:51] ################################## START OF SCRIPT 2025-03-28 12:08:51 ##################################
+[2025-03-28 12:08:51] Starting Price Gathering...
+[2025-03-28 12:08:59] Price Gathering completed successfully.
+[2025-03-28 12:08:59] Output:
+Successfully added 36 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-26 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-27T12:00:00.000Z to 2025-03-28T11:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 398
+Data range: 2025-03-02 23:00:00 to 2025-03-28 11:00:00
+
+[2025-03-28 12:08:59] ################################## END OF SCRIPT ##################################
+[2025-03-28 20:00:02] ################################## START OF SCRIPT 2025-03-28 20:00:02 ##################################
+[2025-03-28 20:00:02] Starting Solar Prediction...
+[2025-03-28 20:00:08] Solar Prediction completed successfully.
+[2025-03-28 20:00:08] Output:
+Starting predictions from today: 2025-03-28
+Date: 2025-03-28
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-28
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-28
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-28 00:00:00 to 2025-03-29 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-28 00:00:00 to 2025-03-29 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-28 00:00:00 to 2025-03-29 00:00:00
+Total entries: 25
+
+Processing predictions for 2 days:
+
+Hourly Energy Production (kWh) for 2025-03-28:
+                     kilowatt_hours
+timestamp                          
+2025-03-28 00:00:00           0.000
+2025-03-28 01:00:00           0.000
+2025-03-28 02:00:00           0.000
+2025-03-28 03:00:00           0.000
+2025-03-28 04:00:00           0.000
+2025-03-28 05:00:00           0.000
+2025-03-28 06:00:00           0.467
+2025-03-28 07:00:00           2.191
+2025-03-28 08:00:00           4.728
+2025-03-28 09:00:00           6.789
+2025-03-28 10:00:00           7.310
+2025-03-28 11:00:00           6.326
+2025-03-28 12:00:00           5.422
+2025-03-28 13:00:00           5.245
+2025-03-28 14:00:00           5.488
+2025-03-28 15:00:00           5.210
+2025-03-28 16:00:00           3.878
+2025-03-28 17:00:00           2.512
+2025-03-28 18:00:00           1.350
+2025-03-28 19:00:00           0.371
+2025-03-28 20:00:00           0.000
+2025-03-28 21:00:00           0.000
+2025-03-28 22:00:00           0.000
+2025-03-28 23:00:00           0.000
+Predictions for 2025-03-28 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250328.csv
+
+Hourly Energy Production (kWh) for 2025-03-29:
+            kilowatt_hours
+timestamp                 
+2025-03-29             0.0
+Predictions for 2025-03-29 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250329.csv
+
+Summary: Generated predictions for 2 days:
+  - 2025-03-28: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250328.csv
+  - 2025-03-29: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250329.csv
+
+[2025-03-28 20:00:08] Starting Price Gathering...
+[2025-03-28 20:00:13] Price Gathering completed successfully.
+[2025-03-28 20:00:13] Output:
+Successfully added 8 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-28 11:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-27T20:00:00.000Z to 2025-03-28T19:00:00.000Z
+Fetched 8 new records (skipped 16 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 8 new records
+Total records in file: 406
+Data range: 2025-03-02 23:00:00 to 2025-03-28 19:00:00
+
+[2025-03-28 20:00:13] ################################## END OF SCRIPT ##################################
+[2025-03-29 00:00:04] ################################## START OF SCRIPT 2025-03-29 00:00:04 ##################################
+[2025-03-29 00:00:04] Starting Solar Prediction...
+[2025-03-29 00:00:13] Solar Prediction completed successfully.
+[2025-03-29 00:00:13] Output:
+Starting predictions from today: 2025-03-29
+Date: 2025-03-29
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-29
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-29
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-29 00:00:00 to 2025-03-30 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-29 00:00:00 to 2025-03-30 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-29 00:00:00 to 2025-03-30 00:00:00
+Total entries: 25
+
+Processing predictions for 2 days:
+
+Hourly Energy Production (kWh) for 2025-03-29:
+                     kilowatt_hours
+timestamp                          
+2025-03-29 00:00:00           0.000
+2025-03-29 01:00:00           0.000
+2025-03-29 02:00:00           0.000
+2025-03-29 03:00:00           0.000
+2025-03-29 04:00:00           0.000
+2025-03-29 05:00:00           0.000
+2025-03-29 06:00:00           0.489
+2025-03-29 07:00:00           1.600
+2025-03-29 08:00:00           3.013
+2025-03-29 09:00:00           5.306
+2025-03-29 10:00:00           7.409
+2025-03-29 11:00:00           7.222
+2025-03-29 12:00:00           4.927
+2025-03-29 13:00:00           3.010
+2025-03-29 14:00:00           2.400
+2025-03-29 15:00:00           1.970
+2025-03-29 16:00:00           1.482
+2025-03-29 17:00:00           1.026
+2025-03-29 18:00:00           0.566
+2025-03-29 19:00:00           0.152
+2025-03-29 20:00:00           0.000
+2025-03-29 21:00:00           0.000
+2025-03-29 22:00:00           0.000
+2025-03-29 23:00:00           0.000
+Predictions for 2025-03-29 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250329.csv
+
+Hourly Energy Production (kWh) for 2025-03-30:
+            kilowatt_hours
+timestamp                 
+2025-03-30             0.0
+Predictions for 2025-03-30 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250330.csv
+
+Summary: Generated predictions for 2 days:
+  - 2025-03-29: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250329.csv
+  - 2025-03-30: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250330.csv
+
+[2025-03-29 00:00:13] Starting Price Gathering...
+[2025-03-29 00:00:17] Price Gathering completed successfully.
+[2025-03-29 00:00:17] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-28 19:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-28T00:00:00.000Z to 2025-03-28T23:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 410
+Data range: 2025-03-02 23:00:00 to 2025-03-28 23:00:00
+
+[2025-03-29 00:00:17] ################################## END OF SCRIPT ##################################
+[2025-03-29 20:00:02] ################################## START OF SCRIPT 2025-03-29 20:00:02 ##################################
+[2025-03-29 20:00:02] Starting Solar Prediction...
+[2025-03-29 20:00:06] Solar Prediction completed successfully.
+[2025-03-29 20:00:06] Output:
+Starting predictions from today: 2025-03-29
+Date: 2025-03-29
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-29
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-29
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-29 00:00:00 to 2025-03-30 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-29 00:00:00 to 2025-03-30 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-29 00:00:00 to 2025-03-30 00:00:00
+Total entries: 25
+
+Processing predictions for 2 days:
+
+Hourly Energy Production (kWh) for 2025-03-29:
+                     kilowatt_hours
+timestamp                          
+2025-03-29 00:00:00           0.000
+2025-03-29 01:00:00           0.000
+2025-03-29 02:00:00           0.000
+2025-03-29 03:00:00           0.000
+2025-03-29 04:00:00           0.000
+2025-03-29 05:00:00           0.000
+2025-03-29 06:00:00           0.668
+2025-03-29 07:00:00           2.680
+2025-03-29 08:00:00           5.192
+2025-03-29 09:00:00           7.296
+2025-03-29 10:00:00           8.567
+2025-03-29 11:00:00           8.454
+2025-03-29 12:00:00           7.236
+2025-03-29 13:00:00           5.610
+2025-03-29 14:00:00           4.276
+2025-03-29 15:00:00           3.311
+2025-03-29 16:00:00           2.305
+2025-03-29 17:00:00           1.437
+2025-03-29 18:00:00           0.729
+2025-03-29 19:00:00           0.184
+2025-03-29 20:00:00           0.000
+2025-03-29 21:00:00           0.000
+2025-03-29 22:00:00           0.000
+2025-03-29 23:00:00           0.000
+Predictions for 2025-03-29 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250329.csv
+
+Hourly Energy Production (kWh) for 2025-03-30:
+            kilowatt_hours
+timestamp                 
+2025-03-30             0.0
+Predictions for 2025-03-30 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250330.csv
+
+Summary: Generated predictions for 2 days:
+  - 2025-03-29: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250329.csv
+  - 2025-03-30: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250330.csv
+
+[2025-03-29 20:00:06] Starting Price Gathering...
+[2025-03-29 20:00:11] Price Gathering completed successfully.
+[2025-03-29 20:00:11] Output:
+Successfully added 20 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-28 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-28T20:00:00.000Z to 2025-03-29T19:00:00.000Z
+Fetched 20 new records (skipped 4 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 20 new records
+Total records in file: 430
+Data range: 2025-03-02 23:00:00 to 2025-03-29 19:00:00
+
+[2025-03-29 20:00:11] ################################## END OF SCRIPT ##################################
+[2025-03-30 00:00:03] ################################## START OF SCRIPT 2025-03-30 00:00:03 ##################################
+[2025-03-30 00:00:03] Starting Solar Prediction...
+[2025-03-30 00:00:07] Solar Prediction completed successfully.
+[2025-03-30 00:00:07] Output:
+Starting predictions from today: 2025-03-30
+Date: 2025-03-30
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-30
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-30
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-30 00:00:00 to 2025-03-31 00:00:00
+Number of entries: 24
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-30 00:00:00 to 2025-03-31 00:00:00
+Number of entries: 24
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-30 00:00:00 to 2025-03-31 00:00:00
+Total entries: 25
+
+Processing predictions for 2 days:
+
+Hourly Energy Production (kWh) for 2025-03-30:
+                     kilowatt_hours
+timestamp                          
+2025-03-30 00:00:00           0.000
+2025-03-30 01:00:00           0.000
+2025-03-30 02:00:00           0.000
+2025-03-30 03:00:00           0.000
+2025-03-30 04:00:00           0.000
+2025-03-30 05:00:00           0.000
+2025-03-30 06:00:00           0.773
+2025-03-30 07:00:00           1.504
+2025-03-30 08:00:00           1.673
+2025-03-30 09:00:00           2.092
+2025-03-30 10:00:00           2.436
+2025-03-30 11:00:00           2.634
+2025-03-30 12:00:00           2.691
+2025-03-30 13:00:00           2.608
+2025-03-30 14:00:00           2.376
+2025-03-30 15:00:00           1.997
+2025-03-30 16:00:00           1.512
+2025-03-30 17:00:00           1.053
+2025-03-30 18:00:00           0.586
+2025-03-30 19:00:00           0.161
+2025-03-30 20:00:00           0.000
+2025-03-30 21:00:00           0.000
+2025-03-30 22:00:00           0.000
+2025-03-30 23:00:00           0.000
+Predictions for 2025-03-30 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250330.csv
+
+Hourly Energy Production (kWh) for 2025-03-31:
+            kilowatt_hours
+timestamp                 
+2025-03-31             0.0
+Predictions for 2025-03-31 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250331.csv
+
+Summary: Generated predictions for 2 days:
+  - 2025-03-30: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250330.csv
+  - 2025-03-31: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250331.csv
+
+[2025-03-30 00:00:07] Starting Price Gathering...
+[2025-03-30 00:00:10] Price Gathering completed successfully.
+[2025-03-30 00:00:10] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-29 19:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-29T00:00:00.000Z to 2025-03-29T23:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 434
+Data range: 2025-03-02 23:00:00 to 2025-03-29 23:00:00
+
+[2025-03-30 00:00:10] ################################## END OF SCRIPT ##################################
+[2025-03-30 20:00:02] ################################## START OF SCRIPT 2025-03-30 20:00:02 ##################################
+[2025-03-30 20:00:02] Starting Solar Prediction...
+[2025-03-30 20:00:09] Solar Prediction completed successfully.
+[2025-03-30 20:00:09] Output:
+Starting predictions from today: 2025-03-30
+Date: 2025-03-30
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-30
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-30
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-30 00:00:00 to 2025-03-31 00:00:00
+Number of entries: 24
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-30 00:00:00 to 2025-03-31 00:00:00
+Number of entries: 24
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-30 00:00:00 to 2025-03-31 00:00:00
+Total entries: 25
+
+Processing predictions for 2 days:
+
+Hourly Energy Production (kWh) for 2025-03-30:
+                     kilowatt_hours
+timestamp                          
+2025-03-30 00:00:00           0.000
+2025-03-30 01:00:00           0.000
+2025-03-30 02:00:00           0.000
+2025-03-30 03:00:00           0.000
+2025-03-30 04:00:00           0.000
+2025-03-30 05:00:00           0.000
+2025-03-30 06:00:00           0.523
+2025-03-30 07:00:00           2.063
+2025-03-30 08:00:00           3.490
+2025-03-30 09:00:00           4.403
+2025-03-30 10:00:00           5.365
+2025-03-30 11:00:00           6.571
+2025-03-30 12:00:00           7.168
+2025-03-30 13:00:00           6.376
+2025-03-30 14:00:00           5.247
+2025-03-30 15:00:00           3.773
+2025-03-30 16:00:00           2.327
+2025-03-30 17:00:00           1.572
+2025-03-30 18:00:00           0.872
+2025-03-30 19:00:00           0.234
+2025-03-30 20:00:00           0.000
+2025-03-30 21:00:00           0.000
+2025-03-30 22:00:00           0.000
+2025-03-30 23:00:00           0.000
+Predictions for 2025-03-30 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250330.csv
+
+Hourly Energy Production (kWh) for 2025-03-31:
+            kilowatt_hours
+timestamp                 
+2025-03-31             0.0
+Predictions for 2025-03-31 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250331.csv
+
+Summary: Generated predictions for 2 days:
+  - 2025-03-30: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250330.csv
+  - 2025-03-31: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250331.csv
+
+[2025-03-30 20:00:09] Starting Price Gathering...
+[2025-03-30 20:00:15] Price Gathering completed successfully.
+[2025-03-30 20:00:15] Output:
+Successfully added 20 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-29 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-29T19:00:00.000Z to 2025-03-30T18:00:00.000Z
+Fetched 19 new records (skipped 5 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 19 new records
+Total records in file: 453
+Data range: 2025-03-02 23:00:00 to 2025-03-30 18:00:00
+
+[2025-03-30 20:00:15] ################################## END OF SCRIPT ##################################
+[2025-03-31 00:00:03] ################################## START OF SCRIPT 2025-03-31 00:00:03 ##################################
+[2025-03-31 00:00:03] Starting Solar Prediction...
+[2025-03-31 00:00:09] Solar Prediction completed successfully.
+[2025-03-31 00:00:09] Output:
+Starting predictions from today: 2025-03-31
+Date: 2025-03-31
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-31
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-31
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-31 00:00:00 to 2025-04-01 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-31 00:00:00 to 2025-04-01 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-31 00:00:00 to 2025-04-01 00:00:00
+Total entries: 25
+
+Processing predictions for 2 days:
+
+Hourly Energy Production (kWh) for 2025-03-31:
+                     kilowatt_hours
+timestamp                          
+2025-03-31 00:00:00           0.000
+2025-03-31 01:00:00           0.000
+2025-03-31 02:00:00           0.000
+2025-03-31 03:00:00           0.000
+2025-03-31 04:00:00           0.000
+2025-03-31 05:00:00           0.000
+2025-03-31 06:00:00           0.263
+2025-03-31 07:00:00           0.954
+2025-03-31 08:00:00           1.758
+2025-03-31 09:00:00           2.295
+2025-03-31 10:00:00           2.562
+2025-03-31 11:00:00           2.730
+2025-03-31 12:00:00           2.757
+2025-03-31 13:00:00           2.635
+2025-03-31 14:00:00           2.483
+2025-03-31 15:00:00           2.440
+2025-03-31 16:00:00           2.348
+2025-03-31 17:00:00           1.939
+2025-03-31 18:00:00           1.189
+2025-03-31 19:00:00           0.368
+2025-03-31 20:00:00           0.000
+2025-03-31 21:00:00           0.000
+2025-03-31 22:00:00           0.000
+2025-03-31 23:00:00           0.000
+Predictions for 2025-03-31 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250331.csv
+
+Hourly Energy Production (kWh) for 2025-04-01:
+            kilowatt_hours
+timestamp                 
+2025-04-01             0.0
+Predictions for 2025-04-01 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250401.csv
+
+Summary: Generated predictions for 2 days:
+  - 2025-03-31: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250331.csv
+  - 2025-04-01: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250401.csv
+
+[2025-03-31 00:00:09] Starting Price Gathering...
+[2025-03-31 00:00:12] Price Gathering completed successfully.
+[2025-03-31 00:00:12] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-30 18:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-29T23:00:00.000Z to 2025-03-30T22:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 457
+Data range: 2025-03-02 23:00:00 to 2025-03-30 22:00:00
+
+[2025-03-31 00:00:12] ################################## END OF SCRIPT ##################################
+[2025-03-31 20:00:02] ################################## START OF SCRIPT 2025-03-31 20:00:02 ##################################
+[2025-03-31 20:00:02] Starting Solar Prediction...
+[2025-03-31 20:00:05] Solar Prediction completed successfully.
+[2025-03-31 20:00:05] Output:
+Starting predictions from today: 2025-03-31
+Date: 2025-03-31
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-03-31
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-03-31
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-03-31 00:00:00 to 2025-04-01 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-03-31 00:00:00 to 2025-04-01 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-03-31 00:00:00 to 2025-04-01 00:00:00
+Total entries: 25
+
+Processing predictions for 2 days:
+
+Hourly Energy Production (kWh) for 2025-03-31:
+                     kilowatt_hours
+timestamp                          
+2025-03-31 00:00:00           0.000
+2025-03-31 01:00:00           0.000
+2025-03-31 02:00:00           0.000
+2025-03-31 03:00:00           0.000
+2025-03-31 04:00:00           0.000
+2025-03-31 05:00:00           0.000
+2025-03-31 06:00:00           0.597
+2025-03-31 07:00:00           2.170
+2025-03-31 08:00:00           4.169
+2025-03-31 09:00:00           6.205
+2025-03-31 10:00:00           7.723
+2025-03-31 11:00:00           7.777
+2025-03-31 12:00:00           6.474
+2025-03-31 13:00:00           5.209
+2025-03-31 14:00:00           4.601
+2025-03-31 15:00:00           3.980
+2025-03-31 16:00:00           2.915
+2025-03-31 17:00:00           1.935
+2025-03-31 18:00:00           1.133
+2025-03-31 19:00:00           0.338
+2025-03-31 20:00:00           0.000
+2025-03-31 21:00:00           0.000
+2025-03-31 22:00:00           0.000
+2025-03-31 23:00:00           0.000
+Predictions for 2025-03-31 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250331.csv
+
+Hourly Energy Production (kWh) for 2025-04-01:
+            kilowatt_hours
+timestamp                 
+2025-04-01             0.0
+Predictions for 2025-04-01 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250401.csv
+
+Summary: Generated predictions for 2 days:
+  - 2025-03-31: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250331.csv
+  - 2025-04-01: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250401.csv
+
+[2025-03-31 20:00:05] Starting Price Gathering...
+[2025-03-31 20:00:11] Price Gathering completed successfully.
+[2025-03-31 20:00:11] Output:
+Successfully added 20 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-30 22:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-30T19:00:00.000Z to 2025-03-31T18:00:00.000Z
+Fetched 20 new records (skipped 4 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 20 new records
+Total records in file: 477
+Data range: 2025-03-02 23:00:00 to 2025-03-31 18:00:00
+
+[2025-03-31 20:00:11] ################################## END OF SCRIPT ##################################
+[2025-04-01 00:00:02] ################################## START OF SCRIPT 2025-04-01 00:00:02 ##################################
+[2025-04-01 00:00:02] Starting Solar Prediction...
+[2025-04-01 00:00:09] Solar Prediction completed successfully.
+[2025-04-01 00:00:09] Output:
+Starting predictions from today: 2025-04-01
+Date: 2025-04-01
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/12.15?full=1&limit=1 
+
+Making API request for 30 panels facing southeast (azimuth -45°)...
+Parameters: Start=2025-04-01
+URL https://api.forecast.solar/estimate/watthours/59.27316407985615/17.958286019897105/27/135/8.1?full=1&limit=1 
+
+Making API request for 20 panels facing northwest (azimuth 135°)...
+Parameters: Start=2025-04-01
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-04-01 00:00:00 to 2025-04-02 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+
+Panel group 2:
+Time range: 2025-04-01 00:00:00 to 2025-04-02 00:00:00
+Number of entries: 25
+After resampling to hourly: 25 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-04-01 00:00:00 to 2025-04-02 00:00:00
+Total entries: 25
+
+Processing predictions for 2 days:
+
+Hourly Energy Production (kWh) for 2025-04-01:
+                     kilowatt_hours
+timestamp                          
+2025-04-01 00:00:00           0.000
+2025-04-01 01:00:00           0.000
+2025-04-01 02:00:00           0.000
+2025-04-01 03:00:00           0.000
+2025-04-01 04:00:00           0.000
+2025-04-01 05:00:00           0.000
+2025-04-01 06:00:00           0.699
+2025-04-01 07:00:00           2.485
+2025-04-01 08:00:00           4.613
+2025-04-01 09:00:00           6.477
+2025-04-01 10:00:00           7.700
+2025-04-01 11:00:00           8.255
+2025-04-01 12:00:00           8.391
+2025-04-01 13:00:00           7.859
+2025-04-01 14:00:00           6.677
+2025-04-01 15:00:00           5.270
+2025-04-01 16:00:00           3.748
+2025-04-01 17:00:00           2.459
+2025-04-01 18:00:00           1.367
+2025-04-01 19:00:00           0.391
+2025-04-01 20:00:00           0.000
+2025-04-01 21:00:00           0.000
+2025-04-01 22:00:00           0.000
+2025-04-01 23:00:00           0.000
+Predictions for 2025-04-01 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250401.csv
+
+Hourly Energy Production (kWh) for 2025-04-02:
+            kilowatt_hours
+timestamp                 
+2025-04-02             0.0
+Predictions for 2025-04-02 saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250402.csv
+
+Summary: Generated predictions for 2 days:
+  - 2025-04-01: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250401.csv
+  - 2025-04-02: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\data\20250402.csv
+
+[2025-04-01 00:00:09] Starting Price Gathering...
+[2025-04-01 00:00:12] Price Gathering completed successfully.
+[2025-04-01 00:00:12] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (hourly resolution)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-03-31 18:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE
+Received 24 records from API
+Time range: 2025-03-30T23:00:00.000Z to 2025-03-31T22:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 481
+Data range: 2025-03-02 23:00:00 to 2025-03-31 22:00:00
+
+[2025-04-01 00:00:12] ################################## END OF SCRIPT ##################################

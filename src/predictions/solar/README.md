@@ -70,10 +70,11 @@ solar/
 │   ├── per_day/         # Individual daily prediction files
 │   │   └── YYYYMMDD.csv # One file per forecasted day
 │   └── merged_predictions.csv # Combined predictions file (all days)
-├── actual/              # Actual production data
+├── actual_data/         # Actual production data
 │   ├── per_day/         # Daily actual data files
 │   │   └── YYYYMMDD.csv
-│   └── merged_cleaned_actual_data.csv # Combined actual data
+│   ├── merged_cleaned_actual_data.csv # Combined actual data
+│   └── merge_actual_data.py # Script to fetch and merge new actual production data
 
 ```
 
@@ -186,6 +187,35 @@ The system provides three types of visualizations, all available with a single c
 ### Actual Data
 - Exported from Home Assistant / SolarEdge
 - Contains `last_changed` timestamp and `state` value in Watts
+- Automatically updated daily using the `merge_actual_data.py` script
+- Fetches only missing data since the last record in the merged file
+
+### Automating Data Collection
+
+#### Solar Production Predictions
+Run the prediction script daily (e.g., via cron job) to maintain up-to-date forecasts:
+
+```bash
+# Generate 4-day forecast
+python src/predictions/solar/prediction.py
+```
+
+#### Actual Production Data
+The system automatically retrieves actual production data from Home Assistant with:
+
+```bash
+# Update actual production data with latest measurements
+python src/predictions/solar/actual_data/merge_actual_data.py
+```
+
+This script:
+1. Checks the last timestamp in `merged_cleaned_actual_data.csv`
+2. Calculates how many days of new data to fetch
+3. Runs the Home Assistant data downloader for entity `solar_generated_power_2`
+4. Merges the new data with existing records, handling any overlaps
+5. Saves the updated data in the correct format with entity_id, state, and last_changed columns
+
+For optimal results, schedule both scripts to run daily via cron job or task scheduler.
 
 
 

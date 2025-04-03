@@ -1,3 +1,62 @@
+"""
+Price Prediction Model Training Script
+=====================================
+
+This script trains an LSTM-based model to predict electricity prices for the next 24 hours.
+
+Usage:
+------
+python train.py [mode] [--scaler SCALER_TYPE]
+
+Parameters:
+-----------
+mode : {'production', 'evaluation'}
+    - production: Trains using all available data for real-world deployment
+    - evaluation: Trains using train/validation/test split for model evaluation
+
+--scaler : {'robust', 'minmax', 'standard'}, default='robust'
+    Type of scaler to use for feature normalization:
+    - robust: RobustScaler (handles outliers better)
+    - minmax: MinMaxScaler (preserves feature magnitudes)
+    - standard: StandardScaler (normalizes to mean=0, std=1)
+
+Examples:
+---------
+# Train a production model using all data with robust scaler (default)
+python train.py production
+
+# Train an evaluation model with validation/test split using minmax scaler
+python train.py evaluation --scaler minmax
+
+# Train a production model with standard scaler
+python train.py production --scaler standard
+
+Outputs:
+--------
+The script will create the following in the models directory:
+
+For production models (models/production/):
+    - saved/price_model_production.keras - The trained model
+    - saved/price_scaler.save - Price feature scaler
+    - saved/grid_scaler.save - Grid feature scaler
+    - saved/target_info.json - Information about target column and scaling
+    - saved/feature_config.json - Feature configuration
+    - logs/ - TensorBoard logs for training visualization
+    - production_training_history.png - Plot of training metrics
+
+For evaluation models (models/evaluation/):
+    - saved/ - Same files as production
+    - test_data/ - Test data for later evaluation
+    - quick_evaluation.png - Visual performance summary on test data
+
+Notes:
+------
+- Production models use all available data with a small validation set
+- Evaluation models create a train/val/test split and save test data for later evaluation
+- Both modes use the feature configuration from FeatureConfig class
+- The window size (past hours used for prediction) is set in the feature config
+"""
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -189,7 +248,7 @@ class PriceModelTrainer:
         
         # Load grid features
         grid_df = pd.read_csv(
-            self.project_root / "data/processed/SwedenGrid.csv",
+            self.project_root / "data/processed/SwedenGridFake.csv",
             index_col=0
         )
         grid_df.index = pd.to_datetime(grid_df.index)
@@ -985,12 +1044,37 @@ class PriceModelTrainer:
             logging.info(f"Total samples: {total_samples}")
             logging.info(f"Training samples: {train_split} ({train_ratio*100:.1f}%)")
             logging.info(f"Validation samples: {val_split - train_split} ({val_ratio*100:.1f}%)")
+            logging.info(f"Test samples: {total_samples - val_split} ({split_ratios['test_ratio']*100:.1f}%)")
             
             # Split the data
             X_train = X[:train_split]
             y_train = y[:train_split]
             X_val = X[train_split:val_split]
             y_val = y[train_split:val_split]
+            X_test = X[val_split:]
+            y_test = y[val_split:]
+            
+            # Save test data for later evaluation
+            self.test_data_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Saving test data to {self.test_data_dir}")
+            
+            # Save test features and targets
+            np.save(self.test_data_dir / "X_test.npy", X_test)
+            np.save(self.test_data_dir / "y_test.npy", y_test)
+            
+            # Save validation data too (needed for the evaluation script)
+            np.save(self.test_data_dir / "X_val.npy", X_val)
+            np.save(self.test_data_dir / "y_val.npy", y_val)
+            
+            # Save timestamps for the test and validation data
+            test_timestamps = df.index[self.window_size + 24:][val_split:]
+            val_timestamps = df.index[self.window_size + 24:][train_split:val_split]
+            
+            np.save(self.test_data_dir / "test_timestamps.npy", test_timestamps)
+            np.save(self.test_data_dir / "val_timestamps.npy", val_timestamps)
+            
+            logging.info(f"Saved test data: {len(X_test)} samples")
+            logging.info(f"Saved validation data: {len(X_val)} samples")
             
             # Build and train model
             model = self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
@@ -1293,11 +1377,13 @@ class PriceModelTrainer:
 
 def main():
     # Set up argument parser
-    parser = argparse.ArgumentParser(description='Train price prediction model')
+    parser = argparse.ArgumentParser(description='Train electricity price prediction model using LSTM architecture')
     parser.add_argument('mode', choices=['production', 'evaluation'], 
-                        help='Training mode: production (uses all data) or evaluation (uses train/val/test split for training only, no evaluation)')
+                        help='Training mode: "production" uses all data for deployment, "evaluation" creates train/validation/test split for model assessment without running evaluation')
     parser.add_argument('--scaler', default='robust', choices=['robust', 'minmax', 'standard'],
-                        help='Type of scaler to use (default: robust)')
+                        help='Type of scaler to use: "robust" (handles outliers), "minmax" (preserves magnitude), "standard" (normalizes to mean=0, std=1)')
+    parser.add_argument('--window', type=int, default=None,
+                        help='Override window size (past hours to use for prediction). Default is from config.')
     args = parser.parse_args()
 
     # Set training mode based on argument
@@ -1306,16 +1392,23 @@ def main():
     # Log the training mode
     logging.info(f"\n=== Training {args.mode.capitalize()} Model ===")
     logging.info(f"Using {args.scaler} scaler")
-    logging.info(f"Training with {'all available' if train_from_all_data else 'train/val split'} data (no evaluation)")
+    logging.info(f"Training with {'all available' if train_from_all_data else 'train/val/test split'} data")
     
     # Initialize and train the model
-    trainer = PriceModelTrainer(scaler_type=args.scaler, train_from_all_data=train_from_all_data)
+    trainer = PriceModelTrainer(window_size=args.window, scaler_type=args.scaler, train_from_all_data=train_from_all_data)
     
     # Train the model
     model, history, dates = trainer.run_training()
     
     logging.info(f"{args.mode.capitalize()} model training complete!")
     logging.info("Model and scalers have been saved successfully")
+    
+    if args.mode == 'production':
+        logging.info(f"Model saved to: {trainer.saved_dir / trainer.model_name}")
+    else:
+        logging.info(f"Model saved to: {trainer.saved_dir / trainer.model_name}")
+        logging.info(f"Test data saved to: {trainer.test_data_dir}")
+        logging.info("\nTo evaluate the model, run: python evaluate.py")
 
 if __name__ == "__main__":
     main()

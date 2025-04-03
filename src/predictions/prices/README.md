@@ -1,148 +1,137 @@
-# Electricity Price Prediction
+# Electricity Price Prediction Module
 
-This module provides a machine learning-based electricity price forecasting system for Sweden's SE3 price area. It uses an LSTM-based neural network to predict hourly electricity prices for the next 24 hours.
+This module provides tools for training, evaluating, and deploying price prediction models for electricity markets.
 
-## Key Features
+## Overview
 
-- **24-hour Price Forecasting**: Predicts prices for the next 24 hours with high accuracy
-- **Feature Engineering**: Combines price history, time features, grid data, and holidays
-- **Grid Data Integration**: Uses data from the Swedish power grid including import/export flows
-- **Enhanced Scaling**: Advanced scaling techniques for handling high-magnitude grid features
-- `config.json`: Configuration for features and model architecture
-- `gather_data.py`: Scripts for fetching and updating historical price and grid data
-
-## Features Used
-
-- Historical price data (SE3 region)
-- Time-based features (hour, day, month, seasonality)
-- Grid condition data (production, consumption, imports/exports)
+The price prediction module uses LSTM neural networks to forecast electricity prices for the next 24 hours based on:
+- Historical price data
+- Time-based features (hour, day, month, etc.)
 - Holiday information
-- Rolling statistics (24h and 168h averages, standard deviations)
+- Grid data (import/export, production)
 
-## Model Details
-
-- Architecture: LSTM-based neural network
-- Input: 168-hour (1 week) historical window
-- Output: 24-hour price predictions
-- Training data: Hourly prices and grid data
-- Features are scaled using RobustScaler to handle price spikes
-
-## Advanced Scaling Enhancements
-
-The system now includes specialized handling for high-magnitude grid features:
-
-- **Signed Log Transformation**: Handles both positive and negative values using sign(x) * log(|x| + 1)
-- **Log Transformation**: Optional log(x+1) transformation for import/export features
-- **Individual Column Scaling**: Option to scale problematic columns individually
-- **Winsorization**: Capping of extreme values based on configurable Z-score thresholds
-- **Robust Scaling**: RobustScaler with custom quantile parameters for handling outliers
-- **Unit Variance Normalization**: Normalizes data to have unit variance
-
-These scaling improvements can be configured in the `config.json` file under the `scaling` section.
-
-## Usage
+## Quick Start
 
 ### Training a Model
 
 ```bash
-# Train a production model (uses all available data)
-python src/predictions/prices/train.py production --scaler robust
+# Train a production model (using all data)
+python train.py production
 
-# Train an evaluation model (with train/val/test split)
-python src/predictions/prices/train.py evaluation --scaler robust
+# Train an evaluation model (with test split)
+python train.py evaluation
 ```
 
-### Making Predictions
+### Evaluating a Model
 
-```python
-from src.predictions.prices.predictions import PricePredictor
-
-# Initialize predictor
-predictor = PricePredictor()
-
-# Get predictions for next 24 hours
-predictions = predictor.predict_next_day()
-print(predictions)
-
-# Predict for a specific date
-predictions = predictor.predict_for_date('2023-06-01')
+```bash
+# Run evaluation on a trained model
+python evaluate.py
 ```
 
-## Configuration
+## Training Options
 
-The `config.json` file contains all model parameters and feature definitions:
+The training script (`train.py`) supports two modes:
 
-- Feature groups and ordering
-- Model architecture (LSTM and dense layers)
-- Training parameters (batch size, learning rate, etc.)
-- Scaling configuration
-- Evaluation settings
+### 1. Production Mode
 
-Example scaling configuration:
+Trains using all available data with a small validation set for monitoring. This creates a model ready for deployment.
 
-```json
-"scaling": {
-    "price_scaler": {
-        "type": "robust", 
-        "quantile_range": [1, 99]
-    },
-    "grid_scaler": {
-        "type": "robust",
-        "quantile_range": [1, 99],
-        "unit_variance": true,
-        "outlier_threshold": 10,
-        "handle_extreme_values": true,
-        "log_transform_large_values": true,
-        "signed_log": true,
-        "individual_scaling": true
-    }
-}
+```bash
+python train.py production [--scaler SCALER_TYPE] [--window WINDOW_SIZE]
 ```
 
-### Handling Negative Values
+### 2. Evaluation Mode
 
-The system is designed to properly handle negative values that can occur in price and grid data:
+Creates a train/validation/test split to assess model performance. Test data is saved for later evaluation.
 
-1. **Negative Energy Prices**: During periods of excess production, electricity prices can go negative. Our model correctly handles these scenarios through:
-   - Signed log transformation for features with negative values
-   - RobustScaler which handles both positive and negative inputs appropriately
+```bash
+python train.py evaluation [--scaler SCALER_TYPE] [--window WINDOW_SIZE]
+```
 
-2. **Bidirectional Power Flows**: For import/export features, the model can handle negative values that might represent flow reversals using the signed log transform approach.
+### Options
 
-## Evaluation Metrics
+- `--scaler`: Type of scaler for feature normalization
+  - `robust`: RobustScaler (handles outliers, default)
+  - `minmax`: MinMaxScaler (preserves feature magnitude)
+  - `standard`: StandardScaler (normalizes to mean=0, std=1)
+- `--window`: Override window size (hours of history for prediction)
 
-The model evaluation produces several metrics:
+## Evaluation
 
-- MAE (Mean Absolute Error)
-- MAPE (Mean Absolute Percentage Error)
-- RMSE (Root Mean Squared Error)
-- Hourly error breakdowns
-- Visual analysis (scatter plots, error distributions, sample predictions)
+The evaluation script (`evaluate.py`) creates visualizations and metrics to assess model performance:
 
-## Data Updates
+- Daily, weekly, monthly, and yearly comparisons of actual vs. predicted prices
+- Error metrics (MAE, RMSE, etc.)
+- Visual charts of prediction accuracy
 
-The system automatically updates price and grid data using external APIs:
-- Electricity price data from mgrey.se API
-- Grid data from Electricity Maps API
+```bash
+python evaluate.py
+```
 
-Data is fetched and processed when running `gather_data.py`.
+## Directory Structure
 
-## Performance Metrics
+```
+src/predictions/prices/
+├── train.py           # Training script
+├── evaluate.py        # Evaluation script
+├── feature_config.py  # Feature configuration
+├── models/            # Saved models and data
+│   ├── production/    # Production model (all data)
+│   │   ├── saved/     # Model files and scalers
+│   │   └── logs/      # TensorBoard logs
+│   └── evaluation/    # Evaluation model (with test split)
+│       ├── saved/     # Model files and scalers
+│       ├── logs/      # TensorBoard logs
+│       └── test_data/ # Test data for evaluation
+└── README.md          # This file
+```
 
-The model's performance is evaluated using:
-- MAE (Mean Absolute Error)
-- RMSE (Root Mean Square Error)
-- MAPE (Mean Absolute Percentage Error)
-- R² (Coefficient of Determination)
-- Error bias and distribution analysis
-- Time-based performance (yearly, monthly, hourly)
+## Advanced Usage
 
-## Dependencies
+### Model and Scaler Files
 
-- TensorFlow (2.x)
-- Pandas
-- NumPy
-- Scikit-learn
-- Joblib
-- Matplotlib
-- Seaborn 
+Both training modes save:
+- Trained model file (`.keras`)
+- Price scaler (`.save`)
+- Grid scaler (`.save`)
+- Target information (`.json`)
+- Feature configuration (`.json`)
+
+### TensorBoard Monitoring
+
+Training progress can be monitored with TensorBoard:
+
+```bash
+tensorboard --logdir src/predictions/prices/models/evaluation/logs
+```
+
+### Customizing Features
+
+Features used for training are configured in `feature_config.py`. This includes:
+- Price features
+- Grid features (import/export data)
+- Time-based features (hour of day, day of week, etc.)
+- Holiday features
+
+## Troubleshooting
+
+### Scaling Issues
+
+If predictions show unexpected scale, check:
+1. The saved scalers match the input data range
+2. Target column index is correctly specified in `target_info.json`
+3. Feature order is consistent between training and prediction
+
+### Memory Errors
+
+For large datasets:
+1. Reduce batch size
+2. Limit the window size
+3. Train on a subset of data first
+
+## References
+
+- Features based on Swedish electricity market (SE3 price area)
+- Uses hourly resolution data
+- LSTM architecture adapted for time series forecasting 

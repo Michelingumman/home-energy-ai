@@ -272,18 +272,18 @@ def plot_hourly_data(data: dict, output_path: Path = None, show_plot: bool = Tru
         max_value_pred = max(pred_values.max(), 0.1) if len(pred_values) > 0 else 0.1
         norm = plt.Normalize(0, max_value_pred)
         colors = plt.cm.YlOrRd(norm(pred_values))
-        
-        pred_bars = ax.bar(
+    
+    pred_bars = ax.bar(
             bar_positions - bar_width/2 if has_actuals else bar_positions, # Offset if actuals exist
             pred_values,
             width=bar_width if has_actuals else bar_width * 1.5, # Wider if only predictions
-            color=colors,
-            edgecolor='#FF8C00',
+        color=colors,
+        edgecolor='#FF8C00',
             linewidth=0.8, # Thinner edge
             alpha=0.8,
-            label='Predicted'
-        )
-
+        label='Predicted'
+    )
+    
     actual_bars = None
     if has_actuals:
         actual_values = hourly_actuals['kilowatt_hours'].values
@@ -402,7 +402,7 @@ def plot_hourly_data(data: dict, output_path: Path = None, show_plot: bool = Tru
         for i, label in enumerate(hour_labels):
             if int(label.split(':')[0]) % 2 == 0:  # Every even hour
                 filtered_labels.append(label)
-            else:
+        else:
                 filtered_labels.append('')  # Empty label for odd hours
         ax.set_xticklabels(filtered_labels, minor=True, fontsize=7, rotation=45, ha='right')
     else:
@@ -431,7 +431,7 @@ def plot_hourly_data(data: dict, output_path: Path = None, show_plot: bool = Tru
                     i, -0.02, 
                     f"{current_hour:02d}:00", 
                     transform=ax.get_xaxis_transform(),
-                    ha='center', 
+                    ha='center',
                     va='top', 
                     fontsize=8,
                     fontweight='bold', 
@@ -467,7 +467,7 @@ def plot_hourly_data(data: dict, output_path: Path = None, show_plot: bool = Tru
     # Add legend
     if has_predictions or has_actuals:
         ax.legend(loc='upper right')
-
+    
     # Adjust subplot to make room for hour labels - increase bottom margin
     plt.subplots_adjust(left=0.1, right=0.95, top=0.9, bottom=0.22)
     
@@ -511,8 +511,8 @@ def plot_daily_summary(data, output_path=None, period_name="Period", show_plot: 
     available_dates = data.get('dates', [])
 
     if not available_dates:
-         print("No dates with data found for summary plot.")
-         return
+        print("No dates with data found for summary plot.")
+        return
 
     # Use available_dates to create the index for alignment
     summary_index = pd.DatetimeIndex(sorted(available_dates))
@@ -566,46 +566,46 @@ def plot_daily_summary(data, output_path=None, period_name="Period", show_plot: 
     
     # Plot actual bars if available
     if has_actuals:
-         actual_values = daily_actual.values
-         ax.bar(
-             x_indices + bar_width/2, # Offset from predictions
-             actual_values,
+        actual_values = daily_actual.values
+        ax.bar(
+            x_indices + bar_width/2, # Offset from predictions
+            actual_values,
             bar_width,
-             color='lightblue',
+            color='lightblue',
             edgecolor='blue',
             label='Actual'
         )
-         # Add value annotations for actuals
-         for i, value in enumerate(actual_values):
-             if value > 0.05:
-                 ax.annotate(
-                     f'{value:.1f}',
-                     xy=(x_indices[i] + bar_width/2, value),
-                     xytext=(0, 3),
-                     textcoords='offset points',
-                     ha='center', va='bottom',
-                     fontsize=8,
-            color='blue',
-                     clip_on=True
-                 )
+        # Add value annotations for actuals
+        for i, value in enumerate(actual_values):
+            if value > 0.05:
+                ax.annotate(
+                    f'{value:.1f}',
+                    xy=(x_indices[i] + bar_width/2, value),
+                    xytext=(0, 3),
+                    textcoords='offset points',
+                    ha='center', va='bottom',
+                    fontsize=8,
+        color='blue',
+                    clip_on=True
+                )
 
     # Add value annotations for predictions (if they exist)
     if has_predictions:
         pred_values = daily_pred.values
         for i, value in enumerate(pred_values):
             if value > 0.05:
-                 # Determine offset for prediction label based on actual bar presence
-                 pred_label_x = x_indices[i] - bar_width/2 if has_actuals else x_indices[i]
-                 ax.annotate(
-                     f'{value:.1f}',
-                     xy=(pred_label_x, value),
-                     xytext=(0, 3),
-                     textcoords='offset points',
-                     ha='center', va='bottom',
-                     fontsize=8,
-                     color='#A04000', # Darker color for prediction labels
-                     clip_on=True
-                 )
+                # Determine offset for prediction label based on actual bar presence
+                pred_label_x = x_indices[i] - bar_width/2 if has_actuals else x_indices[i]
+                ax.annotate(
+                    f'{value:.1f}',
+                    xy=(pred_label_x, value),
+                    xytext=(0, 3),
+                    textcoords='offset points',
+                    ha='center', va='bottom',
+                    fontsize=8,
+                    color='#A04000', # Darker color for prediction labels
+                    clip_on=True
+                )
 
     # Format date labels for x-axis
     # Show fewer labels if there are many days
@@ -620,21 +620,21 @@ def plot_daily_summary(data, output_path=None, period_name="Period", show_plot: 
         rotation = 45
         ha = 'right'
     elif num_days > 7:
-         rotation = 30
-         ha = 'right'
+        rotation = 30
+        ha = 'right'
 
     ax.set_xticks(tick_indices)
     ax.set_xticklabels(date_labels, fontsize=9, rotation=rotation, ha=ha)
     
     # Set title and labels
     if available_dates:
-         start_date_str = min(available_dates).strftime('%b %d, %Y')
-         end_date_str = max(available_dates).strftime('%b %d, %Y')
-         title_date = f'{start_date_str} to {end_date_str}'
+        start_date_str = min(available_dates).strftime('%b %d, %Y')
+        end_date_str = max(available_dates).strftime('%b %d, %Y')
+        title_date = f'{start_date_str} to {end_date_str}'
     else:
-         title_date = "Selected Period"
-    title = f'Solar Energy Production - {title_date}'
-    subtitle = 'Daily Totals (kWh)'
+        title_date = "Selected Period"
+        title = f'Solar Energy Production - {title_date}'
+        subtitle = 'Daily Totals (kWh)'
     
     ax.set_title(f'{title}\n{subtitle}', fontsize=16, fontweight='bold', pad=20)
     ax.set_ylabel('Energy Production (kWh)', fontsize=12, labelpad=10)
@@ -651,23 +651,23 @@ def plot_daily_summary(data, output_path=None, period_name="Period", show_plot: 
 
     text = f'Total {period_name} Production:\n'
     if daily_pred is not None:
-         # Check if prediction sum is valid number before formatting
-         if pd.notna(pred_total):
-             text += f'{pred_total:.1f} kWh (Predicted)\n'
-         else:
-             text += f'N/A kWh (Predicted)\n' # Or handle as appropriate
+        # Check if prediction sum is valid number before formatting
+        if pd.notna(pred_total):
+            text += f'{pred_total:.1f} kWh (Predicted)\n'
+        else:
+            text += f'N/A kWh (Predicted)\n' # Or handle as appropriate
     if daily_actual is not None:
-         # Check if actual sum is valid number
-         if pd.notna(actual_total):
+        # Check if actual sum is valid number
+        if pd.notna(actual_total):
             text += f'{actual_total:.1f} kWh (Actual)\n'
-         else:
+        else:
             text += f'N/A kWh (Actual)\n'
 
     # Add percentage difference if both totals > 0 and are valid numbers
     if pd.notna(pred_total) and pd.notna(actual_total) and pred_total > 0:
         if actual_total >= 0:
-             pct_diff = ((actual_total - pred_total) / pred_total) * 100
-             text += f'{pct_diff:+.1f}% Diff (Actual vs Pred)' # Added sign
+            pct_diff = ((actual_total - pred_total) / pred_total) * 100
+            text += f'{pct_diff:+.1f}% Diff (Actual vs Pred)' # Added sign
     elif actual_total > 0:
         text += "(No valid prediction total for diff)"
 
@@ -860,9 +860,9 @@ def main():
         description="Plot solar forecast vs actual data for a specific date or date range.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''Example Usage:
-  python plot_solar.py 2025-03-15                   # Plot a single day
-  python plot_solar.py 2025-03-01:2025-03-15        # Plot a date range
-  python plot_solar.py --forecast_dir /path/to/data  # Specify custom folders'''
+        python plot_solar.py 2025-03-15                   # Plot a single day
+        python plot_solar.py 2025-03-01:2025-03-15        # Plot a date range
+        python plot_solar.py --forecast_dir /path/to/data  # Specify custom folders'''
     )
     
     # Date selection as a positional argument
@@ -977,7 +977,7 @@ def main():
         print("\nExample:")
         print(f"  python {Path(__file__).name} 2025-03-15 --forecast_dir /path/to/forecasted_data --actual_dir /path/to/actual_data")
         return
-
+            
     # Load data using the new function
     print(f"Attempting to load data from {forecast_dir.resolve()} and {actual_dir.resolve()}")
     data = load_data_from_folders(forecast_dir, actual_dir)
@@ -1055,7 +1055,7 @@ def filter_data_by_date_range(data, start_date, end_date):
         return None
         
     filtered_dates = [date for date in data.get('dates', []) 
-                     if start_date <= date <= end_date]
+                    if start_date <= date <= end_date]
     
     filtered_data = {'dates': filtered_dates}
     

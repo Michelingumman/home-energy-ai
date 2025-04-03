@@ -13,7 +13,7 @@ class ComponentManager:
         self.solar = SolarSystem(**config['solar'])
         self.grid = GridInterface(**config['grid'])
         self.appliances = ApplianceManager(**config['appliances'])
-        self._time = datetime.now()
+        self._time = datetime.datetime.now()
         self.time_step = timedelta(minutes=15)
         
     def get_observation_space(self):
@@ -82,7 +82,7 @@ class ComponentManager:
         }
     
     def reset(self):
-        self._time = datetime.now()
+        self._time = datetime.datetime.now()
         self.battery.reset()
         self.appliances.reset()
         self.grid.reset()
@@ -243,3 +243,73 @@ class GridInterface:
             "current_price": self.get_current_price(0),
             "export_tariff": self.export_tariff
         }
+
+class TimeTracker:
+    """
+    A class to track the time between update calls, representing the passage of time in the environment.
+    """
+    
+    def __init__(self, initial_time=None, time_scale=1.0, step_size=1):
+        """
+        Initialize the time tracker.
+        
+        Args:
+            initial_time: The initial time to start from.
+            time_scale: How much real time corresponds to one unit of simulation time.
+            step_size: How many time units to advance per step.
+        """
+        if initial_time is None:
+            self._time = datetime.datetime.now()
+        else:
+            self._time = initial_time
+        self._time_scale = time_scale
+        self._step_size = step_size
+        self._last_update = self._time
+        
+    @property
+    def current_time(self):
+        """Get the current simulated time."""
+        return self._time
+    
+    @property
+    def time_scale(self):
+        """Get the time scale."""
+        return self._time_scale
+    
+    @time_scale.setter
+    def time_scale(self, value):
+        """Set the time scale."""
+        self._time_scale = value
+        
+    @property
+    def step_size(self):
+        """Get the step size."""
+        return self._step_size
+    
+    @step_size.setter
+    def step_size(self, value):
+        """Set the step size."""
+        self._step_size = value
+        
+    def step(self):
+        """
+        Advance the time by one step.
+        
+        Returns:
+            The new current time.
+        """
+        self._time += timedelta(hours=self._step_size)
+        return self._time
+    
+    def update_from_real_time(self):
+        """
+        Update the simulated time based on the real time that has passed since the last update.
+        
+        Returns:
+            The new current time.
+        """
+        now = datetime.datetime.now()
+        elapsed = (now - self._last_update).total_seconds()
+        self._time += timedelta(seconds=elapsed * self._time_scale)
+        self._last_update = now
+        return self._time

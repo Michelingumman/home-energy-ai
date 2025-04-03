@@ -71,7 +71,8 @@
             "dense_layers": [
                 {"units": 64, "activation": "relu"},
                 {"units": 24, "activation": null}
-            ]
+            ],
+            "output_units": 24
         },
         "training": {
             "window_size": 168,
@@ -85,31 +86,50 @@
         },
         "callbacks": {
             "early_stopping": {
-                "monitor": "val_mae",
-                "patience": 15,
-                "restore_best_weights": true
+                "monitor": "val_loss",
+                "patience": 10,
+                "min_delta": 0.001
             },
             "reduce_lr": {
-                "monitor": "val_mae",
-                "factor": 0.2,
-                "patience": 10,
-                "min_lr": 1e-6
+                "monitor": "val_loss",
+                "factor": 0.5,
+                "patience": 5,
+                "min_delta": 0.001,
+                "min_lr": 0.00001
             }
         },
         "data_split": {
             "train_ratio": 0.90,
             "val_ratio": 0.05,
             "test_ratio": 0.05
-    
         },
         "scaling": {
             "price_scaler": {
-                "type": "RobustScaler",
+                "type": "robust",
                 "quantile_range": [1, 99]
             },
             "grid_scaler": {
-                "type": "RobustScaler",
-                "quantile_range": [0, 100]
+                "type": "robust",
+                "quantile_range": [1, 99],
+                "unit_variance": true,
+                "outlier_threshold": 10,
+                "handle_extreme_values": true,
+                "max_zscore": 8,
+                "individual_scaling": true,
+                "log_transform_large_values": true,
+                "signed_log": true,
+                "import_export_cols": [
+                    "import_SE-SE2",
+                    "export_SE-SE4",
+                    "import_NO-NO1",
+                    "export_NO-NO1",
+                    "import_DK-DK1",
+                    "export_DK-DK1",
+                    "import_FI",
+                    "export_FI",
+                    "import_AX",
+                    "export_AX"
+                ]
             }
         }
     }

@@ -1,0 +1,158 @@
+{
+    "feature_groups": {
+        "price_cols": [
+            "SE3_price_ore",
+            "price_24h_avg",
+            "price_168h_avg",
+            "price_24h_std",
+            "hour_avg_price",
+            "price_vs_hour_avg"
+        ],
+        "grid_cols": [
+            "fossilFreePercentage",
+            "renewablePercentage",
+            "powerConsumptionTotal",
+            "powerProductionTotal",
+            "powerImportTotal",
+            "powerExportTotal",
+            "nuclear",
+            "wind",
+            "hydro",
+            "solar",
+            "unknown",
+            "import_SE-SE2",
+            "export_SE-SE4",
+            "import_NO-NO1",
+            "export_NO-NO1",
+            "import_DK-DK1",
+            "export_DK-DK1",
+            "import_FI",
+            "export_FI",
+            "import_AX",
+            "export_AX"
+        ],
+        "cyclical_cols": [
+            "hour_sin",
+            "hour_cos",
+            "day_of_week_sin",
+            "day_of_week_cos",
+            "month_sin",
+            "month_cos"
+        ],
+        "binary_cols": [
+            "is_peak_hour",
+            "is_weekend",
+            "is_holiday",
+            "is_holiday_eve",
+            "season"
+        ]
+    },
+    "feature_metadata": {
+        "target_feature": "SE3_price_ore",
+        "feature_order": [
+            "price_cols",
+            "cyclical_cols",
+            "binary_cols",
+            "grid_cols"
+        ],
+        "description": {
+            "price_cols": "Price-related features including target variable",
+            "grid_cols": "Grid supply and generation features",
+            "cyclical_cols": "Time-based cyclical features",
+            "binary_cols": "Binary and categorical features including holidays"
+        }
+    },
+    "model_config": {
+        "architecture": {
+            "lstm_layers": [
+                {
+                    "units": 256,
+                    "return_sequences": true,
+                    "dropout": 0.2
+                },
+                {
+                    "units": 128,
+                    "return_sequences": false,
+                    "dropout": 0.2
+                }
+            ],
+            "dense_layers": [
+                {
+                    "units": 64,
+                    "activation": "relu"
+                },
+                {
+                    "units": 24,
+                    "activation": null
+                }
+            ],
+            "output_units": 24
+        },
+        "training": {
+            "window_size": 168,
+            "prediction_horizon": 24,
+            "batch_size": 32,
+            "max_epochs": 100,
+            "learning_rate": 0.001,
+            "optimizer": "adam",
+            "loss": "huber",
+            "metrics": [
+                "mae"
+            ]
+        },
+        "callbacks": {
+            "early_stopping": {
+                "monitor": "val_loss",
+                "patience": 10,
+                "min_delta": 0.001
+            },
+            "reduce_lr": {
+                "monitor": "val_loss",
+                "factor": 0.5,
+                "patience": 5,
+                "min_delta": 0.001,
+                "min_lr": 1e-05
+            }
+        },
+        "data_split": {
+            "train_ratio": 0.9,
+            "val_ratio": 0.05,
+            "test_ratio": 0.05
+        },
+        "scaling": {
+            "price_scaler": {
+                "type": "robust",
+                "quantile_range": [
+                    1,
+                    99
+                ]
+            },
+            "grid_scaler": {
+                "type": "robust",
+                "quantile_range": [
+                    1,
+                    99
+                ],
+                "unit_variance": true,
+                "outlier_threshold": 10,
+                "handle_extreme_values": true,
+                "max_zscore": 8,
+                "individual_scaling": true,
+                "log_transform_large_values": true,
+                "signed_log": true,
+                "import_export_cols": [
+                    "import_SE-SE2",
+                    "export_SE-SE4",
+                    "import_NO-NO1",
+                    "export_NO-NO1",
+                    "import_DK-DK1",
+                    "export_DK-DK1",
+                    "import_FI",
+                    "export_FI",
+                    "import_AX",
+                    "export_AX"
+                ]
+            }
+        }
+    }
+}

@@ -5,7 +5,7 @@ import os
 
 def merge_predictions():
     # Get the data directory path
-    data_dir = Path(__file__).parent / "data"
+    data_dir = Path(__file__).parent / "actual_data/per_day" 
     
     # Get all CSV files in the directory
     csv_files = glob.glob(str(data_dir / "*.csv"))

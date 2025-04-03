@@ -14,8 +14,7 @@ project_root = str(Path(__file__).resolve().parents[3])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from src.predictions.prices.gather_data import FeatureConfig
-feature_config = FeatureConfig()
+from src.predictions.prices.feature_config import FeatureConfig
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -37,7 +36,7 @@ class PricePredictor:
         self.data_dir = self.project_root / "data/processed"
         
         # Load feature configuration
-        self.feature_config = feature_config
+        self.feature_config = FeatureConfig()
         
         # Load production model and scalers for future predictions
         self.model = load_model(self.prod_dir / "price_model_production.keras")
@@ -303,7 +302,8 @@ class PricePredictor:
             for i, col in enumerate(self.feature_config.binary_cols):
                 new_row[binary_start + i] = time_feats[col]
             
-            # Update grid features from last window
+            # Update grid features from last window row - keep them as is
+            # since they're already scaled properly in the training data
             grid_start = binary_start + binary_len
             new_row[grid_start:grid_start + grid_len] = current_window[-1, grid_start:grid_start + grid_len]
             

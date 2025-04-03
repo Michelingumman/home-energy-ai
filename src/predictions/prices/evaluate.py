@@ -2,6 +2,7 @@ import numpy as np
 import os
 import sys
 from pathlib import Path
+import json
 
 # Add the project root to the Python path
 project_root = str(Path(__file__).resolve().parents[3])
@@ -10,17 +11,12 @@ if project_root not in sys.path:
 
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 import tensorflow as tf
 import joblib
 from datetime import datetime, timedelta
 from pathlib import Path
 import logging
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-import scipy.stats as stats
 import matplotlib.dates as mdates
-from matplotlib.gridspec import GridSpec
-from matplotlib.font_manager import FontProperties
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Import the feature config
 from src.predictions.prices.gather_data import FeatureConfig
 
-class PriceModelEvaluator:
+class SimplePriceModelEvaluator:
     def __init__(self):
         """Initialize the evaluator with model paths and data"""
         # Set up paths
@@ -38,13 +34,11 @@ class PriceModelEvaluator:
         self.saved_dir = self.eval_dir / "saved"
         self.test_data_dir = self.eval_dir / "test_data"
         self.results_dir = self.eval_dir / "results"
+        self.simple_viz_dir = self.results_dir / "simple_visualizations"
         
         # Create results directory
         self.results_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create comprehensive evaluation directory
-        self.comprehensive_dir = self.results_dir / "comprehensive_evaluation"
-        self.comprehensive_dir.mkdir(parents=True, exist_ok=True)
+        self.simple_viz_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize feature config
         self.feature_config = FeatureConfig()
@@ -54,15 +48,11 @@ class PriceModelEvaluator:
         
         # Initialize dataframes to store full predictions
         self.predictions_df = None
-        self.actual_df = None
         
         # Colors for consistent plotting
         self.colors = {
             'actual': '#1f77b4',  # blue
             'predicted': '#ff7f0e',  # orange
-            'error': '#d62728',  # red
-            'grid': '#7f7f7f',   # gray
-            'highlight': '#2ca02c'  # green
         }
     
     def load_model_and_data(self):
@@ -72,6 +62,43 @@ class PriceModelEvaluator:
             self.model = tf.keras.models.load_model(self.saved_dir / "price_model_evaluation.keras")
             self.price_scaler = joblib.load(self.saved_dir / "price_scaler.save")
             self.grid_scaler = joblib.load(self.saved_dir / "grid_scaler.save")
+            
+            # Load the target index information if available
+            self.target_index = 0  # Default to first column
+            try:
+                if (self.saved_dir / "target_info.json").exists():
+                    with open(self.saved_dir / "target_info.json", 'r') as f:
+                        target_info = json.load(f)
+                        self.target_index = target_info.get("target_index", 0)
+                        logging.info(f"Loaded target index {self.target_index} for {target_info.get('target_feature', 'unknown')}")
+                else:
+                    # Try to load from config
+                    with open(Path(__file__).resolve().parent / "config.json", 'r') as f:
+                        config = json.load(f)
+                        target_feature = config.get("feature_metadata", {}).get("target_feature")
+                        if target_feature:
+                            price_cols = config.get("feature_groups", {}).get("price_cols", [])
+                            if target_feature in price_cols:
+                                self.target_index = price_cols.index(target_feature)
+                                logging.info(f"Inferred target index {self.target_index} for {target_feature} from config.json")
+            except Exception as e:
+                logging.warning(f"Could not load target index information: {e}. Using default index 0.")
+            
+            # Test the scaler with sample values
+            try:
+                test_val = np.array([100.0])  # A typical price value
+                dummy = np.zeros((1, len(self.price_scaler.scale_)))
+                dummy[0, self.target_index] = test_val[0]
+                
+                scaled = self.price_scaler.transform(dummy)[0, self.target_index]
+                inverse_test = self.inverse_transform_prices(np.array([scaled]))
+                
+                logging.info(f"Scaler test: original={test_val[0]}, scaled={scaled}, inverse_transform={inverse_test[0]}")
+                
+                if not np.isclose(test_val[0], inverse_test[0], rtol=1e-3):
+                    logging.warning(f"Price scaler verification issue - output {inverse_test[0]} doesn't match input {test_val[0]}")
+            except Exception as e:
+                logging.error(f"Error testing price scaler: {e}")
             
             # Load test data
             self.X_test = np.load(self.test_data_dir / "X_test.npy")
@@ -88,15 +115,18 @@ class PriceModelEvaluator:
             )
             
             logging.info("Successfully loaded evaluation model and data")
-            logging.info(f"Test data shape: {self.X_test.shape}")
-            logging.info(f"Validation data shape: {self.X_val.shape}")
             
             # Also load price data for additional context
-            self.price_data = pd.read_csv(
-                self.project_root / "data/processed/SE3prices.csv",
-                parse_dates=['HourSE'],
-                index_col='HourSE'
-            )
+            try:
+                self.price_data = pd.read_csv(
+                    self.project_root / "data/processed/SE3prices.csv",
+                    parse_dates=['HourSE'],
+                    index_col='HourSE'
+                )
+            except:
+                logging.warning("Could not load price data for context. Continuing without it.")
+                self.price_data = None
+                
         except Exception as e:
             logging.error(f"Error loading model or data: {str(e)}")
             raise
@@ -132,8 +162,6 @@ class PriceModelEvaluator:
             df = pd.DataFrame({
                 'actual': test_actual[i],
                 'predicted': test_predicted[i],
-                'error': test_actual[i] - test_predicted[i],
-                'abs_error': abs(test_actual[i] - test_predicted[i]),
                 'dataset': 'test'  # Mark as test data
             }, index=dates)
             test_dfs.append(df)
@@ -143,8 +171,6 @@ class PriceModelEvaluator:
             df = pd.DataFrame({
                 'actual': val_actual[i],
                 'predicted': val_predicted[i],
-                'error': val_actual[i] - val_predicted[i],
-                'abs_error': abs(val_actual[i] - val_predicted[i]),
                 'dataset': 'validation'  # Mark as validation data
             }, index=dates)
             val_dfs.append(df)
@@ -153,7 +179,7 @@ class PriceModelEvaluator:
         predictions_df = pd.concat(test_dfs + val_dfs)
         
         # Make sure all numeric columns have numeric dtypes (not object)
-        for col in ['actual', 'predicted', 'error', 'abs_error']:
+        for col in ['actual', 'predicted']:
             predictions_df[col] = pd.to_numeric(predictions_df[col])
             
         # Sort by timestamp
@@ -169,12 +195,6 @@ class PriceModelEvaluator:
         
         # Store the processed dataframe
         self.predictions_df = predictions_df
-        
-        # Calculate overall metrics
-        self.metrics = self.calculate_metrics(
-            predictions_df['actual'].values,
-            predictions_df['predicted'].values
-        )
         
         total_records = len(predictions_df)
         logging.info(f"Generated predictions for {total_records} hourly data points")
@@ -195,11 +215,29 @@ class PriceModelEvaluator:
         if y_scaled is None or y_scaled.size == 0:
             return np.array([])
         
+        # Log some sample scaled values for diagnostics
+        if len(y_scaled) > 5:
+            logging.info(f"Sample scaled values: {y_scaled[:5]}")
+        else:
+            logging.info(f"All scaled values: {y_scaled}")
+            
+        # Use the target_index loaded from the target_info.json file (default is 0)
+        target_idx = getattr(self, 'target_index', 0)
+        logging.info(f"Using target index {target_idx} for inverse transform")
+        
         if len(y_scaled.shape) == 1:
             # For 1D array (single sequence of prices)
             dummy = np.zeros((len(y_scaled), len(self.price_scaler.scale_)))
-            dummy[:, 0] = y_scaled
-            return self.price_scaler.inverse_transform(dummy)[:, 0]
+            dummy[:, target_idx] = y_scaled
+            result = self.price_scaler.inverse_transform(dummy)[:, target_idx]
+            
+            # Log some sample values
+            if len(result) > 5:
+                logging.info(f"Sample inverse-transformed values: {result[:5]}")
+            else:
+                logging.info(f"All inverse-transformed values: {result}")
+                
+            return result
         
         elif len(y_scaled.shape) == 2:
             # For 2D array (multiple sequences of hourly predictions)
@@ -210,904 +248,301 @@ class PriceModelEvaluator:
             
             # Create dummy array for inverse transform
             dummy = np.zeros((len(flattened), len(self.price_scaler.scale_)))
-            dummy[:, 0] = flattened
+            dummy[:, target_idx] = flattened
             
             # Inverse transform
-            inverse_flat = self.price_scaler.inverse_transform(dummy)[:, 0]
+            inverse_flat = self.price_scaler.inverse_transform(dummy)[:, target_idx]
             
             # Reshape back to original structure
-            return inverse_flat.reshape(num_sequences, seq_length)
+            result = inverse_flat.reshape(num_sequences, seq_length)
+            
+            # Log some sample values
+            if num_sequences > 0:
+                logging.info(f"Sample inverse-transformed sequence: {result[0]}")
+                
+            return result
         
         else:
             raise ValueError(f"Unexpected shape for y_scaled: {y_scaled.shape}")
     
-    def calculate_metrics(self, y_true, y_pred):
-        """Calculate comprehensive error metrics"""
-        metrics = {}
-        
-        # Basic metrics
-        metrics['mae'] = mean_absolute_error(y_true, y_pred)
-        metrics['rmse'] = np.sqrt(mean_squared_error(y_true, y_pred))
-        
-        # Calculate MAPE safely (avoiding division by zero)
-        non_zero_mask = y_true != 0
-        if np.any(non_zero_mask):
-            metrics['mape'] = np.mean(np.abs((y_true[non_zero_mask] - y_pred[non_zero_mask]) / 
-                                           y_true[non_zero_mask])) * 100
-        else:
-            metrics['mape'] = np.nan
-        
-        metrics['r2'] = r2_score(y_true, y_pred)
-        
-        # Additional metrics
-        metrics['bias'] = np.mean(y_pred - y_true)
-        metrics['std_error'] = np.std(y_pred - y_true)
-        metrics['max_error'] = np.max(np.abs(y_pred - y_true))
-        
-        # Correlation
-        metrics['correlation'] = np.corrcoef(y_true, y_pred)[0, 1]
-        
-        return metrics
-    
-    def visualize_predictions_by_timeframe(self):
-        """Create visualizations showing predictions at different time scales
-        
-        Creates three separate figures:
-        1. Time Period Analysis - Shows overview, yearly, monthly, and weekly patterns
-        2. Day Analysis - Shows detailed day comparisons for different price scenarios
-        3. Error Analysis - Shows error distributions, patterns, and correlations
-        """
+    def create_visualizations(self):
+        """Create simple visualizations for different time periods"""
         if self.predictions_df is None:
             self.process_all_predictions()
             
-        plt.rcParams.update({'font.size': 10})
+        plt.rcParams.update({'font.size': 12})
         
-        # Create three separate figures instead of one large cramped figure
-        self.create_time_period_figure()
-        self.create_day_analysis_figure()
-        self.create_error_analysis_figure()
-        
-        # Also create a separate metrics summary
-        self._create_metrics_summary()
-    
-    def create_time_period_figure(self):
-        """Create figure showing time period analysis at different scales"""
-        # Figure 1: Time Period Analysis (overview, yearly, monthly, weekly)
-        fig, axes = plt.subplots(3, 2, figsize=(16, 18), 
-                              gridspec_kw={'height_ratios': [1, 1, 1],
-                                         'width_ratios': [1, 1]})
-        
-        # 1. Full test period overview (top row, spans both columns)
-        ax_full = plt.subplot2grid((3, 2), (0, 0), colspan=2, fig=fig)
-        self._plot_full_period(ax_full)
-        
-        # 2. Year comparison (middle row, left)
-        ax_year = axes[1, 0]
-        self._plot_yearly_comparison(ax_year)
-        
-        # 3. Monthly comparison (middle row, right)
-        ax_month = axes[1, 1]
-        self._plot_monthly_comparison(ax_month)
-        
-        # 4. Week detail (bottom row, spans both columns)
-        ax_week = plt.subplot2grid((3, 2), (2, 0), colspan=2, fig=fig)
-        self._plot_week_detail(ax_week)
-        
-        plt.tight_layout()
-        plt.savefig(self.comprehensive_dir / "time_period_analysis.png", dpi=300, bbox_inches='tight')
-        plt.close()
-        
-    def create_day_analysis_figure(self):
-        """Create figure showing detailed day analysis"""
-        # Figure 2: Day Analysis (detailed comparison of different day types)
-        # Create a slightly larger figure for better readability
-        fig, ax_day = plt.subplots(figsize=(14, 12))
-        self._plot_day_comparison(ax_day)
-        
-        plt.tight_layout()
-        plt.savefig(self.comprehensive_dir / "day_comparison.png", dpi=300, bbox_inches='tight')
-        plt.close()
-        
-    def create_error_analysis_figure(self):
-        """Create figure showing error analysis from different perspectives"""
-        # Figure 3: Error Analysis (distribution, hourly patterns, residuals, scatter)
-        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
-        
-        # 1. Error distribution (top left)
-        ax_error_dist = axes[0, 0]
-        self._plot_error_distribution(ax_error_dist)
-        
-        # 2. Error by hour (top right)
-        ax_error_hour = axes[0, 1]
-        self._plot_error_by_hour(ax_error_hour)
-        
-        # 3. Residual plot (bottom left)
-        ax_residual = axes[1, 0]
-        self._plot_residuals(ax_residual)
-        
-        # 4. Actual vs Predicted scatter (bottom right)
-        ax_scatter = axes[1, 1]
-        self._plot_scatter(ax_scatter)
-        
-        plt.tight_layout()
-        plt.savefig(self.comprehensive_dir / "error_analysis.png", dpi=300, bbox_inches='tight')
-        plt.close()
-    
-    def _plot_full_period(self, ax):
-        """Plot the full test period overview"""
-        df = self.predictions_df
-        
-        # Group by day to reduce visual noise
-        # Only include numeric columns when resampling to avoid 'validationvalidation' error
-        numeric_cols = df.select_dtypes(include=['number']).columns
-        
-        # Check if we have data first
-        if len(df) == 0 or len(numeric_cols) == 0:
-            ax.text(0.5, 0.5, "Insufficient data for overview", 
-                   horizontalalignment='center', verticalalignment='center', 
-                   transform=ax.transAxes, fontsize=12)
-            return ax
-        
-        daily = df[numeric_cols].resample('D').mean()
-        
-        # Check if we have data after resampling
-        if len(daily) == 0:
-            ax.text(0.5, 0.5, "Insufficient data for overview", 
-                   horizontalalignment='center', verticalalignment='center', 
-                   transform=ax.transAxes, fontsize=12)
-            return ax
-        
-        ax.plot(daily.index, daily['actual'], color=self.colors['actual'], label='Actual')
-        ax.plot(daily.index, daily['predicted'], color=self.colors['predicted'], label='Predicted')
-        
-        # Format the plot
-        ax.set_title('Full Period Overview (Daily Average)')
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Price (öre/kWh)')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        # Add metrics annotation
-        metrics = self.calculate_metrics(df['actual'], df['predicted'])
-        metrics_text = f"RMSE: {metrics['rmse']:.2f} öre/kWh\nMAE: {metrics['mae']:.2f} öre/kWh\nMAPE: {metrics['mape']:.2f}%\nR²: {metrics['r2']:.3f}"
-        ax.annotate(metrics_text, xy=(0.02, 0.85), xycoords='axes fraction', 
-                   bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
-        
-        return ax
-    
-    def _plot_yearly_comparison(self, ax):
-        """Plot yearly metrics comparison using bar charts"""
-        df = self.predictions_df
-        
-        # Add year column for grouping
-        df['year'] = df.index.year
-        years = sorted(df['year'].unique())
-        
-        # Calculate metrics for each year
-        yearly_metrics = []
-        for year in years:
-            year_data = df[df['year'] == year]
-            metrics = self.calculate_metrics(year_data['actual'], year_data['predicted'])
-            yearly_metrics.append(metrics)
-        
-        # Extract specific metrics for plotting
-        maes = [m['mae'] for m in yearly_metrics]
-        rmses = [m['rmse'] for m in yearly_metrics]
-        mapes = [m['mape'] for m in yearly_metrics]
-        r2s = [m['r2'] for m in yearly_metrics]
-        
-        # Set up bar positions
-        x = np.arange(len(years))
-        width = 0.35
-        
-        # Plot MAE and RMSE
-        ax.bar(x - width/2, maes, width, label='MAE', color=self.colors['actual'], alpha=0.7)
-        ax.bar(x + width/2, rmses, width, label='RMSE', color=self.colors['predicted'], alpha=0.7)
-        
-        # Add a second y-axis for R² values
-        ax2 = ax.twinx()
-        ax2.plot(x, r2s, 'o-', color='forestgreen', label='R²')
-        ax2.set_ylim(0, 1)
-        ax2.set_ylabel('R² Score', color='forestgreen')
-        ax2.tick_params(axis='y', labelcolor='forestgreen')
-        
-        # Format the plot
-        ax.set_title('Yearly Performance Metrics')
-        ax.set_xlabel('Year')
-        ax.set_ylabel('Error (öre/kWh)')
-        ax.set_xticks(x)
-        ax.set_xticklabels(years)
-        ax.legend(loc='upper left')
-        ax2.legend(loc='upper right')
-        ax.grid(True, alpha=0.3, axis='y')
-        
-        # Add a text box with MAPE values
-        mape_text = "MAPE by Year:\n" + "\n".join([f"{y}: {m:.2f}%" for y, m in zip(years, mapes)])
-        ax.annotate(mape_text, xy=(0.02, 0.65), xycoords='axes fraction',
-                   bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
-                   
-        return ax
-    
-    def _plot_monthly_comparison(self, ax):
-        """Plot monthly average prices by calendar month"""
-        df = self.predictions_df
-        
-        # Group by month number for consistent comparison across years
-        df['month'] = df.index.month
-        
-        # Calculate mean prices by month
-        monthly_actual = df.groupby('month')['actual'].mean()
-        monthly_predicted = df.groupby('month')['predicted'].mean()
-        monthly_error = df.groupby('month')['abs_error'].mean()
-        
-        # Set up x-axis positions
-        months = range(1, 13)
-        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        
-        # Create bar chart with month numbers as x positions
-        width = 0.35
-        ax.bar([m-width/2 for m in months], monthly_actual, width, color=self.colors['actual'], label='Actual')
-        ax.bar([m+width/2 for m in months], monthly_predicted, width, color=self.colors['predicted'], label='Predicted')
-        
-        # Add error line on secondary y-axis
-        ax2 = ax.twinx()
-        ax2.plot(months, monthly_error, 'o-', color='red', label='MAE')
-        ax2.set_ylabel('Mean Absolute Error', color='red')
-        ax2.tick_params(axis='y', labelcolor='red')
-        
-        # Format the plot
-        ax.set_title('Monthly Average Price Comparison')
-        ax.set_xlabel('Month')
-        ax.set_ylabel('Average Price (öre/kWh)')
-        ax.set_xticks(months)
-        ax.set_xticklabels(month_names)
-        
-        # Add dual legend
-        lines1, labels1 = ax.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
-        
-        ax.grid(True, alpha=0.3, axis='y')
-        
-        return ax
-    
-    def _plot_week_detail(self, ax):
-        """Plot a detailed view of a representative week"""
-        df = self.predictions_df
-        
-        # Find a representative week with good data coverage
-        # Prefer a recent week that includes both weekends and weekdays
-        df['weekday'] = df.index.dayofweek
-        df['is_weekend'] = df['weekday'] >= 5
-        
-        # Get a complete recent week that has weekend data
-        end_date = df.index.max() - pd.Timedelta(days=7)  # Avoid partial weeks at the end
-        start_date = end_date - pd.Timedelta(days=30)  # Look in the last month for a good week
-        
-        # Find weeks in this range that have weekend days
-        subset = df[(df.index >= start_date) & (df.index <= end_date)]
-        if len(subset) == 0:
-            # If no data in preferred range, use the last complete week
-            end_date = df.index.max() - pd.Timedelta(days=1)
-            start_date = end_date - pd.Timedelta(days=6)
-            week_data = df[(df.index >= start_date) & (df.index <= end_date)]
-        else:
-            # Properly set week_start using pandas methods
-            # Safer approach using to_series() to avoid numpy/pandas conversion issues
-            subset = subset.copy()  # Create a copy to avoid SettingWithCopyWarning
-            subset['week_start'] = subset.index.to_series().dt.to_period('W').dt.start_time
-            
-            # Find week with weekend days
-            found_week = False
-            for week_start, week_group in subset.groupby('week_start'):
-                if week_group['is_weekend'].any() and len(week_group) >= 24*5:  # At least 5 days of data
-                    week_data = week_group
-                    found_week = True
-                    break
-            
-            if not found_week:
-                # If no ideal week found, use the last 7 days in the subset
-                week_start = subset.index.max() - pd.Timedelta(days=6)
-                week_data = df[(df.index >= week_start) & (df.index <= subset.index.max())]
-        
-        # Plot the week
-        ax.plot(week_data.index, week_data['actual'], color=self.colors['actual'], 
-                label='Actual', linewidth=2)
-        ax.plot(week_data.index, week_data['predicted'], color=self.colors['predicted'], 
-                label='Predicted', linestyle='--', linewidth=2)
-        
-        # Highlight weekends with shading
-        for i, row in week_data.iterrows():
-            if row.get('is_weekend', i.dayofweek >= 5):  # Use computed column or calculate
-                ax.axvspan(i, i + pd.Timedelta(hours=1), alpha=0.2, color='gray')
-        
-        # Format the plot
-        ax.set_title(f'Detailed Week View ({week_data.index.min().strftime("%Y-%m-%d")} to {week_data.index.max().strftime("%Y-%m-%d")})')
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Price (öre/kWh)')
-        
-        # Format x-axis to show days
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%a %d'))
-        ax.xaxis.set_major_locator(mdates.DayLocator())
-        
-        # Add metrics for this week
-        metrics = self.calculate_metrics(week_data['actual'], week_data['predicted'])
-        metrics_text = f"Week Metrics:\nRMSE: {metrics['rmse']:.2f}\nMAE: {metrics['mae']:.2f}\nMAPE: {metrics['mape']:.2f}%"
-        ax.annotate(metrics_text, xy=(0.02, 0.85), xycoords='axes fraction',
-                   bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
-        
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        return ax
-    
-    def _plot_day_comparison(self, ax):
-        """Plot detailed analysis of different day types"""
-        df = self.predictions_df
-        
-        # Identify complete days (having 24 hours)
-        day_counts = df.groupby(df.index.date).size()
-        complete_days = day_counts[day_counts == 24].index.tolist()
-        
-        # Filter to only include complete days
-        date_mask = pd.Series([d.date() in complete_days for d in df.index], index=df.index)
-        df_filtered = df[date_mask]
-        
-        # Try to focus on recent data (last 2 years) if enough data is available
-        # This helps find representative days from more recent market conditions
-        current_date = df.index.max().date()
-        two_years_ago = (pd.Timestamp(current_date) - pd.DateOffset(years=2)).date()
-        recent_mask = pd.Series([d.date() >= two_years_ago for d in df_filtered.index], index=df_filtered.index)
-        recent_data = df_filtered[recent_mask]
-        
-        # Fix: Use pd.Series.nunique() instead of trying to use .unique() on a numpy array
-        # Count unique dates in recent_data
-        unique_recent_dates = recent_data.index.to_series().dt.date.nunique()
-        
-        # Use recent data if we have at least 100 days, otherwise use all data
-        analysis_df = recent_data if unique_recent_dates >= 100 else df_filtered
-        
-        # Find representative days
-        # 1. Low price day (among complete days)
-        daily_avg = analysis_df.groupby(analysis_df.index.date)['actual'].mean()
-        low_price_date = daily_avg.idxmin()
-        
-        # 2. High price day (among complete days)
-        high_price_date = daily_avg.idxmax()
-        
-        # 3. Volatile price day (highest std dev)
-        daily_std = analysis_df.groupby(analysis_df.index.date)['actual'].std()
-        volatile_price_date = daily_std.idxmax()
-        
-        # Get day data - ensuring we have clean filtering based on dates
-        # Fix: Ensure we're comparing dates properly
-        low_day = analysis_df[analysis_df.index.map(lambda x: x.date() == low_price_date)].sort_index()
-        high_day = analysis_df[analysis_df.index.map(lambda x: x.date() == high_price_date)].sort_index()
-        volatile_day = analysis_df[analysis_df.index.map(lambda x: x.date() == volatile_price_date)].sort_index()
-        
-        # Check if we have data for each day type (at least 12 hours)
-        # If any day has insufficient data, log warning and use fallback approach
-        if len(low_day) < 12 or len(high_day) < 12 or len(volatile_day) < 12:
-            logging.warning("Insufficient data for some representative days, using fallback approach")
-            
-            # Fallback: just pick recent days with complete data if possible
-            if len(complete_days) >= 3:
-                # Use the 3 most recent complete days if possible
-                recent_complete = sorted(complete_days, reverse=True)[:3]
-                days_data = []
-                
-                # Create labels based on average price
-                for date in recent_complete:
-                    day_data = analysis_df[analysis_df.index.map(lambda x: x.date() == date)].sort_index()
-                    if len(day_data) >= 24:
-                        avg_price = day_data['actual'].mean()
-                        days_data.append((day_data, avg_price, date))
-                
-                if len(days_data) >= 3:
-                    # Sort by average price
-                    days_data.sort(key=lambda x: x[1])
-                    
-                    # Assign low, high, volatile based on price
-                    low_day = days_data[0][0]
-                    high_day = days_data[-1][0]
-                    # Pick middle one for "moderate"
-                    volatile_day = days_data[1][0]
-                    
-                    # Update dates for labels
-                    low_price_date = days_data[0][2]
-                    high_price_date = days_data[-1][2]
-                    volatile_price_date = days_data[1][2]
-                    
-                    # Rename volatile to "Moderate" for fallback case
-                    volatile_label = f"Moderate Price Day ({volatile_price_date:%Y-%m-%d})"
-                else:
-                    ax.text(0.5, 0.5, "Insufficient daily data for comparison", 
-                          horizontalalignment='center', verticalalignment='center',
-                          transform=ax.transAxes, fontsize=14)
-                    return
-            else:
-                ax.text(0.5, 0.5, "Insufficient daily data for comparison", 
-                      horizontalalignment='center', verticalalignment='center',
-                      transform=ax.transAxes, fontsize=14)
-                return
-        else:
-            volatile_label = f"Volatile Price Day ({volatile_price_date:%Y-%m-%d})"
-        
-        # Create the main axis for the full figure
-        # This will contain subplots for each representative day
-        ax.set_position([0.05, 0.05, 0.9, 0.9])  # [left, bottom, width, height]
-        ax.axis('off')  # Hide the main axis
-        
-        # Grid positions for subplots
-        positions = [
-            [0.05, 0.55, 0.45, 0.35],  # Low price day  [left, bottom, width, height]
-            [0.55, 0.55, 0.45, 0.35],  # High price day
-            [0.05, 0.10, 0.45, 0.35],  # Volatile day
-            [0.55, 0.10, 0.45, 0.35],  # Metrics summary
+        # Create visualizations for different time periods with error handling
+        visualizations = [
+            ('daily', self.plot_daily_comparison),
+            ('weekly', self.plot_weekly_comparison),
+            ('monthly', self.plot_monthly_comparison),
+            ('yearly', self.plot_yearly_comparison)
         ]
         
-        # Create axes for each panel
-        ax_low = ax.figure.add_axes(positions[0])
-        ax_high = ax.figure.add_axes(positions[1])
-        ax_volatile = ax.figure.add_axes(positions[2])
-        ax_metrics = ax.figure.add_axes(positions[3])
+        successful_plots = []
         
-        # Plot each day type
-        days = [(low_day, ax_low, f"Low Price Day ({low_price_date:%Y-%m-%d})"),
-                (high_day, ax_high, f"High Price Day ({high_price_date:%Y-%m-%d})"),
-                (volatile_day, ax_volatile, volatile_label)]
+        for viz_name, viz_func in visualizations:
+            try:
+                viz_func()
+                successful_plots.append(viz_name)
+            except Exception as e:
+                logging.warning(f"Failed to generate {viz_name} visualization: {str(e)}")
         
-        # Find common y limits for better comparison
-        all_prices = []
-        for day_data, _, _ in days:
-            all_prices.extend(day_data['actual'].tolist())
-            all_prices.extend(day_data['predicted'].tolist())
-        
-        # Handle edge case with empty data or all zeros
-        if not all_prices or all(p == 0 for p in all_prices):
-            ax.text(0.5, 0.5, "No valid price data for comparison", 
-                  horizontalalignment='center', verticalalignment='center',
-                  transform=ax.transAxes, fontsize=14)
-            return
-            
-        y_min = max(0, min(all_prices) * 0.9)  # Prevent negative y-axis
-        y_max = max(all_prices) * 1.1  # Add 10% padding
-        
-        # Plot each day
-        metrics_data = []
-        for day_data, day_ax, title in days:
-            # Ensure we have 24 hours of data
-            if len(day_data) < 24:
-                # Handle case with less than 24 hours by resampling to hourly to fill gaps
-                day_data = day_data.resample('H').mean().interpolate()
-                # If still not 24 hours, create a message in the plot
-                if len(day_data) < 24:
-                    day_ax.text(0.5, 0.5, "Incomplete day data", 
-                              horizontalalignment='center', verticalalignment='center',
-                              transform=day_ax.transAxes, fontsize=12)
-                    continue
-            
-            # Plot actual vs predicted
-            hours = range(24)
-            day_ax.plot(hours, day_data['actual'].values[:24], 'b-', label='Actual', linewidth=2)
-            day_ax.plot(hours, day_data['predicted'].values[:24], 'r--', label='Predicted', linewidth=2)
-            
-            # Highlight peak hours (7-9 and 17-20)
-            morning_peak = [(7, 9), (0.1, 0.3, 0.9, 0.1)]  # position and color
-            evening_peak = [(17, 20), (0.1, 0.5, 0.9, 0.1)]  # position and color
-            
-            for (start, end), (r, g, b, a) in [morning_peak, evening_peak]:
-                day_ax.axvspan(start, end, alpha=0.2, color=(r, g, b), label=f"Peak {start}-{end}h" if start == 7 else "")
-            
-            # Set title and labels
-            day_ax.set_title(title, fontsize=12, fontweight='bold')
-            day_ax.set_xlabel('Hour of Day', fontsize=10)
-            day_ax.set_ylabel('Price (öre/kWh)', fontsize=10)
-            
-            # Set common y limits for better comparison
-            day_ax.set_ylim(y_min, y_max)
-            
-            # Add grid for better readability
-            day_ax.grid(True, linestyle='--', alpha=0.7)
-            
-            # Add legend
-            day_ax.legend(fontsize=9)
-            
-            # Calculate metrics for this day
-            metrics = self.calculate_metrics(day_data['actual'].values[:24], day_data['predicted'].values[:24])
-            day_metrics = {
-                'Day Type': title.split('(')[0].strip(),
-                'Date': title.split('(')[1].split(')')[0],
-                'MAE': metrics['mae'],
-                'RMSE': metrics['rmse'],
-                'MAPE': metrics['mape'],
-                'R²': metrics['r2']
-            }
-            metrics_data.append(day_metrics)
-            
-            # Add metrics annotation in the plot
-            stats_text = (f"MAE: {metrics['mae']:.2f} öre/kWh\n"
-                        f"RMSE: {metrics['rmse']:.2f} öre/kWh\n"
-                        f"MAPE: {metrics['mape']:.1f}%")
-            day_ax.annotate(stats_text, xy=(0.05, 0.05), xycoords='axes fraction',
-                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.8),
-                        fontsize=9)
-            
-            # Add day description
-            if "Low Price" in title:
-                description = "Low price days have minimal variation\nand often occur during periods of\nexcess renewable generation and\nlow demand (e.g., holidays, warm weekends)."
-            elif "High Price" in title:
-                description = "High price days show elevated levels\nthroughout with morning and evening peaks.\nThese occur during high demand periods\n(cold weather, industrial activity)."
-            else:  # Volatile or Moderate
-                if "Volatile" in title:
-                    description = "Volatile price days show significant\nintra-day price swings, often due to\nunpredictable renewable generation\nor sudden demand changes."
-                else:
-                    description = "Moderate price days show typical\ndaily patterns with modest peaks\nduring morning and evening hours."
-                
-            day_ax.annotate(description, xy=(0.95, 0.95), xycoords='axes fraction',
-                        xytext=(-5, -5), textcoords='offset points',
-                        ha='right', va='top',
-                        bbox=dict(boxstyle="round,pad=0.5", fc="lightyellow", alpha=0.8),
-                        fontsize=9)
-        
-        # Create a metrics summary table
-        ax_metrics.axis('off')
-        ax_metrics.set_title("Day Comparison Metrics Summary", fontsize=12, fontweight='bold')
-        
-        # Create table data
-        metrics_df = pd.DataFrame(metrics_data)
-        
-        # Handle empty metrics
-        if metrics_df.empty:
-            ax_metrics.text(0.5, 0.5, "Insufficient metrics data for comparison", 
-                          horizontalalignment='center', verticalalignment='center',
-                          transform=ax_metrics.transAxes, fontsize=12)
+        if successful_plots:
+            logging.info(f"Successfully created visualizations: {', '.join(successful_plots)}")
+            logging.info(f"Visualizations saved to {self.simple_viz_dir}")
         else:
-            # Render table
-            cell_text = []
-            for _, row in metrics_df.iterrows():
-                cell_text.append([
-                    row['Day Type'],
-                    row['Date'],
-                    f"{row['MAE']:.2f}",
-                    f"{row['RMSE']:.2f}",
-                    f"{row['MAPE']:.1f}%",
-                    f"{row['R²']:.3f}"
-                ])
-            
-            columns = ['Day Type', 'Date', 'MAE\n(öre/kWh)', 'RMSE\n(öre/kWh)', 'MAPE\n(%)', 'R²']
-            
-            table = ax_metrics.table(
-                cellText=cell_text,
-                colLabels=columns,
-                loc='center',
-                cellLoc='center',
-                colColours=['#f2f2f2']*len(columns)
-            )
-            
-            # Style the table
-            table.auto_set_font_size(False)
-            table.set_fontsize(10)
-            table.scale(1, 1.5)  # Make rows taller
-            
-            # Add explanatory text
-            explanation = (
-                "This visualization compares model performance across three representative day types:\n\n"
-                "• Low Price Days: Typically characterized by low demand and high renewable generation\n"
-                "• High Price Days: Associated with high demand, often during cold weather periods\n"
-                "• Volatile Days: Days with significant price swings, challenging to predict accurately\n\n"
-                "The model shows different performance characteristics for each day type, with generally\n"
-                "better performance on low price days and more challenges with volatile days."
-            )
-            
-            ax_metrics.text(0.5, 0.2, explanation, ha='center', va='center',
-                          fontsize=10, linespacing=1.5,
-                          bbox=dict(boxstyle="round,pad=1", fc="white", ec="gray", alpha=0.8))
-        
-        # Add overall figure title
-        ax.figure.suptitle('Day Type Comparison: Model Performance Across Different Price Scenarios',
-                       fontsize=16, fontweight='bold', y=0.98)
+            logging.warning("No visualizations were successfully created")
     
-    def _plot_error_distribution(self, ax):
-        """Plot distribution of prediction errors"""
-        df = self.predictions_df
-        
-        # Create a histogram of absolute errors
-        sns.histplot(df['abs_error'], bins=50, kde=True, ax=ax, color=self.colors['predicted'])
-        
-        # Calculate error statistics
-        mean_error = df['error'].mean()
-        std_error = df['error'].std()
-        median_error = df['error'].median()
-        
-        # Format the plot
-        ax.set_title('Error Distribution')
-        ax.set_xlabel('Absolute Error (öre/kWh)')
-        ax.set_ylabel('Frequency')
-        
-        # Add vertical lines for statistics
-        ax.axvline(df['abs_error'].mean(), color='red', linestyle='--', 
-                  label=f'Mean Abs Error: {df["abs_error"].mean():.2f}')
-        
-        # Add annotation with statistics
-        stats_text = (f"Error Stats:\n"
-                     f"Mean: {mean_error:.2f}\n"
-                     f"Median: {median_error:.2f}\n"
-                     f"Std Dev: {std_error:.2f}")
-        ax.annotate(stats_text, xy=(0.7, 0.85), xycoords='axes fraction',
-                   bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
-        
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        return ax
-    
-    def _plot_error_by_hour(self, ax):
-        """Plot error pattern by hour of day"""
-        df = self.predictions_df
-        
-        # Ensure hour column exists
-        if 'hour' not in df.columns:
-            df['hour'] = df.index.hour
-        
-        # Calculate mean metrics by hour
-        hourly_metrics = {}
-        for hour in range(24):
-            hour_data = df[df['hour'] == hour]
-            if len(hour_data) > 0:  # Only calculate metrics if we have data for this hour
-                metrics = self.calculate_metrics(hour_data['actual'], hour_data['predicted'])
-                hourly_metrics[hour] = metrics
-        
-        # Check if we have metrics for all hours
-        if len(hourly_metrics) != 24:
-            missing_hours = set(range(24)) - set(hourly_metrics.keys())
-            logging.warning(f"Missing metrics for hours: {missing_hours}")
-        
-        # Extract metrics for plotting
-        hours = sorted(hourly_metrics.keys())
-        maes = [hourly_metrics[h]['mae'] for h in hours]
-        rmses = [hourly_metrics[h]['rmse'] for h in hours]
-        mapes = [hourly_metrics[h]['mape'] for h in hours]
-        
-        # Ensure we have at least some data to plot
-        if not hours:
-            ax.text(0.5, 0.5, "No hourly data available for analysis", 
-                   horizontalalignment='center', verticalalignment='center', 
-                   transform=ax.transAxes, fontsize=12)
-            return ax
+    def plot_daily_comparison(self):
+        """Plot comparison of actual vs predicted prices for a few representative days"""
+        try:
+            df = self.predictions_df
             
-        # Create a dual-axis plot
-        ax.plot(hours, maes, 'o-', color=self.colors['actual'], label='MAE')
-        ax.plot(hours, rmses, 's-', color=self.colors['predicted'], label='RMSE')
-        
-        # Format the plot
-        ax.set_title('Error by Hour of Day')
-        ax.set_xlabel('Hour')
-        ax.set_ylabel('Error (öre/kWh)')
-        ax.set_xticks(range(0, 24, 2))
-        ax.legend(loc='upper left')
-        ax.grid(True, alpha=0.3)
-        
-        # Add MAPE on secondary y-axis if values are reasonable
-        # Replace NaN and unreasonably high values with a reasonable maximum
-        filtered_mapes = []
-        for m in mapes:
-            if np.isnan(m) or m > 100:
-                filtered_mapes.append(100)
-            else:
-                filtered_mapes.append(m)
+            # Find days with complete data (24 hours)
+            day_counts = df.groupby([d.date() for d in df.index]).size()
+            complete_days = day_counts[day_counts == 24].index
+            
+            if len(complete_days) == 0:
+                logging.warning("No complete days found for daily comparison")
+                return
+            
+            # Select representative days (most recent, if possible)
+            days_to_plot = min(4, len(complete_days))
+            selected_days = sorted(complete_days, reverse=True)[:days_to_plot]
+            
+            # Create a figure with subplots for each day
+            fig, axes = plt.subplots(days_to_plot, 1, figsize=(12, 4*days_to_plot))
+            if days_to_plot == 1:
+                axes = [axes]
+            
+            for i, day in enumerate(selected_days):
+                # Use direct comparison of date objects
+                day_data = df[[d.date() == day for d in df.index]].sort_index()
                 
-        if filtered_mapes:  # Ensure we have values to plot
-            ax2 = ax.twinx()
-            ax2.plot(hours, filtered_mapes, '^-', color='green', label='MAPE')
-            ax2.set_ylabel('MAPE (%)', color='green')
-            ax2.tick_params(axis='y', labelcolor='green')
+                ax = axes[i]
+                ax.plot(day_data.index.hour, day_data['actual'], 'o-', 
+                       color=self.colors['actual'], label='Actual', linewidth=2)
+                ax.plot(day_data.index.hour, day_data['predicted'], 's--', 
+                       color=self.colors['predicted'], label='Predicted', linewidth=2)
+                
+                # Highlight morning and evening peak hours
+                ax.axvspan(7, 9, alpha=0.2, color='lightgray')
+                ax.axvspan(17, 20, alpha=0.2, color='lightgray')
+                
+                ax.set_title(f'Day: {day}')
+                ax.set_xlabel('Hour of Day')
+                ax.set_ylabel('Price (öre/kWh)')
+                ax.set_xticks(range(0, 24, 2))
+                ax.grid(True, alpha=0.3)
+                
+                # Only add legend to the first subplot
+                if i == 0:
+                    ax.legend(loc='upper right')
             
-            # Add secondary legend
-            lines1, labels1 = ax.get_legend_handles_labels()
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+            plt.tight_layout()
+            plt.savefig(self.simple_viz_dir / "daily_comparison.png", dpi=300)
+            plt.close()
+            
+            logging.info("Daily comparison plot created successfully")
+        except Exception as e:
+            logging.warning(f"Error in daily comparison plot: {str(e)}")
+            plt.close('all')  # Ensure no hanging figures
         
-        # Highlight peak hours (typically 7-9 AM and 5-8 PM)
-        peak_hours_1 = [7, 8, 9]
-        peak_hours_2 = [17, 18, 19, 20]
-        
-        for hour in peak_hours_1:
-            if hour in hours:  # Only highlight if we have this hour
-                ax.axvspan(hour-0.5, hour+0.5, alpha=0.2, color='orange')
-        for hour in peak_hours_2:
-            if hour in hours:  # Only highlight if we have this hour
-                ax.axvspan(hour-0.5, hour+0.5, alpha=0.2, color='orange')
-        
-        return ax
+    def plot_weekly_comparison(self):
+        """Plot comparison of actual vs predicted prices for a representative week"""
+        try:
+            df = self.predictions_df
+            
+            # Find a complete week
+            max_date = df.index.max().date()
+            
+            # Look for a week ending on max_date or earlier
+            for end_date in [max_date - timedelta(days=i) for i in range(14)]:
+                start_date = end_date - timedelta(days=6)
+                week_data = df[[d.date() >= start_date and d.date() <= end_date for d in df.index]]
+                
+                # Check if we have at least 5 days with some data
+                # Fix: use len(np.unique()) instead of .nunique() on numpy array
+                day_coverage = len(np.unique([d.date() for d in week_data.index]))
+                if day_coverage >= 5 and len(week_data) >= 120:  # At least 5 days with 120 hours total
+                    break
+            else:
+                # If no good week found
+                logging.warning("Could not find a representative week with sufficient data")
+                return
+                
+            # Create the plot
+            fig, ax = plt.subplots(figsize=(14, 6))
+            
+            # Plot the data
+            ax.plot(week_data.index, week_data['actual'], '-', 
+                   color=self.colors['actual'], label='Actual', linewidth=2)
+            ax.plot(week_data.index, week_data['predicted'], '--', 
+                   color=self.colors['predicted'], label='Predicted', linewidth=2)
+            
+            # Shade weekends
+            for date in pd.date_range(start=start_date, end=end_date):
+                if date.dayofweek >= 5:  # Weekend
+                    ax.axvspan(date, date + pd.Timedelta(days=1), alpha=0.2, color='lightgray')
+            
+            # Format the x-axis to show days of week
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%a\n%d %b'))
+            ax.xaxis.set_major_locator(mdates.DayLocator())
+            
+            ax.set_title(f'Week: {start_date} to {end_date}')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Price (öre/kWh)')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            
+            plt.tight_layout()
+            plt.savefig(self.simple_viz_dir / "weekly_comparison.png", dpi=300)
+            plt.close()
+            
+            logging.info("Weekly comparison plot created successfully")
+        except Exception as e:
+            logging.warning(f"Error in weekly comparison plot: {str(e)}")
+            plt.close('all')  # Ensure no hanging figures
     
-    def _plot_residuals(self, ax):
-        """Plot residuals against predicted values"""
-        df = self.predictions_df
-        
-        ax.scatter(df['predicted'], df['error'], alpha=0.3, color=self.colors['error'])
-        ax.axhline(y=0, color='r', linestyle='--')
-        ax.set_title('Residual Plot')
-        ax.set_xlabel('Predicted Price (öre/kWh)')
-        ax.set_ylabel('Residuals (öre/kWh)')
-        ax.grid(True, alpha=0.3)
+    def plot_monthly_comparison(self):
+        """Plot comparison of actual vs predicted prices for representative months"""
+        try:
+            df = self.predictions_df
+            
+            # Alternative approach that doesn't rely on groupby with index attributes
+            # Extract year and month directly for aggregation
+            years = [d.year for d in df.index]
+            months = [d.month for d in df.index]
+            
+            # Create a temporary dataframe with explicit columns
+            temp_df = pd.DataFrame({
+                'year': years,
+                'month': months,
+                'actual': df['actual'].values,
+                'predicted': df['predicted'].values
+            })
+            
+            # Group by year and month
+            monthly_grouped = temp_df.groupby(['year', 'month']).agg({
+                'actual': 'mean',
+                'predicted': 'mean'
+            })
+            
+            # Reset index to get year and month as columns
+            monthly_data = monthly_grouped.reset_index()
+            
+            # Create proper datetime objects for plotting
+            monthly_data['month_date'] = [datetime(int(row.year), int(row.month), 15) 
+                                        for _, row in monthly_data.iterrows()]
+            
+            # Sort by date
+            monthly_data = monthly_data.sort_values('month_date')
+            
+            # Select the last 12 months if we have that many
+            months_to_show = min(12, len(monthly_data))
+            plot_data = monthly_data.tail(months_to_show)
+            
+            # Create the plot
+            fig, ax = plt.subplots(figsize=(14, 6))
+            
+            # Plot the data
+            ax.plot(plot_data['month_date'], plot_data['actual'], 'o-', 
+                   color=self.colors['actual'], label='Actual', linewidth=2)
+            ax.plot(plot_data['month_date'], plot_data['predicted'], 's--', 
+                   color=self.colors['predicted'], label='Predicted', linewidth=2)
+            
+            # Format x-axis to show month names
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+            
+            ax.set_title(f'Monthly Average Prices (Last {months_to_show} Months)')
+            ax.set_xlabel('Month')
+            ax.set_ylabel('Average Price (öre/kWh)')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            
+            plt.tight_layout()
+            plt.savefig(self.simple_viz_dir / "monthly_comparison.png", dpi=300)
+            plt.close()
+            
+            logging.info("Monthly comparison plot created successfully")
+        except Exception as e:
+            logging.warning(f"Error in monthly comparison plot: {str(e)}")
+            plt.close('all')  # Ensure no hanging figures
     
-    def _plot_scatter(self, ax):
-        """Plot scatter of actual vs predicted values with perfect prediction line"""
-        df = self.predictions_df
+    def plot_yearly_comparison(self):
+        """Plot comparison of actual vs predicted prices across years"""
+        try:
+            df = self.predictions_df
+            
+            # Resample to daily data for clearer visualization of long-term trends
+            daily_data = df.resample('D').mean()
+            
+            # Create the plot
+            fig, ax = plt.subplots(figsize=(14, 6))
+            
+            # Plot the data
+            ax.plot(daily_data.index, daily_data['actual'], '-', 
+                   color=self.colors['actual'], label='Actual', linewidth=2)
+            ax.plot(daily_data.index, daily_data['predicted'], '--', 
+                   color=self.colors['predicted'], label='Predicted', linewidth=2)
+            
+            # Add year dividers
+            # Convert years to list to avoid numpy array issues
+            years = sorted(list(set([d.year for d in daily_data.index])))
+            for year in years[1:]:  # Skip the first year divider
+                ax.axvline(pd.Timestamp(f"{year}-01-01"), color='gray', alpha=0.5, linestyle='-')
+                
+            # Format x-axis to show years
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+            ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))  # Show every 3 months
+            
+            ax.set_title('Long-term Price Trends (Daily Averages)')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Price (öre/kWh)')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.savefig(self.simple_viz_dir / "yearly_comparison.png", dpi=300)
+            plt.close()
+            
+            logging.info("Yearly comparison plot created successfully")
+        except Exception as e:
+            logging.warning(f"Error in yearly comparison plot: {str(e)}")
+            plt.close('all')  # Ensure no hanging figures
+
+    def run_simple_evaluation(self):
+        """Run a simple visualization-focused evaluation"""
+        logging.info("Starting simple visualization-focused evaluation...")
         
-        ax.scatter(df['actual'], df['predicted'], alpha=0.3, color=self.colors['predicted'])
-        
-        # Add perfect prediction line
-        min_val = min(df['actual'].min(), df['predicted'].min())
-        max_val = max(df['actual'].max(), df['predicted'].max())
-        ax.plot([min_val, max_val], [min_val, max_val], 'r--')
-        
-        ax.set_title('Predicted vs. Actual Prices')
-        ax.set_xlabel('Actual Price (öre/kWh)')
-        ax.set_ylabel('Predicted Price (öre/kWh)')
-        ax.grid(True, alpha=0.3)
-        
-        # Add metrics in corner
-        metrics = self.calculate_metrics(df['actual'], df['predicted'])
-        metrics_text = f"R²: {metrics['r2']:.3f}\nCorrelation: {metrics['correlation']:.3f}"
-        ax.annotate(metrics_text, xy=(0.05, 0.85), xycoords='axes fraction', 
-                   bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
-    
-    def _create_metrics_summary(self):
-        """Create a comprehensive metrics summary"""
-        df = self.predictions_df
-        
-        # Overall metrics
-        overall_metrics = self.calculate_metrics(df['actual'], df['predicted'])
-        
-        # Metrics by dataset (test vs validation)
-        test_metrics = self.calculate_metrics(
-            df[df['dataset'] == 'test']['actual'],
-            df[df['dataset'] == 'test']['predicted']
-        )
-        
-        val_metrics = self.calculate_metrics(
-            df[df['dataset'] == 'validation']['actual'],
-            df[df['dataset'] == 'validation']['predicted']
-        )
-        
-        # Metrics by year
-        yearly_metrics = {}
-        for year in sorted(df.index.year.unique()):
-            year_df = df[df.index.year == year]
-            yearly_metrics[year] = self.calculate_metrics(year_df['actual'], year_df['predicted'])
-        
-        # Metrics by month
-        monthly_metrics = {}
-        for month in range(1, 13):
-            month_df = df[df.index.month == month]
-            if not month_df.empty:
-                monthly_metrics[month] = self.calculate_metrics(month_df['actual'], month_df['predicted'])
-        
-        # Metrics by hour of day
-        hourly_metrics = {}
-        for hour in range(24):
-            hour_df = df[df.index.hour == hour]
-            hourly_metrics[hour] = self.calculate_metrics(hour_df['actual'], hour_df['predicted'])
-        
-        # Create a figure for text-based metrics summary
-        fig, ax = plt.subplots(figsize=(10, 14))
-        ax.axis('off')
-        
-        # Build the summary text
-        summary_text = "# Price Prediction Model Evaluation Metrics\n\n"
-        
-        # Overall metrics
-        summary_text += "## Overall Metrics\n"
-        summary_text += f"- RMSE: {overall_metrics['rmse']:.2f} öre/kWh\n"
-        summary_text += f"- MAE: {overall_metrics['mae']:.2f} öre/kWh\n"
-        summary_text += f"- MAPE: {overall_metrics['mape']:.2f}%\n"
-        summary_text += f"- R²: {overall_metrics['r2']:.3f}\n"
-        summary_text += f"- Correlation: {overall_metrics['correlation']:.3f}\n"
-        summary_text += f"- Bias: {overall_metrics['bias']:.2f} öre/kWh\n"
-        summary_text += f"- Standard Error: {overall_metrics['std_error']:.2f} öre/kWh\n"
-        summary_text += f"- Maximum Error: {overall_metrics['max_error']:.2f} öre/kWh\n\n"
-        
-        # Dataset comparison
-        summary_text += "## Test vs. Validation Set Performance\n"
-        summary_text += f"### Test Set\n"
-        summary_text += f"- RMSE: {test_metrics['rmse']:.2f} öre/kWh\n"
-        summary_text += f"- MAE: {test_metrics['mae']:.2f} öre/kWh\n"
-        summary_text += f"- MAPE: {test_metrics['mape']:.2f}%\n"
-        summary_text += f"- R²: {test_metrics['r2']:.3f}\n\n"
-        
-        summary_text += f"### Validation Set\n"
-        summary_text += f"- RMSE: {val_metrics['rmse']:.2f} öre/kWh\n"
-        summary_text += f"- MAE: {val_metrics['mae']:.2f} öre/kWh\n"
-        summary_text += f"- MAPE: {val_metrics['mape']:.2f}%\n"
-        summary_text += f"- R²: {val_metrics['r2']:.3f}\n\n"
-        
-        # Yearly metrics
-        summary_text += "## Yearly Performance\n"
-        for year, metrics in yearly_metrics.items():
-            summary_text += f"### {year}\n"
-            summary_text += f"- RMSE: {metrics['rmse']:.2f} öre/kWh\n"
-            summary_text += f"- MAE: {metrics['mae']:.2f} öre/kWh\n"
-            summary_text += f"- MAPE: {metrics['mape']:.2f}%\n"
-            summary_text += f"- R²: {metrics['r2']:.3f}\n\n"
-        
-        # Monthly metrics (abbreviated)
-        summary_text += "## Monthly Performance (MAE in öre/kWh)\n"
-        summary_text += "| Month | MAE | MAPE | R² |\n"
-        summary_text += "|-------|-----|------|----|\n"
-        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        for month, metrics in monthly_metrics.items():
-            summary_text += f"| {month_names[month-1]} | {metrics['mae']:.2f} | {metrics['mape']:.2f}% | {metrics['r2']:.3f} |\n"
-        summary_text += "\n"
-        
-        # Hourly metrics table (abbreviated)
-        summary_text += "## Hourly Performance\n"
-        summary_text += "| Hour | MAE | MAPE |\n"
-        summary_text += "|------|-----|------|\n"
-        for hour in range(0, 24, 2):  # Every other hour to save space
-            if hour in hourly_metrics:
-                metrics = hourly_metrics[hour]
-                summary_text += f"| {hour:02d}:00 | {metrics['mae']:.2f} | {metrics['mape']:.2f}% |\n"
-        
-        # Save the metrics to a markdown file
-        with open(self.comprehensive_dir / "metrics_summary.md", "w") as f:
-            f.write(summary_text)
-        
-        # Display the summary in the figure
-        ax.text(0.05, 0.95, summary_text, va='top', fontfamily='monospace')
-        fig.savefig(self.comprehensive_dir / "metrics_summary.png", dpi=300, bbox_inches='tight')
-        
-        # Also create CSV files with all metrics
-        # Overall metrics
-        pd.DataFrame([overall_metrics]).to_csv(self.comprehensive_dir / "overall_metrics.csv")
-        
-        # Yearly metrics
-        yearly_df = pd.DataFrame.from_dict(yearly_metrics, orient='index')
-        yearly_df.index.name = 'year'
-        yearly_df.to_csv(self.comprehensive_dir / "yearly_metrics.csv")
-        
-        # Monthly metrics
-        monthly_df = pd.DataFrame.from_dict(monthly_metrics, orient='index')
-        monthly_df.index.name = 'month'
-        monthly_df.to_csv(self.comprehensive_dir / "monthly_metrics.csv")
-        
-        # Hourly metrics
-        hourly_df = pd.DataFrame.from_dict(hourly_metrics, orient='index')
-        hourly_df.index.name = 'hour'
-        hourly_df.to_csv(self.comprehensive_dir / "hourly_metrics.csv")
-        
-        return fig
-    
-    def run_comprehensive_evaluation(self):
-        """Run a comprehensive evaluation with all visualizations and metrics"""
-        logging.info("Starting comprehensive evaluation...")
-        
-        # Generate all predictions
-        self.process_all_predictions()
-        
-        # Create visualizations
-        self.visualize_predictions_by_timeframe()
-        
-        logging.info(f"Comprehensive evaluation complete. Results saved to {self.comprehensive_dir}")
-        logging.info(f"- Time period analysis: {self.comprehensive_dir / 'time_period_analysis.png'}")
-        logging.info(f"- Day type comparison: {self.comprehensive_dir / 'day_comparison.png'}")
-        logging.info(f"- Error analysis: {self.comprehensive_dir / 'error_analysis.png'}")
-        logging.info(f"- Metrics summary: {self.comprehensive_dir / 'metrics_summary.md'}")
+        try:
+            # Generate predictions
+            self.process_all_predictions()
+            
+            # Create visualizations
+            self.create_visualizations()
+            
+            logging.info("Simple evaluation complete")
+        except Exception as e:
+            logging.error(f"Evaluation error: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
 
 def main():
-    """Run the evaluation without requiring command arguments"""
-    logging.info("Starting price model evaluation...")
+    """Run the simple evaluation without requiring command arguments"""
+    logging.info("Starting simple price model evaluation...")
     
     try:
         # Create evaluator
-        evaluator = PriceModelEvaluator()
+        evaluator = SimplePriceModelEvaluator()
         
-        # Run comprehensive evaluation
-        evaluator.run_comprehensive_evaluation()
+        # Run simple evaluation
+        evaluator.run_simple_evaluation()
         
-        logging.info("Evaluation complete!")
+        logging.info("Simple evaluation complete!")
         
     except Exception as e:
         logging.error(f"Evaluation failed: {str(e)}")

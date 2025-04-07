@@ -122,7 +122,7 @@ class PricePredictor:
             # Use actual data up to start of prediction day
             window_array = self._prepare_window(start_hour)
             predictions = self.model.predict(window_array.reshape(1, *window_array.shape), verbose=0)
-            predictions_inv = self.price_scaler.inverse_transform(predictions)[:, 0]
+            predictions_inv = self.inverse_transform_prices(predictions[0])
         else:
             # Use recursive prediction
             predictions_inv = self.predict_range(start_hour, end_hour)
@@ -236,24 +236,35 @@ class PricePredictor:
         return df_with_features[feature_cols].values[-self.window_size:]
 
     def predict_range(self, start_date, end_date, plot=True):
-        """
-        Make predictions for a specific range recursively.
-        Features are dynamically loaded from config.json.
-        """
-        start_date = pd.to_datetime(start_date)
-        end_date = pd.to_datetime(end_date)
-        horizon = int((end_date - start_date).total_seconds() / 3600) + 1
+        """Predict prices for a range of dates"""
+        logging.info(f"Predicting prices from {start_date} to {end_date}")
         
-        # Prepare initial historical window ending at start_date - 1h
-        current_window = self.prepare_window(start_date - timedelta(hours=1))
-        predictions = []
-        forecast_dates = []
-        
-        # Get feature group lengths from config
+        # Get features ordered properly
+        feature_cols = self.feature_config.get_ordered_features()
         price_len = len(self.feature_config.price_cols)
         cyclical_len = len(self.feature_config.cyclical_cols)
         binary_len = len(self.feature_config.binary_cols)
         grid_len = len(self.feature_config.grid_cols)
+        
+        # Prepare initial window
+        window_end = start_date
+        window_start = window_end - timedelta(hours=self.window_size)
+        
+        # Get historical data until the start date
+        historical_data = self.df[self.df.index <= start_date].copy()
+        if len(historical_data) < self.window_size:
+            raise ValueError(f"Not enough historical data. Need at least {self.window_size} hours.")
+        
+        # Scale data and prepare window array
+        current_window = self.prepare_window(start_date)
+        
+        # Calculate horizon (number of hours to predict)
+        horizon = int((end_date - start_date).total_seconds() / 3600) + 1
+        logging.info(f"Forecasting {horizon} hours ahead")
+        
+        # Generate predictions for each hour
+        predictions = []
+        forecast_dates = []
         
         for step in range(horizon):
             current_date = start_date + timedelta(hours=step)
@@ -311,10 +322,7 @@ class PricePredictor:
             current_window = np.vstack([current_window[1:], new_row])
         
         # Inverse-transform predictions
-        predictions_full = np.zeros((len(predictions), price_len))
-        predictions_full[:, 0] = predictions
-        predictions_inv = self.price_scaler.inverse_transform(predictions_full)[:, 0]
-        predictions_inv = np.clip(predictions_inv, -100, self.MAX_REASONABLE_PRICE)
+        predictions_inv = self.inverse_transform_prices(np.array(predictions))
         
         predictions_series = pd.Series(predictions_inv, index=pd.to_datetime(forecast_dates), name="Prediction")
         if plot:
@@ -439,9 +447,7 @@ class PricePredictor:
             current_window[0, -1] = new_row
         
         # Inverse transform predictions
-        dummy_pred = np.zeros((len(predictions), len(self.price_scaler.scale_)))
-        dummy_pred[:, 0] = predictions
-        predictions_inv = self.price_scaler.inverse_transform(dummy_pred)[:, 0]
+        predictions_inv = self.inverse_transform_prices(np.array(predictions))
         
         # Create results DataFrame
         results = pd.DataFrame({
@@ -584,6 +590,123 @@ class PricePredictor:
         
         plt.tight_layout()
         plt.show()
+
+    def inverse_transform_prices(self, y_scaled):
+        """Helper to inverse transform scaled prices
+        
+        Works with either:
+        - 1D array of price values
+        - 2D array where each row contains 24 hourly predictions
+        """
+        # Check the shape of the input
+        y_scaled = np.asarray(y_scaled)  # Ensure numpy array
+        
+        # Handle empty array or None
+        if y_scaled is None or y_scaled.size == 0:
+            return np.array([])
+        
+        # Log some sample scaled values for diagnostics
+        if len(y_scaled) > 5:
+            logging.debug(f"Sample scaled values: {y_scaled[:5]}")
+        else:
+            logging.debug(f"All scaled values: {y_scaled}")
+            
+        # Target index is typically 0 since we reorder features with target first
+        target_idx = 0
+        
+        # Check if we should apply log transform inversion
+        apply_log_inverse = False
+        transform_offset = 1.0
+        
+        # Try to load transformation config
+        try:
+            # Get scaling config
+            scaling_config = self.feature_config.model_config.get("scaling", {})
+            if 'price_transform_config' in scaling_config:
+                price_transform = scaling_config['price_transform_config']
+                if price_transform.get('enable_log_transform', False):
+                    cols_to_transform = price_transform.get('apply_to_cols', [])
+                    target_name = self.feature_config.get_target_name()
+                    if target_name in cols_to_transform:
+                        apply_log_inverse = True
+                        transform_offset = price_transform.get('offset', 1.0)
+                        logging.debug(f"Will apply log inverse transform with offset {transform_offset}")
+        except Exception as e:
+            logging.warning(f"Could not determine log transform settings: {e}")
+        
+        if len(y_scaled.shape) == 1:
+            # For 1D array (single sequence of prices)
+            dummy = np.zeros((len(y_scaled), len(self.price_scaler.scale_)))
+            dummy[:, target_idx] = y_scaled
+            result = self.price_scaler.inverse_transform(dummy)[:, target_idx]
+            
+            # Check if we need to apply log inverse transform
+            if apply_log_inverse:
+                logging.debug("Applying log inverse transform to 1D data")
+                # Check if we need to handle negative values
+                has_negative = (result < 0).any()
+                if has_negative:
+                    # Inverse of signed log transform: sign(x) * (exp(|x|) - offset)
+                    signs = np.sign(result)
+                    abs_vals = np.abs(result)
+                    result = signs * (np.exp(abs_vals) - transform_offset + 1.0)
+                else:
+                    # Standard inverse: exp(x) - offset
+                    result = np.exp(result) - transform_offset + 1.0
+            
+            # Apply reasonable price clipping
+            result = np.clip(result, -100, self.MAX_REASONABLE_PRICE)
+            
+            # Log some sample values
+            if len(result) > 5:
+                logging.debug(f"Sample inverse-transformed values: {result[:5]}")
+            else:
+                logging.debug(f"All inverse-transformed values: {result}")
+                
+            return result
+        
+        elif len(y_scaled.shape) == 2:
+            # For 2D array (multiple sequences of hourly predictions)
+            num_sequences, seq_length = y_scaled.shape
+            
+            # Flatten the array to transform all values at once
+            flattened = y_scaled.reshape(-1)
+            
+            # Create dummy array for inverse transform
+            dummy = np.zeros((len(flattened), len(self.price_scaler.scale_)))
+            dummy[:, target_idx] = flattened
+            
+            # Inverse transform
+            inverse_flat = self.price_scaler.inverse_transform(dummy)[:, target_idx]
+            
+            # Check if we need to apply log inverse transform
+            if apply_log_inverse:
+                logging.debug("Applying log inverse transform to 2D data")
+                # Check if we need to handle negative values
+                has_negative = (inverse_flat < 0).any()
+                if has_negative:
+                    # Inverse of signed log transform: sign(x) * (exp(|x|) - offset)
+                    signs = np.sign(inverse_flat)
+                    abs_vals = np.abs(inverse_flat)
+                    inverse_flat = signs * (np.exp(abs_vals) - transform_offset + 1.0)
+                else:
+                    # Standard inverse: exp(x) - offset
+                    inverse_flat = np.exp(inverse_flat) - transform_offset + 1.0
+            
+            # Apply reasonable price clipping
+            inverse_flat = np.clip(inverse_flat, -100, self.MAX_REASONABLE_PRICE)
+            
+            # Reshape back to original structure
+            result = inverse_flat.reshape(num_sequences, seq_length)
+            
+            # Log some sample values
+            if num_sequences > 0:
+                logging.debug(f"Sample inverse-transformed sequence: {result[0]}")
+                
+            return result
+        
+        else:
+            raise ValueError(f"Unexpected shape for y_scaled: {y_scaled.shape}")
 
 def main():
     # Create predictor instance

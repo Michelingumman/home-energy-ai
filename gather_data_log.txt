@@ -3861,3 +3861,1533 @@ Fetching historical grid data (from 2017-01-01)...
 [2025-04-03 20:24:38] ################################## END OF SCRIPT ##################################
 [2025-04-04 00:00:02] ################################## START OF SCRIPT 2025-04-04 00:00:02 ##################################
 [2025-04-04 00:00:02] Starting Solar Prediction...
+[2025-04-04 20:00:01] ################################## START OF SCRIPT 2025-04-04 20:00:01 ##################################
+[2025-04-04 20:00:01] Starting Solar Prediction...
+[2025-04-04 20:00:05] Solar Prediction completed successfully.
+[2025-04-04 20:00:05] Output:
+Starting predictions from today: 2025-04-04
+Fetching 4-day forecast (today + 3 days ahead)
+Loaded API key from C:\_Projects\home-energy-ai\api.env
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-04-04 00:00:00 to 2025-04-08 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+
+Panel group 2:
+Time range: 2025-04-04 00:00:00 to 2025-04-08 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-04-04 00:00:00 to 2025-04-08 00:00:00
+Total entries: 97
+
+Processing predictions for 5 days (4-day forecast):
+
+Hourly Energy Production (kWh) for 2025-04-04:
+                     kilowatt_hours
+timestamp                          
+2025-04-04 00:00:00           0.000
+2025-04-04 01:00:00           0.000
+2025-04-04 02:00:00           0.000
+2025-04-04 03:00:00           0.000
+2025-04-04 04:00:00           0.000
+2025-04-04 05:00:00           0.000
+2025-04-04 06:00:00           0.000
+2025-04-04 07:00:00           0.531
+2025-04-04 08:00:00           2.105
+2025-04-04 09:00:00           4.440
+2025-04-04 10:00:00           6.918
+2025-04-04 11:00:00           8.878
+2025-04-04 12:00:00           9.774
+2025-04-04 13:00:00           9.343
+2025-04-04 14:00:00           7.760
+2025-04-04 15:00:00           5.502
+2025-04-04 16:00:00           3.175
+2025-04-04 17:00:00           1.382
+2025-04-04 18:00:00           0.342
+2025-04-04 19:00:00           0.000
+2025-04-04 20:00:00           0.000
+2025-04-04 21:00:00           0.000
+2025-04-04 22:00:00           0.000
+2025-04-04 23:00:00           0.000
+Predictions for 2025-04-04 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250404.csv
+
+Hourly Energy Production (kWh) for 2025-04-05:
+                     kilowatt_hours
+timestamp                          
+2025-04-05 00:00:00           0.000
+2025-04-05 01:00:00           0.000
+2025-04-05 02:00:00           0.000
+2025-04-05 03:00:00           0.000
+2025-04-05 04:00:00           0.000
+2025-04-05 05:00:00           0.000
+2025-04-05 06:00:00           0.000
+2025-04-05 07:00:00           0.259
+2025-04-05 08:00:00           0.989
+2025-04-05 09:00:00           1.985
+2025-04-05 10:00:00           2.915
+2025-04-05 11:00:00           3.543
+2025-04-05 12:00:00           3.810
+2025-04-05 13:00:00           3.738
+2025-04-05 14:00:00           3.343
+2025-04-05 15:00:00           2.674
+2025-04-05 16:00:00           1.798
+2025-04-05 17:00:00           0.910
+2025-04-05 18:00:00           0.253
+2025-04-05 19:00:00           0.000
+2025-04-05 20:00:00           0.000
+2025-04-05 21:00:00           0.000
+2025-04-05 22:00:00           0.000
+2025-04-05 23:00:00           0.000
+Predictions for 2025-04-05 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250405.csv
+
+Hourly Energy Production (kWh) for 2025-04-06:
+                     kilowatt_hours
+timestamp                          
+2025-04-06 00:00:00           0.000
+2025-04-06 01:00:00           0.000
+2025-04-06 02:00:00           0.000
+2025-04-06 03:00:00           0.000
+2025-04-06 04:00:00           0.000
+2025-04-06 05:00:00           0.000
+2025-04-06 06:00:00           0.000
+2025-04-06 07:00:00           0.347
+2025-04-06 08:00:00           1.238
+2025-04-06 09:00:00           2.332
+2025-04-06 10:00:00           3.354
+2025-04-06 11:00:00           4.068
+2025-04-06 12:00:00           4.247
+2025-04-06 13:00:00           3.866
+2025-04-06 14:00:00           3.079
+2025-04-06 15:00:00           2.123
+2025-04-06 16:00:00           1.226
+2025-04-06 17:00:00           0.557
+2025-04-06 18:00:00           0.149
+2025-04-06 19:00:00           0.000
+2025-04-06 20:00:00           0.000
+2025-04-06 21:00:00           0.000
+2025-04-06 22:00:00           0.000
+2025-04-06 23:00:00           0.000
+Predictions for 2025-04-06 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+
+Hourly Energy Production (kWh) for 2025-04-07:
+                     kilowatt_hours
+timestamp                          
+2025-04-07 00:00:00           0.000
+2025-04-07 01:00:00           0.000
+2025-04-07 02:00:00           0.000
+2025-04-07 03:00:00           0.000
+2025-04-07 04:00:00           0.000
+2025-04-07 05:00:00           0.000
+2025-04-07 06:00:00           0.000
+2025-04-07 07:00:00           0.220
+2025-04-07 08:00:00           0.838
+2025-04-07 09:00:00           1.706
+2025-04-07 10:00:00           2.573
+2025-04-07 11:00:00           3.258
+2025-04-07 12:00:00           3.622
+2025-04-07 13:00:00           3.563
+2025-04-07 14:00:00           3.110
+2025-04-07 15:00:00           2.369
+2025-04-07 16:00:00           1.499
+2025-04-07 17:00:00           0.729
+2025-04-07 18:00:00           0.201
+2025-04-07 19:00:00           0.000
+2025-04-07 20:00:00           0.000
+2025-04-07 21:00:00           0.000
+2025-04-07 22:00:00           0.000
+2025-04-07 23:00:00           0.000
+Predictions for 2025-04-07 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+
+Hourly Energy Production (kWh) for 2025-04-08:
+            kilowatt_hours
+timestamp                 
+2025-04-08             0.0
+Predictions for 2025-04-08 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+Reading existing merged file: C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+Added 97 new entries to merged file. Total entries: 697
+
+Summary: Generated predictions for 5 days:
+  - 2025-04-04: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250404.csv
+  - 2025-04-05: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250405.csv
+  - 2025-04-06: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+  - 2025-04-07: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+  - 2025-04-08: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+  - All predictions also added to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+
+Forecast period: 2025-04-04 to 2025-04-08 (4-day forecast)
+
+[2025-04-04 20:00:05] Starting Price Gathering...
+[2025-04-04 20:24:59] Price Gathering completed successfully.
+[2025-04-04 20:24:59] Output:
+Successfully added 23 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (latest 24 hours)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-04-03 18:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE-SE3
+Received 24 records from API
+Time range: 2025-04-03T19:00:00.000Z to 2025-04-04T18:00:00.000Z
+Fetched 24 new records (skipped 0 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 24 new records
+Total records in file: 64363
+Data range: 2017-01-01 00:00:00 to 2025-04-04 18:00:00
+
+Fetching historical grid data (from 2017-01-01)...
+
+================================================================================
+  Historical Data Backfill Process
+  - Using /past-range endpoint with 60-minute resolution
+  - Processing data in 9-day chunks
+  - Using licensed API rate limit (1000 calls/hour)
+  - Progress is saved after each chunk
+================================================================================
+
+
+================================================================================
+  Process Complete
+  Check the logs for details on the data fetched
+================================================================================
+
+
+[2025-04-04 20:24:59] ################################## END OF SCRIPT ##################################
+[2025-04-05 00:00:02] ################################## START OF SCRIPT 2025-04-05 00:00:02 ##################################
+[2025-04-05 00:00:02] Starting Solar Prediction...
+[2025-04-05 00:00:08] Solar Prediction completed successfully.
+[2025-04-05 00:00:08] Output:
+Starting predictions from today: 2025-04-05
+Fetching 4-day forecast (today + 3 days ahead)
+Loaded API key from C:\_Projects\home-energy-ai\api.env
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-04-05 00:00:00 to 2025-04-09 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+
+Panel group 2:
+Time range: 2025-04-05 00:00:00 to 2025-04-09 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-04-05 00:00:00 to 2025-04-09 00:00:00
+Total entries: 97
+
+Processing predictions for 5 days (4-day forecast):
+
+Hourly Energy Production (kWh) for 2025-04-05:
+                     kilowatt_hours
+timestamp                          
+2025-04-05 00:00:00           0.000
+2025-04-05 01:00:00           0.000
+2025-04-05 02:00:00           0.000
+2025-04-05 03:00:00           0.000
+2025-04-05 04:00:00           0.000
+2025-04-05 05:00:00           0.000
+2025-04-05 06:00:00           0.000
+2025-04-05 07:00:00           0.254
+2025-04-05 08:00:00           1.131
+2025-04-05 09:00:00           2.784
+2025-04-05 10:00:00           5.086
+2025-04-05 11:00:00           7.174
+2025-04-05 12:00:00           7.560
+2025-04-05 13:00:00           6.148
+2025-04-05 14:00:00           4.201
+2025-04-05 15:00:00           2.481
+2025-04-05 16:00:00           1.251
+2025-04-05 17:00:00           0.525
+2025-04-05 18:00:00           0.138
+2025-04-05 19:00:00           0.000
+2025-04-05 20:00:00           0.000
+2025-04-05 21:00:00           0.000
+2025-04-05 22:00:00           0.000
+2025-04-05 23:00:00           0.000
+Predictions for 2025-04-05 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250405.csv
+
+Hourly Energy Production (kWh) for 2025-04-06:
+                     kilowatt_hours
+timestamp                          
+2025-04-06 00:00:00           0.000
+2025-04-06 01:00:00           0.000
+2025-04-06 02:00:00           0.000
+2025-04-06 03:00:00           0.000
+2025-04-06 04:00:00           0.000
+2025-04-06 05:00:00           0.000
+2025-04-06 06:00:00           0.000
+2025-04-06 07:00:00           0.269
+2025-04-06 08:00:00           1.063
+2025-04-06 09:00:00           2.471
+2025-04-06 10:00:00           4.477
+2025-04-06 11:00:00           6.405
+2025-04-06 12:00:00           7.042
+2025-04-06 13:00:00           6.162
+2025-04-06 14:00:00           4.555
+2025-04-06 15:00:00           2.825
+2025-04-06 16:00:00           1.435
+2025-04-06 17:00:00           0.587
+2025-04-06 18:00:00           0.149
+2025-04-06 19:00:00           0.000
+2025-04-06 20:00:00           0.000
+2025-04-06 21:00:00           0.000
+2025-04-06 22:00:00           0.000
+2025-04-06 23:00:00           0.000
+Predictions for 2025-04-06 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+
+Hourly Energy Production (kWh) for 2025-04-07:
+                     kilowatt_hours
+timestamp                          
+2025-04-07 00:00:00           0.000
+2025-04-07 01:00:00           0.000
+2025-04-07 02:00:00           0.000
+2025-04-07 03:00:00           0.000
+2025-04-07 04:00:00           0.000
+2025-04-07 05:00:00           0.000
+2025-04-07 06:00:00           0.000
+2025-04-07 07:00:00           0.171
+2025-04-07 08:00:00           0.643
+2025-04-07 09:00:00           1.271
+2025-04-07 10:00:00           1.895
+2025-04-07 11:00:00           2.395
+2025-04-07 12:00:00           2.655
+2025-04-07 13:00:00           2.604
+2025-04-07 14:00:00           2.260
+2025-04-07 15:00:00           1.692
+2025-04-07 16:00:00           1.042
+2025-04-07 17:00:00           0.494
+2025-04-07 18:00:00           0.133
+2025-04-07 19:00:00           0.000
+2025-04-07 20:00:00           0.000
+2025-04-07 21:00:00           0.000
+2025-04-07 22:00:00           0.000
+2025-04-07 23:00:00           0.000
+Predictions for 2025-04-07 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+
+Hourly Energy Production (kWh) for 2025-04-08:
+                     kilowatt_hours
+timestamp                          
+2025-04-08 00:00:00           0.000
+2025-04-08 01:00:00           0.000
+2025-04-08 02:00:00           0.000
+2025-04-08 03:00:00           0.000
+2025-04-08 04:00:00           0.000
+2025-04-08 05:00:00           0.000
+2025-04-08 06:00:00           0.000
+2025-04-08 07:00:00           0.502
+2025-04-08 08:00:00           1.887
+2025-04-08 09:00:00           3.791
+2025-04-08 10:00:00           5.659
+2025-04-08 11:00:00           6.999
+2025-04-08 12:00:00           7.522
+2025-04-08 13:00:00           7.055
+2025-04-08 14:00:00           5.598
+2025-04-08 15:00:00           3.494
+2025-04-08 16:00:00           1.639
+2025-04-08 17:00:00           0.623
+2025-04-08 18:00:00           0.158
+2025-04-08 19:00:00           0.000
+2025-04-08 20:00:00           0.000
+2025-04-08 21:00:00           0.000
+2025-04-08 22:00:00           0.000
+2025-04-08 23:00:00           0.000
+Predictions for 2025-04-08 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+
+Hourly Energy Production (kWh) for 2025-04-09:
+            kilowatt_hours
+timestamp                 
+2025-04-09             0.0
+Predictions for 2025-04-09 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+Reading existing merged file: C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+Added 97 new entries to merged file. Total entries: 721
+
+Summary: Generated predictions for 5 days:
+  - 2025-04-05: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250405.csv
+  - 2025-04-06: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+  - 2025-04-07: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+  - 2025-04-08: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+  - 2025-04-09: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+  - All predictions also added to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+
+Forecast period: 2025-04-05 to 2025-04-09 (4-day forecast)
+
+[2025-04-05 00:00:08] Starting Price Gathering...
+[2025-04-05 00:24:45] Price Gathering completed successfully.
+[2025-04-05 00:24:46] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (latest 24 hours)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-04-04 18:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE-SE3
+Received 24 records from API
+Time range: 2025-04-03T23:00:00.000Z to 2025-04-04T22:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 64367
+Data range: 2017-01-01 00:00:00 to 2025-04-04 22:00:00
+
+Fetching historical grid data (from 2017-01-01)...
+
+================================================================================
+  Historical Data Backfill Process
+  - Using /past-range endpoint with 60-minute resolution
+  - Processing data in 9-day chunks
+  - Using licensed API rate limit (1000 calls/hour)
+  - Progress is saved after each chunk
+================================================================================
+
+
+================================================================================
+  Process Complete
+  Check the logs for details on the data fetched
+================================================================================
+
+
+[2025-04-05 00:24:46] ################################## END OF SCRIPT ##################################
+[2025-04-05 20:00:01] ################################## START OF SCRIPT 2025-04-05 20:00:01 ##################################
+[2025-04-05 20:00:01] Starting Solar Prediction...
+[2025-04-05 20:00:04] Solar Prediction completed successfully.
+[2025-04-05 20:00:04] Output:
+Starting predictions from today: 2025-04-05
+Fetching 4-day forecast (today + 3 days ahead)
+Loaded API key from C:\_Projects\home-energy-ai\api.env
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-04-05 00:00:00 to 2025-04-09 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+
+Panel group 2:
+Time range: 2025-04-05 00:00:00 to 2025-04-09 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-04-05 00:00:00 to 2025-04-09 00:00:00
+Total entries: 97
+
+Processing predictions for 5 days (4-day forecast):
+
+Hourly Energy Production (kWh) for 2025-04-05:
+                     kilowatt_hours
+timestamp                          
+2025-04-05 00:00:00           0.000
+2025-04-05 01:00:00           0.000
+2025-04-05 02:00:00           0.000
+2025-04-05 03:00:00           0.000
+2025-04-05 04:00:00           0.000
+2025-04-05 05:00:00           0.000
+2025-04-05 06:00:00           0.000
+2025-04-05 07:00:00           0.560
+2025-04-05 08:00:00           2.208
+2025-04-05 09:00:00           4.637
+2025-04-05 10:00:00           7.210
+2025-04-05 11:00:00           9.247
+2025-04-05 12:00:00          10.220
+2025-04-05 13:00:00           9.810
+2025-04-05 14:00:00           7.981
+2025-04-05 15:00:00           5.183
+2025-04-05 16:00:00           2.656
+2025-04-05 17:00:00           1.185
+2025-04-05 18:00:00           0.347
+2025-04-05 19:00:00           0.000
+2025-04-05 20:00:00           0.000
+2025-04-05 21:00:00           0.000
+2025-04-05 22:00:00           0.000
+2025-04-05 23:00:00           0.000
+Predictions for 2025-04-05 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250405.csv
+
+Hourly Energy Production (kWh) for 2025-04-06:
+                     kilowatt_hours
+timestamp                          
+2025-04-06 00:00:00           0.000
+2025-04-06 01:00:00           0.000
+2025-04-06 02:00:00           0.000
+2025-04-06 03:00:00           0.000
+2025-04-06 04:00:00           0.000
+2025-04-06 05:00:00           0.000
+2025-04-06 06:00:00           0.000
+2025-04-06 07:00:00           0.298
+2025-04-06 08:00:00           1.047
+2025-04-06 09:00:00           1.896
+2025-04-06 10:00:00           2.497
+2025-04-06 11:00:00           2.807
+2025-04-06 12:00:00           2.912
+2025-04-06 13:00:00           2.763
+2025-04-06 14:00:00           2.340
+2025-04-06 15:00:00           1.723
+2025-04-06 16:00:00           1.057
+2025-04-06 17:00:00           0.499
+2025-04-06 18:00:00           0.133
+2025-04-06 19:00:00           0.000
+2025-04-06 20:00:00           0.000
+2025-04-06 21:00:00           0.000
+2025-04-06 22:00:00           0.000
+2025-04-06 23:00:00           0.000
+Predictions for 2025-04-06 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+
+Hourly Energy Production (kWh) for 2025-04-07:
+                     kilowatt_hours
+timestamp                          
+2025-04-07 00:00:00           0.000
+2025-04-07 01:00:00           0.000
+2025-04-07 02:00:00           0.000
+2025-04-07 03:00:00           0.000
+2025-04-07 04:00:00           0.000
+2025-04-07 05:00:00           0.000
+2025-04-07 06:00:00           0.000
+2025-04-07 07:00:00           0.186
+2025-04-07 08:00:00           0.712
+2025-04-07 09:00:00           1.491
+2025-04-07 10:00:00           2.362
+2025-04-07 11:00:00           3.060
+2025-04-07 12:00:00           3.349
+2025-04-07 13:00:00           3.198
+2025-04-07 14:00:00           2.703
+2025-04-07 15:00:00           1.998
+2025-04-07 16:00:00           1.247
+2025-04-07 17:00:00           0.609
+2025-04-07 18:00:00           0.170
+2025-04-07 19:00:00           0.000
+2025-04-07 20:00:00           0.000
+2025-04-07 21:00:00           0.000
+2025-04-07 22:00:00           0.000
+2025-04-07 23:00:00           0.000
+Predictions for 2025-04-07 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+
+Hourly Energy Production (kWh) for 2025-04-08:
+                     kilowatt_hours
+timestamp                          
+2025-04-08 00:00:00           0.000
+2025-04-08 01:00:00           0.000
+2025-04-08 02:00:00           0.000
+2025-04-08 03:00:00           0.000
+2025-04-08 04:00:00           0.000
+2025-04-08 05:00:00           0.000
+2025-04-08 06:00:00           0.000
+2025-04-08 07:00:00           0.434
+2025-04-08 08:00:00           1.648
+2025-04-08 09:00:00           3.360
+2025-04-08 10:00:00           5.044
+2025-04-08 11:00:00           6.222
+2025-04-08 12:00:00           6.572
+2025-04-08 13:00:00           5.858
+2025-04-08 14:00:00           4.466
+2025-04-08 15:00:00           3.016
+2025-04-08 16:00:00           1.740
+2025-04-08 17:00:00           0.795
+2025-04-08 18:00:00           0.216
+2025-04-08 19:00:00           0.000
+2025-04-08 20:00:00           0.000
+2025-04-08 21:00:00           0.000
+2025-04-08 22:00:00           0.000
+2025-04-08 23:00:00           0.000
+Predictions for 2025-04-08 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+
+Hourly Energy Production (kWh) for 2025-04-09:
+            kilowatt_hours
+timestamp                 
+2025-04-09             0.0
+Predictions for 2025-04-09 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+Reading existing merged file: C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+Added 97 new entries to merged file. Total entries: 721
+
+Summary: Generated predictions for 5 days:
+  - 2025-04-05: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250405.csv
+  - 2025-04-06: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+  - 2025-04-07: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+  - 2025-04-08: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+  - 2025-04-09: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+  - All predictions also added to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+
+Forecast period: 2025-04-05 to 2025-04-09 (4-day forecast)
+
+[2025-04-05 20:00:04] Starting Price Gathering...
+[2025-04-05 20:24:14] Price Gathering completed successfully.
+[2025-04-05 20:24:14] Output:
+Successfully added 3 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (latest 24 hours)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-04-04 23:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE-SE3
+Received 24 records from API
+Time range: 2025-04-04T19:00:00.000Z to 2025-04-05T18:00:00.000Z
+Fetched 19 new records (skipped 5 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 19 new records
+Total records in file: 64387
+Data range: 2017-01-01 00:00:00 to 2025-04-05 18:00:00
+
+Fetching historical grid data (from 2017-01-01)...
+
+================================================================================
+  Historical Data Backfill Process
+  - Using /past-range endpoint with 60-minute resolution
+  - Processing data in 9-day chunks
+  - Using licensed API rate limit (1000 calls/hour)
+  - Progress is saved after each chunk
+================================================================================
+
+
+================================================================================
+  Process Complete
+  Check the logs for details on the data fetched
+================================================================================
+
+
+[2025-04-05 20:24:14] ################################## END OF SCRIPT ##################################
+[2025-04-06 00:00:02] ################################## START OF SCRIPT 2025-04-06 00:00:02 ##################################
+[2025-04-06 00:00:02] Starting Solar Prediction...
+[2025-04-06 00:00:06] Solar Prediction completed successfully.
+[2025-04-06 00:00:06] Output:
+Starting predictions from today: 2025-04-06
+Fetching 4-day forecast (today + 3 days ahead)
+Loaded API key from C:\_Projects\home-energy-ai\api.env
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-04-06 00:00:00 to 2025-04-10 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+
+Panel group 2:
+Time range: 2025-04-06 00:00:00 to 2025-04-10 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-04-06 00:00:00 to 2025-04-10 00:00:00
+Total entries: 97
+
+Processing predictions for 5 days (4-day forecast):
+
+Hourly Energy Production (kWh) for 2025-04-06:
+                     kilowatt_hours
+timestamp                          
+2025-04-06 00:00:00           0.000
+2025-04-06 01:00:00           0.000
+2025-04-06 02:00:00           0.000
+2025-04-06 03:00:00           0.000
+2025-04-06 04:00:00           0.000
+2025-04-06 05:00:00           0.000
+2025-04-06 06:00:00           0.000
+2025-04-06 07:00:00           0.264
+2025-04-06 08:00:00           0.906
+2025-04-06 09:00:00           1.624
+2025-04-06 10:00:00           2.180
+2025-04-06 11:00:00           2.542
+2025-04-06 12:00:00           2.714
+2025-04-06 13:00:00           2.628
+2025-04-06 14:00:00           2.270
+2025-04-06 15:00:00           1.687
+2025-04-06 16:00:00           1.031
+2025-04-06 17:00:00           0.489
+2025-04-06 18:00:00           0.133
+2025-04-06 19:00:00           0.000
+2025-04-06 20:00:00           0.000
+2025-04-06 21:00:00           0.000
+2025-04-06 22:00:00           0.000
+2025-04-06 23:00:00           0.000
+Predictions for 2025-04-06 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+
+Hourly Energy Production (kWh) for 2025-04-07:
+                     kilowatt_hours
+timestamp                          
+2025-04-07 00:00:00           0.000
+2025-04-07 01:00:00           0.000
+2025-04-07 02:00:00           0.000
+2025-04-07 03:00:00           0.000
+2025-04-07 04:00:00           0.000
+2025-04-07 05:00:00           0.000
+2025-04-07 06:00:00           0.000
+2025-04-07 07:00:00           0.186
+2025-04-07 08:00:00           0.712
+2025-04-07 09:00:00           1.491
+2025-04-07 10:00:00           2.362
+2025-04-07 11:00:00           3.060
+2025-04-07 12:00:00           3.349
+2025-04-07 13:00:00           3.198
+2025-04-07 14:00:00           2.703
+2025-04-07 15:00:00           1.998
+2025-04-07 16:00:00           1.247
+2025-04-07 17:00:00           0.609
+2025-04-07 18:00:00           0.170
+2025-04-07 19:00:00           0.000
+2025-04-07 20:00:00           0.000
+2025-04-07 21:00:00           0.000
+2025-04-07 22:00:00           0.000
+2025-04-07 23:00:00           0.000
+Predictions for 2025-04-07 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+
+Hourly Energy Production (kWh) for 2025-04-08:
+                     kilowatt_hours
+timestamp                          
+2025-04-08 00:00:00           0.000
+2025-04-08 01:00:00           0.000
+2025-04-08 02:00:00           0.000
+2025-04-08 03:00:00           0.000
+2025-04-08 04:00:00           0.000
+2025-04-08 05:00:00           0.000
+2025-04-08 06:00:00           0.000
+2025-04-08 07:00:00           0.434
+2025-04-08 08:00:00           1.648
+2025-04-08 09:00:00           3.360
+2025-04-08 10:00:00           5.044
+2025-04-08 11:00:00           6.222
+2025-04-08 12:00:00           6.572
+2025-04-08 13:00:00           5.858
+2025-04-08 14:00:00           4.466
+2025-04-08 15:00:00           3.016
+2025-04-08 16:00:00           1.740
+2025-04-08 17:00:00           0.795
+2025-04-08 18:00:00           0.216
+2025-04-08 19:00:00           0.000
+2025-04-08 20:00:00           0.000
+2025-04-08 21:00:00           0.000
+2025-04-08 22:00:00           0.000
+2025-04-08 23:00:00           0.000
+Predictions for 2025-04-08 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+
+Hourly Energy Production (kWh) for 2025-04-09:
+                     kilowatt_hours
+timestamp                          
+2025-04-09 00:00:00           0.000
+2025-04-09 01:00:00           0.000
+2025-04-09 02:00:00           0.000
+2025-04-09 03:00:00           0.000
+2025-04-09 04:00:00           0.000
+2025-04-09 05:00:00           0.000
+2025-04-09 06:00:00           0.000
+2025-04-09 07:00:00           0.342
+2025-04-09 08:00:00           1.307
+2025-04-09 09:00:00           2.686
+2025-04-09 10:00:00           4.058
+2025-04-09 11:00:00           5.003
+2025-04-09 12:00:00           5.427
+2025-04-09 13:00:00           5.203
+2025-04-09 14:00:00           4.277
+2025-04-09 15:00:00           3.001
+2025-04-09 16:00:00           1.776
+2025-04-09 17:00:00           0.842
+2025-04-09 18:00:00           0.231
+2025-04-09 19:00:00           0.000
+2025-04-09 20:00:00           0.000
+2025-04-09 21:00:00           0.000
+2025-04-09 22:00:00           0.000
+2025-04-09 23:00:00           0.000
+Predictions for 2025-04-09 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+
+Hourly Energy Production (kWh) for 2025-04-10:
+            kilowatt_hours
+timestamp                 
+2025-04-10             0.0
+Predictions for 2025-04-10 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250410.csv
+Reading existing merged file: C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+Added 97 new entries to merged file. Total entries: 745
+
+Summary: Generated predictions for 5 days:
+  - 2025-04-06: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+  - 2025-04-07: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+  - 2025-04-08: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+  - 2025-04-09: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+  - 2025-04-10: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250410.csv
+  - All predictions also added to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+
+Forecast period: 2025-04-06 to 2025-04-10 (4-day forecast)
+
+[2025-04-06 00:00:06] Starting Price Gathering...
+[2025-04-06 00:24:38] Price Gathering completed successfully.
+[2025-04-06 00:24:38] Output:
+Successfully added 4 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data (latest 24 hours)...
+API key loaded: kpAM...E9SO
+Latest data timestamp: 2025-04-05 18:00:00+00:00
+Fetching power breakdown history for Sweden...
+API URL: https://api.electricitymap.org/v3/power-breakdown/history?zone=SE-SE3
+Received 24 records from API
+Time range: 2025-04-04T23:00:00.000Z to 2025-04-05T22:00:00.000Z
+Fetched 4 new records (skipped 20 existing records)
+Successfully merged new data with existing data
+Successfully saved data to C:\_Projects\home-energy-ai\data\processed\SwedenGrid.csv
+Updated hourly grid data with 4 new records
+Total records in file: 64391
+Data range: 2017-01-01 00:00:00 to 2025-04-05 22:00:00
+
+Fetching historical grid data (from 2017-01-01)...
+
+================================================================================
+  Historical Data Backfill Process
+  - Using /past-range endpoint with 60-minute resolution
+  - Processing data in 9-day chunks
+  - Using licensed API rate limit (1000 calls/hour)
+  - Progress is saved after each chunk
+================================================================================
+
+
+================================================================================
+  Process Complete
+  Check the logs for details on the data fetched
+================================================================================
+
+
+[2025-04-06 00:24:38] ################################## END OF SCRIPT ##################################
+[2025-04-06 15:34:44] ################################## START OF SCRIPT 2025-04-06 15:34:44 ##################################
+[2025-04-06 15:34:44] Starting Solar Data Update...
+[2025-04-06 15:34:46] Solar Data Update completed successfully.
+[2025-04-06 15:34:46] Output:
+Starting merge process for solar_generated_power_2 data
+Latest data timestamp: 2025-04-06 23:00:00+00:00
+Days since latest data: 0
+Fetching 1 days of new data
+Running download command: C:\Users\adamm\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\python.exe C:\_Projects\home-energy-ai\src\download_entity_data_from_HA.py --entity solar_generated_power_2 --days 1 --res hourly
+Download script output:
+Debug - Current time: 2025-04-06 15:34:45.952685
+Debug - Start date: 2025-04-05 00:00:00
+Debug - End date: 2025-04-06 23:59:59.999999
+Current date and time: 2025-04-06 15:34:45
+Requesting data for: 1 days (from 2025-04-05 to 2025-04-06)
+Entity: sensor.solar_generated_power_2
+Resolution: hourly
+Request URL: http://192.168.192.35:8123/api/history/period/2025-04-05T00:00:00?end_time=2025-04-06T23:59:59&filter_entity_id=sensor.solar_generated_power_2&minimal_response=false&significant_changes_only=false
+Sending API request...
+API response status code: 200
+API returned data of type: <class 'list'>
+API data length: 1
+Processing data...
+First data item type: <class 'list'>
+Found list-of-lists format with 1 items
+Using item 0 with 15996 records
+Raw DataFrame created with 15996 rows
+Columns: ['entity_id', 'state', 'attributes', 'last_changed', 'last_updated']
+Processing hourly data...
+Converting timezone-aware timestamps to naive datetimes
+Hourly data has 49 data points
+Time range: 2025-04-04 22:00:00 to 2025-04-06 23:00:00
+Saved 49 rows to Data\HomeAssistant\solar_generated_power_2_hourly.csv
+
+Loaded and transformed 49 rows of new data
+Converted existing data timestamps to timezone-naive
+Loaded 983 rows of existing data
+Saved 983 rows of merged data
+Data range: 2025-02-25T00:00:00.000Z to 2025-04-06T23:00:00.000Z
+Data successfully merged and saved to C:\_Projects\home-energy-ai\src\predictions\solar\actual_data\ActualSolarProductionData.csv
+
+[2025-04-06 15:34:46] Starting Solar Prediction...
+[2025-04-06 15:34:48] Solar Prediction completed successfully.
+[2025-04-06 15:34:48] Output:
+Starting predictions from today: 2025-04-06
+Fetching 4-day forecast (today + 3 days ahead)
+Loaded API key from C:\_Projects\home-energy-ai\api.env
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 55/60 requests remaining in this period
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 54/60 requests remaining in this period
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-04-06 00:00:00 to 2025-04-10 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+
+Panel group 2:
+Time range: 2025-04-06 00:00:00 to 2025-04-10 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-04-06 00:00:00 to 2025-04-10 00:00:00
+Total entries: 97
+
+Processing predictions for 5 days (4-day forecast):
+
+Hourly Energy Production (kWh) for 2025-04-06:
+                     kilowatt_hours
+timestamp                          
+2025-04-06 00:00:00           0.000
+2025-04-06 01:00:00           0.000
+2025-04-06 02:00:00           0.000
+2025-04-06 03:00:00           0.000
+2025-04-06 04:00:00           0.000
+2025-04-06 05:00:00           0.000
+2025-04-06 06:00:00           0.000
+2025-04-06 07:00:00           0.580
+2025-04-06 08:00:00           2.248
+2025-04-06 09:00:00           4.667
+2025-04-06 10:00:00           7.152
+2025-04-06 11:00:00           8.284
+2025-04-06 12:00:00           6.684
+2025-04-06 13:00:00           4.660
+2025-04-06 14:00:00           4.361
+2025-04-06 15:00:00           3.100
+2025-04-06 16:00:00           1.223
+2025-04-06 17:00:00           0.514
+2025-04-06 18:00:00           0.138
+2025-04-06 19:00:00           0.000
+2025-04-06 20:00:00           0.000
+2025-04-06 21:00:00           0.000
+2025-04-06 22:00:00           0.000
+2025-04-06 23:00:00           0.000
+Predictions for 2025-04-06 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+
+Hourly Energy Production (kWh) for 2025-04-07:
+                     kilowatt_hours
+timestamp                          
+2025-04-07 00:00:00           0.000
+2025-04-07 01:00:00           0.000
+2025-04-07 02:00:00           0.000
+2025-04-07 03:00:00           0.000
+2025-04-07 04:00:00           0.000
+2025-04-07 05:00:00           0.000
+2025-04-07 06:00:00           0.000
+2025-04-07 07:00:00           0.171
+2025-04-07 08:00:00           0.653
+2025-04-07 09:00:00           1.349
+2025-04-07 10:00:00           2.170
+2025-04-07 11:00:00           2.933
+2025-04-07 12:00:00           3.339
+2025-04-07 13:00:00           3.272
+2025-04-07 14:00:00           2.833
+2025-04-07 15:00:00           2.160
+2025-04-07 16:00:00           1.370
+2025-04-07 17:00:00           0.661
+2025-04-07 18:00:00           0.180
+2025-04-07 19:00:00           0.000
+2025-04-07 20:00:00           0.000
+2025-04-07 21:00:00           0.000
+2025-04-07 22:00:00           0.000
+2025-04-07 23:00:00           0.000
+Predictions for 2025-04-07 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+
+Hourly Energy Production (kWh) for 2025-04-08:
+                     kilowatt_hours
+timestamp                          
+2025-04-08 00:00:00           0.000
+2025-04-08 01:00:00           0.000
+2025-04-08 02:00:00           0.000
+2025-04-08 03:00:00           0.000
+2025-04-08 04:00:00           0.000
+2025-04-08 05:00:00           0.000
+2025-04-08 06:00:00           0.000
+2025-04-08 07:00:00           0.444
+2025-04-08 08:00:00           1.731
+2025-04-08 09:00:00           3.576
+2025-04-08 10:00:00           5.295
+2025-04-08 11:00:00           6.295
+2025-04-08 12:00:00           6.502
+2025-04-08 13:00:00           5.824
+2025-04-08 14:00:00           4.441
+2025-04-08 15:00:00           3.001
+2025-04-08 16:00:00           1.744
+2025-04-08 17:00:00           0.779
+2025-04-08 18:00:00           0.205
+2025-04-08 19:00:00           0.000
+2025-04-08 20:00:00           0.000
+2025-04-08 21:00:00           0.000
+2025-04-08 22:00:00           0.000
+2025-04-08 23:00:00           0.000
+Predictions for 2025-04-08 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+
+Hourly Energy Production (kWh) for 2025-04-09:
+                     kilowatt_hours
+timestamp                          
+2025-04-09 00:00:00           0.000
+2025-04-09 01:00:00           0.000
+2025-04-09 02:00:00           0.000
+2025-04-09 03:00:00           0.000
+2025-04-09 04:00:00           0.000
+2025-04-09 05:00:00           0.000
+2025-04-09 06:00:00           0.000
+2025-04-09 07:00:00           0.308
+2025-04-09 08:00:00           1.165
+2025-04-09 09:00:00           2.338
+2025-04-09 10:00:00           3.507
+2025-04-09 11:00:00           4.445
+2025-04-09 12:00:00           4.870
+2025-04-09 13:00:00           4.587
+2025-04-09 14:00:00           3.708
+2025-04-09 15:00:00           2.590
+2025-04-09 16:00:00           1.539
+2025-04-09 17:00:00           0.717
+2025-04-09 18:00:00           0.195
+2025-04-09 19:00:00           0.000
+2025-04-09 20:00:00           0.000
+2025-04-09 21:00:00           0.000
+2025-04-09 22:00:00           0.000
+2025-04-09 23:00:00           0.000
+Predictions for 2025-04-09 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+
+Hourly Energy Production (kWh) for 2025-04-10:
+            kilowatt_hours
+timestamp                 
+2025-04-10             0.0
+Predictions for 2025-04-10 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250410.csv
+Reading existing merged file: C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+Added 97 new entries to merged file. Total entries: 745
+
+Summary: Generated predictions for 5 days:
+  - 2025-04-06: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+  - 2025-04-07: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+  - 2025-04-08: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+  - 2025-04-09: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+  - 2025-04-10: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250410.csv
+  - All predictions also added to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+
+Forecast period: 2025-04-06 to 2025-04-10 (4-day forecast)
+
+[2025-04-06 15:34:48] Starting Price Data Update...
+[2025-04-06 23:31:42] 
+
+
+
+
+[2025-04-06 23:31:42] ################################## START OF SCRIPT 2025-04-06 23:31:42 ##################################
+[2025-04-06 23:31:42] Starting Solar Data Update...
+[2025-04-06 23:31:51] Solar Data Update completed successfully.
+[2025-04-06 23:31:51] Output:
+Starting merge process for solar_generated_power_2 data
+Latest data timestamp: 2025-04-06 23:00:00+00:00
+Days since latest data: 1
+Fetching 1 days of new data
+Running download command: C:\Users\adamm\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\python.exe C:\_Projects\home-energy-ai\src\download_entity_data_from_HA.py --entity solar_generated_power_2 --days 1 --res hourly
+Download script output:
+Debug - Current time: 2025-04-06 23:31:50.708840
+Debug - Start date: 2025-04-05 00:00:00
+Debug - End date: 2025-04-06 23:59:59.999999
+Current date and time: 2025-04-06 23:31:50
+Requesting data for: 1 days (from 2025-04-05 to 2025-04-06)
+Entity: sensor.solar_generated_power_2
+Resolution: hourly
+Request URL: http://192.168.192.35:8123/api/history/period/2025-04-05T00:00:00?end_time=2025-04-06T23:59:59&filter_entity_id=sensor.solar_generated_power_2&minimal_response=false&significant_changes_only=false
+Sending API request...
+API response status code: 200
+API returned data of type: <class 'list'>
+API data length: 1
+Processing data...
+First data item type: <class 'list'>
+Found list-of-lists format with 1 items
+Using item 0 with 18696 records
+Raw DataFrame created with 18696 rows
+Columns: ['entity_id', 'state', 'attributes', 'last_changed', 'last_updated']
+Processing hourly data...
+Converting timezone-aware timestamps to naive datetimes
+Hourly data has 49 data points
+Time range: 2025-04-04 22:00:00 to 2025-04-06 23:00:00
+Saved 49 rows to Data\HomeAssistant\solar_generated_power_2_hourly.csv
+
+Loaded and transformed 49 rows of new data
+Converted existing data timestamps to timezone-naive
+Loaded 983 rows of existing data
+Saved 983 rows of merged data
+Data range: 2025-02-25T00:00:00.000Z to 2025-04-06T23:00:00.000Z
+Data successfully merged and saved to C:\_Projects\home-energy-ai\src\predictions\solar\actual_data\ActualSolarProductionData.csv
+
+[2025-04-06 23:31:51] 
+
+
+[2025-04-06 23:31:51] Starting Solar Prediction...
+[2025-04-06 23:31:53] Solar Prediction completed successfully.
+[2025-04-06 23:31:53] Output:
+Starting predictions from today: 2025-04-06
+Fetching 4-day forecast (today + 3 days ahead)
+Loaded API key from C:\_Projects\home-energy-ai\api.env
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 58/60 requests remaining in this period
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-04-06 00:00:00 to 2025-04-10 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+
+Panel group 2:
+Time range: 2025-04-06 00:00:00 to 2025-04-10 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-04-06 00:00:00 to 2025-04-10 00:00:00
+Total entries: 97
+
+Processing predictions for 5 days (4-day forecast):
+
+Hourly Energy Production (kWh) for 2025-04-06:
+                     kilowatt_hours
+timestamp                          
+2025-04-06 00:00:00           0.000
+2025-04-06 01:00:00           0.000
+2025-04-06 02:00:00           0.000
+2025-04-06 03:00:00           0.000
+2025-04-06 04:00:00           0.000
+2025-04-06 05:00:00           0.000
+2025-04-06 06:00:00           0.000
+2025-04-06 07:00:00           0.580
+2025-04-06 08:00:00           2.248
+2025-04-06 09:00:00           4.667
+2025-04-06 10:00:00           7.202
+2025-04-06 11:00:00           9.169
+2025-04-06 12:00:00          10.076
+2025-04-06 13:00:00           9.656
+2025-04-06 14:00:00           8.045
+2025-04-06 15:00:00           5.727
+2025-04-06 16:00:00           3.335
+2025-04-06 17:00:00           1.506
+2025-04-06 18:00:00           0.399
+2025-04-06 19:00:00           0.000
+2025-04-06 20:00:00           0.000
+2025-04-06 21:00:00           0.000
+2025-04-06 22:00:00           0.000
+2025-04-06 23:00:00           0.000
+Predictions for 2025-04-06 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+
+Hourly Energy Production (kWh) for 2025-04-07:
+                     kilowatt_hours
+timestamp                          
+2025-04-07 00:00:00           0.000
+2025-04-07 01:00:00           0.000
+2025-04-07 02:00:00           0.000
+2025-04-07 03:00:00           0.000
+2025-04-07 04:00:00           0.000
+2025-04-07 05:00:00           0.000
+2025-04-07 06:00:00           0.000
+2025-04-07 07:00:00           0.176
+2025-04-07 08:00:00           0.663
+2025-04-07 09:00:00           1.344
+2025-04-07 10:00:00           2.081
+2025-04-07 11:00:00           2.740
+2025-04-07 12:00:00           3.096
+2025-04-07 13:00:00           3.018
+2025-04-07 14:00:00           2.603
+2025-04-07 15:00:00           1.978
+2025-04-07 16:00:00           1.274
+2025-04-07 17:00:00           0.640
+2025-04-07 18:00:00           0.180
+2025-04-07 19:00:00           0.000
+2025-04-07 20:00:00           0.000
+2025-04-07 21:00:00           0.000
+2025-04-07 22:00:00           0.000
+2025-04-07 23:00:00           0.000
+Predictions for 2025-04-07 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+
+Hourly Energy Production (kWh) for 2025-04-08:
+                     kilowatt_hours
+timestamp                          
+2025-04-08 00:00:00           0.000
+2025-04-08 01:00:00           0.000
+2025-04-08 02:00:00           0.000
+2025-04-08 03:00:00           0.000
+2025-04-08 04:00:00           0.000
+2025-04-08 05:00:00           0.000
+2025-04-08 06:00:00           0.000
+2025-04-08 07:00:00           0.429
+2025-04-08 08:00:00           1.697
+2025-04-08 09:00:00           3.566
+2025-04-08 10:00:00           5.438
+2025-04-08 11:00:00           6.627
+2025-04-08 12:00:00           6.930
+2025-04-08 13:00:00           6.310
+2025-04-08 14:00:00           4.890
+2025-04-08 15:00:00           3.290
+2025-04-08 16:00:00           1.888
+2025-04-08 17:00:00           0.841
+2025-04-08 18:00:00           0.221
+2025-04-08 19:00:00           0.000
+2025-04-08 20:00:00           0.000
+2025-04-08 21:00:00           0.000
+2025-04-08 22:00:00           0.000
+2025-04-08 23:00:00           0.000
+Predictions for 2025-04-08 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+
+Hourly Energy Production (kWh) for 2025-04-09:
+                     kilowatt_hours
+timestamp                          
+2025-04-09 00:00:00           0.000
+2025-04-09 01:00:00           0.000
+2025-04-09 02:00:00           0.000
+2025-04-09 03:00:00           0.000
+2025-04-09 04:00:00           0.000
+2025-04-09 05:00:00           0.000
+2025-04-09 06:00:00           0.000
+2025-04-09 07:00:00           0.269
+2025-04-09 08:00:00           1.014
+2025-04-09 09:00:00           2.048
+2025-04-09 10:00:00           3.138
+2025-04-09 11:00:00           4.084
+2025-04-09 12:00:00           4.517
+2025-04-09 13:00:00           4.151
+2025-04-09 14:00:00           3.235
+2025-04-09 15:00:00           2.225
+2025-04-09 16:00:00           1.334
+2025-04-09 17:00:00           0.635
+2025-04-09 18:00:00           0.175
+2025-04-09 19:00:00           0.000
+2025-04-09 20:00:00           0.000
+2025-04-09 21:00:00           0.000
+2025-04-09 22:00:00           0.000
+2025-04-09 23:00:00           0.000
+Predictions for 2025-04-09 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+
+Hourly Energy Production (kWh) for 2025-04-10:
+            kilowatt_hours
+timestamp                 
+2025-04-10             0.0
+Predictions for 2025-04-10 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250410.csv
+Reading existing merged file: C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+Added 97 new entries to merged file. Total entries: 745
+
+Summary: Generated predictions for 5 days:
+  - 2025-04-06: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250406.csv
+  - 2025-04-07: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+  - 2025-04-08: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+  - 2025-04-09: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+  - 2025-04-10: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250410.csv
+  - All predictions also added to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+
+Forecast period: 2025-04-06 to 2025-04-10 (4-day forecast)
+
+[2025-04-06 23:31:53] 
+
+
+[2025-04-06 23:31:53] Starting Price Data Update...
+[2025-04-06 23:31:58] Price Data Update completed successfully.
+[2025-04-06 23:31:58] Output:
+Successfully added 2 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data...
+Successfully updated grid data through 2025-04-06
+
+[2025-04-06 23:31:58] 
+
+
+[2025-04-06 23:31:58] ################################## END OF SCRIPT  2025-04-06 23:31:58 ##################################
+[2025-04-07 13:20:19] 
+
+
+
+
+[2025-04-07 13:20:19] ################################## START OF SCRIPT 2025-04-07 13:20:19 ##################################
+[2025-04-07 13:20:19] Starting Solar Data Update...
+[2025-04-07 13:20:20] Solar Data Update completed successfully.
+[2025-04-07 13:20:20] Output:
+Starting merge process for solar_generated_power_2 data
+Latest data timestamp: 2025-04-06 23:00:00+00:00
+Days since latest data: 1
+Fetching 1 days of new data
+Running download command: C:\Users\adamm\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\python.exe C:\_Projects\home-energy-ai\src\download_entity_data_from_HA.py --entity solar_generated_power_2 --days 1 --res hourly
+Download script output:
+Debug - Current time: 2025-04-07 13:20:20.334324
+Debug - Start date: 2025-04-06 00:00:00
+Debug - End date: 2025-04-07 23:59:59.999999
+Current date and time: 2025-04-07 13:20:20
+Requesting data for: 1 days (from 2025-04-06 to 2025-04-07)
+Entity: sensor.solar_generated_power_2
+Resolution: hourly
+Request URL: http://192.168.192.35:8123/api/history/period/2025-04-06T00:00:00?end_time=2025-04-07T23:59:59&filter_entity_id=sensor.solar_generated_power_2&minimal_response=false&significant_changes_only=false
+Sending API request...
+API response status code: 200
+API returned data of type: <class 'list'>
+API data length: 1
+Processing data...
+First data item type: <class 'list'>
+Found list-of-lists format with 1 items
+Using item 0 with 14348 records
+Raw DataFrame created with 14348 rows
+Columns: ['entity_id', 'state', 'attributes', 'last_changed', 'last_updated']
+Processing hourly data...
+Converting timezone-aware timestamps to naive datetimes
+Hourly data has 49 data points
+Time range: 2025-04-05 22:00:00 to 2025-04-07 23:00:00
+Saved 49 rows to Data\HomeAssistant\solar_generated_power_2_hourly.csv
+
+Loaded and transformed 49 rows of new data
+Converted existing data timestamps to timezone-naive
+Loaded 983 rows of existing data
+Saved 1007 rows of merged data
+Data range: 2025-02-25T00:00:00.000Z to 2025-04-07T23:00:00.000Z
+Data successfully merged and saved to C:\_Projects\home-energy-ai\src\predictions\solar\actual_data\ActualSolarProductionData.csv
+
+[2025-04-07 13:20:20] 
+
+
+[2025-04-07 13:20:20] Starting Solar Prediction...
+[2025-04-07 13:20:22] Solar Prediction completed successfully.
+[2025-04-07 13:20:22] Output:
+Starting predictions from today: 2025-04-07
+Fetching 4-day forecast (today + 3 days ahead)
+Loaded API key from C:\_Projects\home-energy-ai\api.env
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 59/60 requests remaining in this period
+URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
+
+Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Parameters: Start=now, Days=4, Resolution=hourly
+API Rate Limit: 58/60 requests remaining in this period
+
+Processing predictions from each panel group:
+
+Panel group 1:
+Time range: 2025-04-07 00:00:00 to 2025-04-11 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+
+Panel group 2:
+Time range: 2025-04-07 00:00:00 to 2025-04-11 00:00:00
+Number of entries: 97
+After resampling to hourly: 97 entries
+Combined with previous predictions
+
+Final combined predictions:
+Time range: 2025-04-07 00:00:00 to 2025-04-11 00:00:00
+Total entries: 97
+
+Processing predictions for 5 days (4-day forecast):
+
+Hourly Energy Production (kWh) for 2025-04-07:
+                     kilowatt_hours
+timestamp                          
+2025-04-07 00:00:00           0.000
+2025-04-07 01:00:00           0.000
+2025-04-07 02:00:00           0.000
+2025-04-07 03:00:00           0.000
+2025-04-07 04:00:00           0.000
+2025-04-07 05:00:00           0.000
+2025-04-07 06:00:00           0.000
+2025-04-07 07:00:00           0.288
+2025-04-07 08:00:00           1.018
+2025-04-07 09:00:00           1.784
+2025-04-07 10:00:00           2.627
+2025-04-07 11:00:00           3.623
+2025-04-07 12:00:00           3.548
+2025-04-07 13:00:00           2.797
+2025-04-07 14:00:00           2.386
+2025-04-07 15:00:00           1.866
+2025-04-07 16:00:00           1.207
+2025-04-07 17:00:00           0.609
+2025-04-07 18:00:00           0.181
+2025-04-07 19:00:00           0.000
+2025-04-07 20:00:00           0.000
+2025-04-07 21:00:00           0.000
+2025-04-07 22:00:00           0.000
+2025-04-07 23:00:00           0.000
+Predictions for 2025-04-07 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+
+Hourly Energy Production (kWh) for 2025-04-08:
+                     kilowatt_hours
+timestamp                          
+2025-04-08 00:00:00           0.000
+2025-04-08 01:00:00           0.000
+2025-04-08 02:00:00           0.000
+2025-04-08 03:00:00           0.000
+2025-04-08 04:00:00           0.000
+2025-04-08 05:00:00           0.000
+2025-04-08 06:00:00           0.000
+2025-04-08 07:00:00           0.332
+2025-04-08 08:00:00           1.262
+2025-04-08 09:00:00           2.877
+2025-04-08 10:00:00           5.126
+2025-04-08 11:00:00           6.751
+2025-04-08 12:00:00           7.089
+2025-04-08 13:00:00           6.549
+2025-04-08 14:00:00           5.034
+2025-04-08 15:00:00           3.095
+2025-04-08 16:00:00           1.579
+2025-04-08 17:00:00           0.659
+2025-04-08 18:00:00           0.174
+2025-04-08 19:00:00           0.000
+2025-04-08 20:00:00           0.000
+2025-04-08 21:00:00           0.000
+2025-04-08 22:00:00           0.000
+2025-04-08 23:00:00           0.000
+Predictions for 2025-04-08 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+
+Hourly Energy Production (kWh) for 2025-04-09:
+                     kilowatt_hours
+timestamp                          
+2025-04-09 00:00:00           0.000
+2025-04-09 01:00:00           0.000
+2025-04-09 02:00:00           0.000
+2025-04-09 03:00:00           0.000
+2025-04-09 04:00:00           0.000
+2025-04-09 05:00:00           0.000
+2025-04-09 06:00:00           0.000
+2025-04-09 07:00:00           0.196
+2025-04-09 08:00:00           0.751
+2025-04-09 09:00:00           1.590
+2025-04-09 10:00:00           2.782
+2025-04-09 11:00:00           4.463
+2025-04-09 12:00:00           5.753
+2025-04-09 13:00:00           5.743
+2025-04-09 14:00:00           4.435
+2025-04-09 15:00:00           2.581
+2025-04-09 16:00:00           1.291
+2025-04-09 17:00:00           0.614
+2025-04-09 18:00:00           0.175
+2025-04-09 19:00:00           0.000
+2025-04-09 20:00:00           0.000
+2025-04-09 21:00:00           0.000
+2025-04-09 22:00:00           0.000
+2025-04-09 23:00:00           0.000
+Predictions for 2025-04-09 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+
+Hourly Energy Production (kWh) for 2025-04-10:
+                     kilowatt_hours
+timestamp                          
+2025-04-10 00:00:00           0.000
+2025-04-10 01:00:00           0.000
+2025-04-10 02:00:00           0.000
+2025-04-10 03:00:00           0.000
+2025-04-10 04:00:00           0.000
+2025-04-10 05:00:00           0.000
+2025-04-10 06:00:00           0.000
+2025-04-10 07:00:00           0.327
+2025-04-10 08:00:00           1.131
+2025-04-10 09:00:00           2.074
+2025-04-10 10:00:00           2.834
+2025-04-10 11:00:00           3.220
+2025-04-10 12:00:00           3.256
+2025-04-10 13:00:00           2.994
+2025-04-10 14:00:00           2.466
+2025-04-10 15:00:00           1.789
+2025-04-10 16:00:00           1.104
+2025-04-10 17:00:00           0.530
+2025-04-10 18:00:00           0.143
+2025-04-10 19:00:00           0.000
+2025-04-10 20:00:00           0.000
+2025-04-10 21:00:00           0.000
+2025-04-10 22:00:00           0.000
+2025-04-10 23:00:00           0.000
+Predictions for 2025-04-10 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250410.csv
+
+Hourly Energy Production (kWh) for 2025-04-11:
+            kilowatt_hours
+timestamp                 
+2025-04-11             0.0
+Predictions for 2025-04-11 saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250411.csv
+Reading existing merged file: C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+Added 97 new entries to merged file. Total entries: 769
+
+Summary: Generated predictions for 5 days:
+  - 2025-04-07: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250407.csv
+  - 2025-04-08: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250408.csv
+  - 2025-04-09: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250409.csv
+  - 2025-04-10: 24 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250410.csv
+  - 2025-04-11: 1 hourly values, saved to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\per_day\20250411.csv
+  - All predictions also added to C:\_Projects\home-energy-ai\src\predictions\solar\forecasted_data\merged_predictions.csv
+
+Forecast period: 2025-04-07 to 2025-04-11 (4-day forecast)
+
+[2025-04-07 13:20:22] 
+
+
+[2025-04-07 13:20:22] Starting Price Data Update...
+[2025-04-07 13:20:26] Price Data Update completed successfully.
+[2025-04-07 13:20:26] Output:
+Successfully added 1 missing hourly price records and updated features.
+['SE3_price_ore', 'price_24h_avg', 'price_168h_avg', 'price_24h_std', 'hour_avg_price', 'price_vs_hour_avg', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_peak_hour', 'is_weekend', 'is_holiday', 'is_holiday_eve', 'season', 'fossilFreePercentage', 'renewablePercentage', 'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal', 'nuclear', 'wind', 'hydro', 'solar', 'unknown', 'import_SE-SE2', 'export_SE-SE4', 'import_NO-NO1', 'export_NO-NO1', 'import_DK-DK1', 'export_DK-DK1', 'import_FI', 'export_FI', 'import_AX', 'export_AX']
+
+Updating price data...
+
+Updating grid data...
+Successfully updated grid data through 2025-04-07
+
+[2025-04-07 13:20:26] 
+
+
+[2025-04-07 13:20:26] ################################## END OF SCRIPT  2025-04-07 13:20:26 ##################################

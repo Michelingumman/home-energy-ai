@@ -23,7 +23,7 @@ from pathlib import Path
 # Constants
 ENTITY_ID = "solar_generated_power_2"
 RESOLUTION = "hourly"
-OUTPUT_FILE = "merged_cleaned_actual_data.csv"
+OUTPUT_FILE = "ActualSolarProductionData.csv"
 CURRENT_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path("Data/HomeAssistant")
 DOWNLOAD_SCRIPT = Path(__file__).resolve().parents[3] / "download_entity_data_from_HA.py"
@@ -126,11 +126,14 @@ def merge_data(output_path):
         new_data = pd.read_csv(downloaded_file)
         new_data['timestamp'] = pd.to_datetime(new_data['timestamp'], format='ISO8601')
         
-        # Ensure timestamps are timezone-naive
-        if new_data['timestamp'].dt.tz is not None:
-            new_data['timestamp'] = new_data['timestamp'].dt.tz_localize(None)
+        # Check if timestamps have timezone info before converting
+        if hasattr(new_data['timestamp'].dt, 'tz') and new_data['timestamp'].dt.tz is not None:
+            # Convert to local time first, then remove timezone info
+            new_data['timestamp'] = new_data['timestamp'].dt.tz_convert('Europe/Stockholm').dt.tz_localize(None)
             print("Converted new data timestamps to timezone-naive")
-            
+        else:
+            print("Timestamps already timezone-naive, no conversion needed")
+        
         # Transform new data to match the expected format in merged_cleaned_actual_data.csv
         new_data = transform_data_format(new_data)
         
@@ -152,9 +155,11 @@ def merge_data(output_path):
         existing_data['last_changed'] = pd.to_datetime(existing_data['last_changed'], format='ISO8601')
         
         # Ensure timestamps are timezone-naive
-        if existing_data['last_changed'].dt.tz is not None:
+        if hasattr(existing_data['last_changed'].dt, 'tz') and existing_data['last_changed'].dt.tz is not None:
             existing_data['last_changed'] = existing_data['last_changed'].dt.tz_localize(None)
             print("Converted existing data timestamps to timezone-naive")
+        else:
+            print("Existing data timestamps already timezone-naive")
             
         print(f"Loaded {len(existing_data)} rows of existing data")
     except Exception as e:

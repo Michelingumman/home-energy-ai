@@ -66,19 +66,28 @@
         "architecture": {
             "lstm_layers": [
                 {
-                    "units": 256,
+                    "units": 128,
                     "return_sequences": true,
-                    "dropout": 0.2
+                    "dropout": 0.1
                 },
                 {
-                    "units": 128,
+                    "units": 96,
+                    "return_sequences": true,
+                    "dropout": 0.1
+                },
+                {
+                    "units": 64,
                     "return_sequences": false,
-                    "dropout": 0.2
+                    "dropout": 0.1
                 }
             ],
             "dense_layers": [
                 {
-                    "units": 64,
+                    "units": 96,
+                    "activation": "relu"
+                },
+                {
+                    "units": 48,
                     "activation": "relu"
                 },
                 {
@@ -92,7 +101,7 @@
             "window_size": 168,
             "prediction_horizon": 24,
             "batch_size": 32,
-            "max_epochs": 100,
+            "max_epochs": 150,
             "learning_rate": 0.001,
             "optimizer": "adam",
             "loss": "huber",
@@ -103,15 +112,14 @@
         "callbacks": {
             "early_stopping": {
                 "monitor": "val_loss",
-                "patience": 10,
-                "min_delta": 0.001
+                "patience": 15,
+                "restore_best_weights": true
             },
             "reduce_lr": {
                 "monitor": "val_loss",
-                "factor": 0.5,
-                "patience": 5,
-                "min_delta": 0.001,
-                "min_lr": 1e-05
+                "factor": 0.2,
+                "patience": 10,
+                "min_lr": 1e-06
             }
         },
         "data_split": {
@@ -121,26 +129,36 @@
         },
         "scaling": {
             "price_scaler": {
-                "type": "robust",
-                "quantile_range": [
-                    1,
-                    99
-                ]
-            },
-            "grid_scaler": {
-                "type": "robust",
+                "type": "RobustScaler",
                 "quantile_range": [
                     1,
                     99
                 ],
-                "unit_variance": true,
-                "outlier_threshold": 10,
+                "unit_variance": false,
+                "clip_negative": false,
+                "max_reasonable_price": 1000
+            },
+            "price_transform_config": {
+                "enable_log_transform": true,
+                "apply_to_cols": [
+                    "SE3_price_ore"
+                ],
+                "offset": 1.0,
+                "scaling_correction_factor": false
+            },
+            "grid_scaler": {
+                "type": "RobustScaler",
+                "quantile_range": [
+                    1,
+                    99
+                ],
+                "unit_variance": false,
                 "handle_extreme_values": true,
+                "outlier_threshold": 8,
                 "max_zscore": 8,
-                "individual_scaling": true,
-                "log_transform_large_values": true,
-                "signed_log": true,
                 "import_export_cols": [
+                    "powerImportTotal",
+                    "powerExportTotal",
                     "import_SE-SE2",
                     "export_SE-SE4",
                     "import_NO-NO1",
@@ -151,7 +169,9 @@
                     "export_FI",
                     "import_AX",
                     "export_AX"
-                ]
+                ],
+                "log_transform_large_values": true,
+                "individual_scaling": true
             }
         }
     }

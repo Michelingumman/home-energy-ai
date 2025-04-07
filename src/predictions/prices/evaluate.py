@@ -22,7 +22,7 @@ import matplotlib.dates as mdates
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Import the feature config
-from src.predictions.prices.gather_data import FeatureConfig
+from getPriceRelatedData import FeatureConfig
 
 class SimplePriceModelEvaluator:
     def __init__(self):
@@ -283,19 +283,67 @@ class SimplePriceModelEvaluator:
         target_idx = getattr(self, 'target_index', 0)
         logging.info(f"Using target index {target_idx} for inverse transform")
         
+        # Check if we should apply log transform inversion
+        apply_log_inverse = False
+        target_feature = None
+        transform_offset = 1.0
+        
+        # Try to load transformation config
+        try:
+            if hasattr(self, 'feature_config'):
+                # Get target feature name
+                target_feature = self.feature_config.get_target_name()
+                
+                # Get scaling config
+                scaling_config = self.feature_config.get_scaling_params()
+                if scaling_config and 'price_transform_config' in scaling_config:
+                    price_transform = scaling_config['price_transform_config']
+                    if price_transform.get('enable_log_transform', False):
+                        cols_to_transform = price_transform.get('apply_to_cols', [])
+                        if target_feature in cols_to_transform:
+                            apply_log_inverse = True
+                            transform_offset = price_transform.get('offset', 1.0)
+                            logging.info(f"Will apply log inverse transform to {target_feature} with offset {transform_offset}")
+        except Exception as e:
+            logging.warning(f"Could not determine log transform settings: {e}")
+        
         if len(y_scaled.shape) == 1:
             # For 1D array (single sequence of prices)
             dummy = np.zeros((len(y_scaled), len(self.price_scaler.scale_)))
             dummy[:, target_idx] = y_scaled
             result = self.price_scaler.inverse_transform(dummy)[:, target_idx]
             
-            # Apply scaling adjustment - Swedish electricity prices are typically 20-200 öre/kWh
-            # If values are consistently in thousands, apply a correction factor
-            if np.median(result) > 1000:  # Check if values are abnormally high
+            # Check if we need to apply log inverse transform
+            if apply_log_inverse:
+                logging.info("Applying log inverse transform to 1D data")
+                # Check if we need to handle negative values
+                has_negative = (result < 0).any()
+                if has_negative:
+                    # Inverse of signed log transform: sign(x) * (exp(|x|) - offset)
+                    signs = np.sign(result)
+                    abs_vals = np.abs(result)
+                    result = signs * (np.exp(abs_vals) - transform_offset + 1.0)
+                else:
+                    # Standard inverse: exp(x) - offset
+                    result = np.exp(result) - transform_offset + 1.0
+            
+            # Apply max price clipping if configured
+            max_reasonable = 1000  # Default fallback
+            try:
+                if hasattr(self, 'feature_config'):
+                    scaling_config = self.feature_config.get_scaling_params()
+                    if scaling_config and 'price_scaler' in scaling_config:
+                        max_reasonable = scaling_config['price_scaler'].get('max_reasonable_price', 1000)
+            except Exception as e:
+                logging.warning(f"Could not determine max reasonable price: {e}")
+            
+            # Only apply correction if median is truly unreasonable (> max_reasonable)
+            if np.median(result) > max_reasonable:
                 median_price = np.median(result)
                 scaling_factor = median_price / 100  # Aim for a median around 100 öre/kWh
                 result = result / scaling_factor
-                logging.info(f"Applied scaling correction factor of {scaling_factor:.2f} to bring prices to normal range")
+                logging.warning(f"Applied scaling correction factor of {scaling_factor:.2f} to bring prices to normal range")
+                logging.warning("This indicates a potential issue with the scaling process. Check the model training.")
             
             # Log some sample values
             if len(result) > 5:
@@ -319,12 +367,37 @@ class SimplePriceModelEvaluator:
             # Inverse transform
             inverse_flat = self.price_scaler.inverse_transform(dummy)[:, target_idx]
             
-            # Apply scaling adjustment - Swedish electricity prices are typically 20-200 öre/kWh
-            if np.median(inverse_flat) > 1000:  # Check if values are abnormally high
+            # Check if we need to apply log inverse transform
+            if apply_log_inverse:
+                logging.info("Applying log inverse transform to 2D data")
+                # Check if we need to handle negative values
+                has_negative = (inverse_flat < 0).any()
+                if has_negative:
+                    # Inverse of signed log transform: sign(x) * (exp(|x|) - offset)
+                    signs = np.sign(inverse_flat)
+                    abs_vals = np.abs(inverse_flat)
+                    inverse_flat = signs * (np.exp(abs_vals) - transform_offset + 1.0)
+                else:
+                    # Standard inverse: exp(x) - offset
+                    inverse_flat = np.exp(inverse_flat) - transform_offset + 1.0
+            
+            # Apply max price clipping if configured
+            max_reasonable = 1000  # Default fallback
+            try:
+                if hasattr(self, 'feature_config'):
+                    scaling_config = self.feature_config.get_scaling_params()
+                    if scaling_config and 'price_scaler' in scaling_config:
+                        max_reasonable = scaling_config['price_scaler'].get('max_reasonable_price', 1000)
+            except Exception as e:
+                logging.warning(f"Could not determine max reasonable price: {e}")
+                
+            # Only apply correction if median is truly unreasonable (> max_reasonable)
+            if np.median(inverse_flat) > max_reasonable:
                 median_price = np.median(inverse_flat)
                 scaling_factor = median_price / 100  # Aim for a median around 100 öre/kWh
                 inverse_flat = inverse_flat / scaling_factor
-                logging.info(f"Applied scaling correction factor of {scaling_factor:.2f} to bring prices to normal range")
+                logging.warning(f"Applied scaling correction factor of {scaling_factor:.2f} to bring prices to normal range")
+                logging.warning("This indicates a potential issue with the scaling process. Check the model training.")
             
             # Reshape back to original structure
             result = inverse_flat.reshape(num_sequences, seq_length)

@@ -94,15 +94,11 @@ from src.predictions.prices.feature_config import FeatureConfig
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class PriceModelTrainer:
-    def __init__(self, window_size=None, scaler_type="minmax", train_from_all_data=False):
-        """Initialize trainer with project paths and scaler type
+    def __init__(self, window_size=None, train_from_all_data=False):
+        """Initialize trainer with project paths and default settings
         
         Args:
             window_size (int): Size of the input window
-            scaler_type (str): Type of scaler to use ('minmax', 'standard', 'robust')
-                - minmax: MinMaxScaler(feature_range=(-1, 1)), preserves relative magnitudes
-                - standard: StandardScaler(), normalizes to mean=0, std=1
-                - robust: RobustScaler(), scales using statistics robust to outliers
             train_from_all_data (bool): If True, uses all data for training without test split
         """
         # Load feature configuration
@@ -150,12 +146,11 @@ class PriceModelTrainer:
         if not self.train_from_all_data:
             self.test_data_dir.mkdir(parents=True, exist_ok=True)
         
-        # Initialize scalers based on type
-        self.scaler_type = scaler_type
+        # Initialize scalers
         self._initialize_scalers()
     
     def _initialize_scalers(self):
-        """Initialize the appropriate scalers based on scaler_type and config"""
+        """Initialize the appropriate scalers based on config"""
         # Try to get scaling parameters from config if available
         scaling_config = None
         try:
@@ -163,63 +158,162 @@ class PriceModelTrainer:
         except (AttributeError, KeyError):
             logging.warning("Could not load scaling parameters from config, using defaults")
         
-        if self.scaler_type == "minmax":
-            self.price_scaler = MinMaxScaler(feature_range=(-1, 1))  # Symmetric range for price variations
-            self.grid_scaler = MinMaxScaler(feature_range=(-1, 1))
-            logging.info("Using MinMaxScaler: Better preserves relative magnitudes of price spikes")
-        elif self.scaler_type == "standard":
-            self.price_scaler = StandardScaler()
-            self.grid_scaler = StandardScaler()
-            logging.info("Using StandardScaler: Normalizes features to mean=0, std=1")
-        elif self.scaler_type == "robust":
-            # Get price scaler parameters from config or use defaults
-            price_quantile_range = (1, 99)
-            if scaling_config and 'price_scaler' in scaling_config:
-                try:
-                    price_cfg_range = scaling_config['price_scaler'].get('quantile_range', (1, 99))
-                    # Ensure quantile_range is a tuple
-                    price_quantile_range = tuple(price_cfg_range) if isinstance(price_cfg_range, list) else price_cfg_range
-                except Exception as e:
-                    logging.warning(f"Error loading price scaler config: {e}")
+        # Price scaler config
+        if scaling_config and 'price_scaler' in scaling_config:
+            price_scaler_type = scaling_config['price_scaler'].get('type', 'MinMaxScaler')
+            logging.info(f"Using price scaler from config: {price_scaler_type}")
             
-            self.price_scaler = RobustScaler(quantile_range=price_quantile_range)
-            logging.info(f"Price scaler: RobustScaler with quantile_range={price_quantile_range}")
-            
-            # Get grid scaler parameters from config or use enhanced defaults
-            grid_quantile_range = (1, 99)
-            unit_variance = True
-            if scaling_config and 'grid_scaler' in scaling_config:
-                try:
-                    grid_cfg_range = scaling_config['grid_scaler'].get('quantile_range', (1, 99))
-                    # Ensure quantile_range is a tuple
-                    grid_quantile_range = tuple(grid_cfg_range) if isinstance(grid_cfg_range, list) else grid_cfg_range
-                    unit_variance = scaling_config['grid_scaler'].get('unit_variance', True)
-                except Exception as e:
-                    logging.warning(f"Error loading grid scaler config: {e}")
-            
-            # Use enhanced parameters for grid scaler to handle high-magnitude import/export values
-            self.grid_scaler = RobustScaler(quantile_range=grid_quantile_range, unit_variance=unit_variance)
-            logging.info(f"Grid scaler: RobustScaler with quantile_range={grid_quantile_range}, unit_variance={unit_variance}")
-            
-            # Store additional outlier handling parameters
-            if scaling_config and 'grid_scaler' in scaling_config:
-                try:
-                    self.outlier_threshold = scaling_config['grid_scaler'].get('outlier_threshold', 10)
-                    self.handle_extreme_values = scaling_config['grid_scaler'].get('handle_extreme_values', True)
-                    logging.info(f"Grid outlier handling: threshold={self.outlier_threshold}, enabled={self.handle_extreme_values}")
-                except Exception as e:
-                    logging.warning(f"Error loading grid outlier config: {e}")
-                    self.outlier_threshold = 10
-                    self.handle_extreme_values = True
+            if price_scaler_type == 'MinMaxScaler':
+                # Get feature range from config or use default
+                feature_range = scaling_config['price_scaler'].get('feature_range', (-1, 1))
+                # Ensure feature_range is a tuple (scikit-learn requirement)
+                if isinstance(feature_range, list):
+                    feature_range = tuple(feature_range)
+                    logging.info(f"Converted feature_range from list to tuple: {feature_range}")
+                self.price_scaler = MinMaxScaler(feature_range=feature_range)
+                logging.info(f"Using MinMaxScaler with feature_range={feature_range} for prices")
+            elif price_scaler_type == 'RobustScaler':
+                # Get price scaler parameters from config
+                price_quantile_range = scaling_config['price_scaler'].get('quantile_range', (0, 100))
+                # Ensure quantile_range is a tuple
+                if isinstance(price_quantile_range, list):
+                    price_quantile_range = tuple(price_quantile_range)
+                    logging.info(f"Converted quantile_range from list to tuple: {price_quantile_range}")
+                unit_variance = scaling_config['price_scaler'].get('unit_variance', True)
+                self.price_scaler = RobustScaler(quantile_range=price_quantile_range, unit_variance=unit_variance)
+                logging.info(f"Using RobustScaler with quantile_range={price_quantile_range}, unit_variance={unit_variance} for prices")
+            elif price_scaler_type == 'StandardScaler':
+                self.price_scaler = StandardScaler()
+                logging.info("Using StandardScaler for prices")
             else:
-                self.outlier_threshold = 10
-                self.handle_extreme_values = True
+                # Default to MinMaxScaler if the type is not recognized
+                self.price_scaler = MinMaxScaler(feature_range=(-1, 1))
+                logging.info(f"Unknown price scaler type '{price_scaler_type}', using MinMaxScaler with feature_range=(-1, 1)")
         else:
-            raise ValueError(f"Unknown scaler type: {self.scaler_type}. Must be one of: minmax, standard, robust")
+            # Default to MinMaxScaler if no config is available
+            self.price_scaler = MinMaxScaler(feature_range=(-1, 1))
+            logging.info("No price scaler config found, using MinMaxScaler with feature_range=(-1, 1)")
+            
+        # Store additional price scaler settings
+        if scaling_config and 'price_scaler' in scaling_config:
+            self.clip_negative = scaling_config['price_scaler'].get('clip_negative', False)
+            self.max_reasonable_price = scaling_config['price_scaler'].get('max_reasonable_price', 1500)
+        else:
+            self.clip_negative = False
+            self.max_reasonable_price = 1500
+            
+        # Initialize price transformation settings from config
+        self.price_transform_config = {}
+        if scaling_config and 'price_transform_config' in scaling_config:
+            self.price_transform_config = scaling_config['price_transform_config']
+            if self.price_transform_config.get('enable_log_transform', False):
+                cols_to_transform = self.price_transform_config.get('apply_to_cols', [])
+                transform_offset = self.price_transform_config.get('offset', 1.0)
+                logging.info(f"Enabling log transformation for price columns: {cols_to_transform} with offset {transform_offset}")
+        
+        # Grid scaler config
+        if scaling_config and 'grid_scaler' in scaling_config:
+            grid_scaler_type = scaling_config['grid_scaler'].get('type', 'RobustScaler')
+            logging.info(f"Using grid scaler from config: {grid_scaler_type}")
+            
+            if grid_scaler_type == 'RobustScaler':
+                # Get grid scaler parameters from config or use enhanced defaults
+                grid_quantile_range = scaling_config['grid_scaler'].get('quantile_range', (1, 99))
+                # Ensure quantile_range is a tuple
+                if isinstance(grid_quantile_range, list):
+                    grid_quantile_range = tuple(grid_quantile_range)
+                    logging.info(f"Converted grid quantile_range from list to tuple: {grid_quantile_range}")
+                unit_variance = scaling_config['grid_scaler'].get('unit_variance', False)
+                self.grid_scaler = RobustScaler(quantile_range=grid_quantile_range, unit_variance=unit_variance)
+                logging.info(f"Using RobustScaler with quantile_range={grid_quantile_range}, unit_variance={unit_variance} for grid features")
+            elif grid_scaler_type == 'MinMaxScaler':
+                feature_range = scaling_config['grid_scaler'].get('feature_range', (-1, 1))
+                # Ensure feature_range is a tuple
+                if isinstance(feature_range, list):
+                    feature_range = tuple(feature_range)
+                    logging.info(f"Converted grid feature_range from list to tuple: {feature_range}")
+                self.grid_scaler = MinMaxScaler(feature_range=feature_range)
+                logging.info(f"Using MinMaxScaler with feature_range={feature_range} for grid features")
+            elif grid_scaler_type == 'StandardScaler':
+                self.grid_scaler = StandardScaler()
+                logging.info("Using StandardScaler for grid features")
+            else:
+                # Default to RobustScaler if the type is not recognized
+                self.grid_scaler = RobustScaler(quantile_range=(1, 99), unit_variance=False)
+                logging.info(f"Unknown grid scaler type '{grid_scaler_type}', using RobustScaler with quantile_range=(1, 99), unit_variance=False")
+        else:
+            # Default to RobustScaler if no config is available
+            self.grid_scaler = RobustScaler(quantile_range=(1, 99), unit_variance=False)
+            logging.info("No grid scaler config found, using RobustScaler with quantile_range=(1, 99), unit_variance=False")
+                
+        # Store additional outlier handling parameters
+        if scaling_config and 'grid_scaler' in scaling_config:
+            try:
+                self.outlier_threshold = scaling_config['grid_scaler'].get('outlier_threshold', 8)
+                self.handle_extreme_values = scaling_config['grid_scaler'].get('handle_extreme_values', True)
+                self.max_zscore = scaling_config['grid_scaler'].get('max_zscore', 8)
+                self.import_export_cols = scaling_config['grid_scaler'].get('import_export_cols', [])
+                self.log_transform_large_values = scaling_config['grid_scaler'].get('log_transform_large_values', True)
+                self.individual_scaling = scaling_config['grid_scaler'].get('individual_scaling', True)
+                logging.info(f"Grid outlier handling: threshold={self.outlier_threshold}, enabled={self.handle_extreme_values}")
+                logging.info(f"Grid advanced settings: max_zscore={self.max_zscore}, log_transform={self.log_transform_large_values}, individual_scaling={self.individual_scaling}")
+            except Exception as e:
+                logging.warning(f"Error loading grid outlier config: {e}")
+                self.outlier_threshold = 8
+                self.handle_extreme_values = True
+                self.max_zscore = 8
+                self.import_export_cols = []
+                self.log_transform_large_values = True
+                self.individual_scaling = True
+        else:
+            self.outlier_threshold = 8
+            self.handle_extreme_values = True
+            self.max_zscore = 8
+            self.import_export_cols = []
+            self.log_transform_large_values = True
+            self.individual_scaling = True
     
     def get_required_features(self):
         """List all required features for the model"""
         return self.feature_config.get_ordered_features()
+    
+    def find_matching_features(self, df, required_features):
+        """
+        Find available features that match the required features.
+        If an exact match doesn't exist, try to find one with the same prefix.
+        
+        Args:
+            df: DataFrame with actual columns
+            required_features: List of feature names from config
+            
+        Returns:
+            Dict mapping required feature names to actual column names
+        """
+        feature_map = {}
+        df_columns = df.columns.tolist()
+        
+        for feature in required_features:
+            if feature in df_columns:
+                # Exact match
+                feature_map[feature] = feature
+            else:
+                # Try to find close matches
+                # 1. Check for prefix match
+                prefix_matches = [col for col in df_columns if col.startswith(feature.split('_')[0])]
+                # 2. Check for semantic match (e.g., price -> SE3_price_ore)
+                semantic_matches = [col for col in df_columns if feature.split('_')[0].lower() in col.lower()]
+                
+                if prefix_matches:
+                    logging.info(f"Using {prefix_matches[0]} as substitute for {feature}")
+                    feature_map[feature] = prefix_matches[0]
+                elif semantic_matches:
+                    logging.info(f"Using {semantic_matches[0]} as substitute for {feature}")
+                    feature_map[feature] = semantic_matches[0]
+                else:
+                    # No match found - this will be handled by the caller
+                    feature_map[feature] = None
+        
+        return feature_map
     
     def load_data(self):
         """Load and prepare the processed data"""
@@ -248,7 +342,7 @@ class PriceModelTrainer:
         
         # Load grid features
         grid_df = pd.read_csv(
-            self.project_root / "data/processed/SwedenGridFake.csv",
+            self.project_root / "data/processed/SwedenGrid.csv",
             index_col=0
         )
         grid_df.index = pd.to_datetime(grid_df.index)
@@ -297,6 +391,7 @@ class PriceModelTrainer:
         df = df.ffill().bfill()
         
         logging.info(f"Final dataset shape: {df.shape}")
+        logging.info(f"Available columns: {sorted(df.columns.tolist())}")
         
         return df
 
@@ -321,41 +416,202 @@ class PriceModelTrainer:
             X: Scaled feature matrix
             y: Target values
         """
-        # Make sure necessary features exist
-        if self.feature_config.missing_columns(df):
-            missing = self.feature_config.missing_columns(df)
-            raise ValueError(f"Missing required columns: {missing}")
-            
-        # Get features and target
-        X = df[self.feature_config.get_all_feature_names()].copy()
-        y = df[self.feature_config.get_target_name()].values.reshape(-1, 1)
+        # Check for missing columns and available price columns
+        target_name = self.feature_config.get_target_name()
+        if target_name not in df.columns:
+            logging.warning(f"Target column '{target_name}' not found in dataframe")
+            # Try to find a suitable price column
+            price_cols = [col for col in df.columns if 'price' in col.lower()]
+            if price_cols:
+                new_target = price_cols[0]
+                logging.info(f"Using '{new_target}' as target column instead")
+                # Update feature_config
+                self.feature_config.metadata['target_feature'] = new_target
+                target_name = new_target
+            else:
+                raise ValueError(f"No suitable price column found in dataframe. Available columns: {sorted(df.columns.tolist())}")
+        
+        # Add specialized features for morning and evening peak hours
+        logging.info("Adding specialized features for better spike prediction")
+        
+        # Create dataframe copy to avoid modifying the original
+        df_enhanced = df.copy()
+        
+        # Add hour-of-day indicator to improve temporal patterns
+        df_enhanced['hour'] = df_enhanced.index.hour
+        
+        # Add peak hour multipliers to better capture morning and evening price spikes
+        # Morning peak (7-9am)
+        df_enhanced['morning_peak'] = df_enhanced.index.hour.isin([7, 8, 9]).astype(float)
+        
+        # Evening peak (17-20pm)
+        df_enhanced['evening_peak'] = df_enhanced.index.hour.isin([17, 18, 19, 20]).astype(float)
+        
+        # Calculate price momentum features using robust methods that avoid division by zero
+        # For price_momentum_1h, use difference instead of percentage for stability
+        prices = df_enhanced[target_name].values
+        
+        # For 1-hour momentum, use simple difference normalized by recent average price
+        # This avoids division by zero when calculating percentages
+        diffs_1h = np.zeros_like(prices)
+        diffs_1h[1:] = prices[1:] - prices[:-1]
+        
+        # Get average prices over last week to normalize differences (avoid division by zero)
+        avg_prices = df_enhanced[target_name].rolling(168, min_periods=1).mean().bfill().values
+        # Use a minimum value to avoid division by very small numbers
+        avg_prices = np.maximum(avg_prices, 10.0)  # Minimum average price of 10 öre/kWh 
+        
+        # Normalize differences by average price
+        df_enhanced['price_momentum_1h'] = diffs_1h / avg_prices
+        
+        # For 24-hour momentum, use the same approach
+        diffs_24h = np.zeros_like(prices)
+        diffs_24h[24:] = prices[24:] - prices[:-24]
+        df_enhanced['price_momentum_24h'] = diffs_24h / avg_prices
+        
+        # Create spike indicators
+        mean_price = df_enhanced[target_name].rolling(168).mean().fillna(df_enhanced[target_name].mean())
+        std_price = df_enhanced[target_name].rolling(168).std().fillna(df_enhanced[target_name].std())
+        
+        # Recent spike indicator (1 if price was >2 std above mean in past 24h, else 0)
+        spike_threshold = mean_price + 2 * std_price
+        df_enhanced['recent_spike'] = df_enhanced[target_name].rolling(24).max().fillna(0) > spike_threshold
+        df_enhanced['recent_spike'] = df_enhanced['recent_spike'].astype(float)
+        
+        # Add price differential to nearest extremes, using robust methods
+        # Use rolling max with fillna to prevent division by zero
+        day_high = df_enhanced[target_name].rolling(24).max().fillna(df_enhanced[target_name])
+        day_low = df_enhanced[target_name].rolling(24).min().fillna(df_enhanced[target_name])
+        
+        # Ensure minimum values for denominators
+        day_high = np.maximum(day_high.values, 10.0)  # Minimum of 10 öre/kWh
+        day_low = np.maximum(day_low.values, 10.0)    # Minimum of 10 öre/kWh
+        
+        df_enhanced['price_vs_day_high'] = prices / day_high
+        df_enhanced['price_vs_day_low'] = prices / day_low
+        
+        # Replace any potential infinities or NaNs with zeros
+        for col in ['price_momentum_1h', 'price_momentum_24h', 'price_vs_day_high', 'price_vs_day_low']:
+            df_enhanced[col] = df_enhanced[col].replace([np.inf, -np.inf, np.nan], 0)
+        
+        # Fill NaN values that might be introduced
+        df_enhanced = df_enhanced.fillna(0)
+        
+        # Make sure the enhanced dataframe has all the original columns plus the new ones
+        all_columns = list(df.columns) + [
+            'hour', 'morning_peak', 'evening_peak', 
+            'price_momentum_1h', 'price_momentum_24h', 
+            'recent_spike', 'price_vs_day_high', 'price_vs_day_low'
+        ]
+        
+        # Log the new features
+        logging.info(f"Added spike prediction features: {[col for col in all_columns if col not in df.columns]}")
+        logging.info("Feature value ranges after calculation:")
+        for col in ['price_momentum_1h', 'price_momentum_24h', 'price_vs_day_high', 'price_vs_day_low']:
+            stats = df_enhanced[col].describe()
+            # Safe way to access describe stats that works with all pandas versions
+            mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
+            std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
+            min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
+            max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
+            logging.info(f"  {col}: min={min_val:.4f}, max={max_val:.4f}, mean={mean_val:.4f}, std={std_val:.4f}")
+        
+        # Get features and target from the enhanced dataframe
+        X = df_enhanced[[col for col in all_columns if col != target_name and col in df_enhanced.columns]].copy()
+        y = df_enhanced[target_name].values.reshape(-1, 1)
             
         # Log pre-scaling feature statistics
         price_cols = self.feature_config.get_price_cols()
+        price_cols = [col for col in price_cols if col in X.columns]  # Filter to only include existing columns
+        
         if price_cols:
             logging.info("Price feature statistics before scaling:")
             for col in price_cols:
                 if col in X.columns:
                     stats = X[col].describe()
-                    logging.info(f"{col}: mean={stats['mean']:.3f}, std={stats['std']:.3f}, min={stats['min']:.3f}, max={stats['max']:.3f}")
+                    # Safe way to access describe stats that works with all pandas versions
+                    mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
+                    std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
+                    min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
+                    max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
+                    logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
         
         grid_cols = self.feature_config.get_grid_cols()
+        grid_cols = [col for col in grid_cols if col in X.columns]  # Filter to only include existing columns
+        
         if grid_cols:
             logging.info("Grid feature statistics before scaling:")
             for col in grid_cols:
                 if col in X.columns:
                     stats = X[col].describe()
-                    logging.info(f"{col}: mean={stats['mean']:.3f}, std={stats['std']:.3f}, min={stats['min']:.3f}, max={stats['max']:.3f}")
+                    # Safe way to access describe stats that works with all pandas versions
+                    mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
+                    std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
+                    min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
+                    max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
+                    logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
         
         # Get scaling configuration
         scaling_config = self.feature_config.get_scaling_params()
         grid_scaling_config = scaling_config.get("grid_scaler", {}) if scaling_config else {}
         
-        # Identify import/export columns which need special handling
-        import_export_cols = grid_scaling_config.get("import_export_cols", [])
-        should_log_transform = grid_scaling_config.get("log_transform_large_values", False)
+        # Check if we should apply log transformation to price features
+        if hasattr(self, 'price_transform_config') and self.price_transform_config.get('enable_log_transform', False):
+            cols_to_transform = self.price_transform_config.get('apply_to_cols', [])
+            cols_to_transform = [col for col in cols_to_transform if col in X.columns]  # Filter to only include existing columns
+            transform_offset = self.price_transform_config.get('offset', 1.0)
+            
+            if cols_to_transform:
+                logging.info(f"Applying log transformation to price columns: {cols_to_transform}")
+                for col in cols_to_transform:
+                    if col in X.columns:
+                        # Save original stats for comparison
+                        stats = X[col].describe()
+                        # Safe way to access describe stats that works with all pandas versions
+                        orig_mean = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
+                        orig_std = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
+                        orig_min = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
+                        orig_max = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
+                        
+                        # Check if column has negative values
+                        has_negative = (X[col] < 0).any()
+                        
+                        if has_negative:
+                            # Apply signed log transform: sign(x) * log(|x| + offset)
+                            logging.warning(f"Column {col} has negative values (min={orig_min:.3f}). Using signed log transform.")
+                            signs = np.sign(X[col])
+                            abs_vals = np.abs(X[col])
+                            X[col] = signs * np.log1p(abs_vals + transform_offset - 1.0)  # log1p(x) = log(1+x)
+                        else:
+                            # Standard log transform: log(x + offset)
+                            X[col] = np.log1p(X[col] + transform_offset - 1.0)  # Ensure log1p operates on x + offset - 1
+                        
+                        # Log transformation results
+                        new_stats = X[col].describe()
+                        # Safe way to access describe stats that works with all pandas versions
+                        new_mean = new_stats.loc['mean'] if hasattr(new_stats, 'loc') else new_stats['mean']
+                        new_std = new_stats.loc['std'] if hasattr(new_stats, 'loc') else new_stats['std']
+                        new_min = new_stats.loc['min'] if hasattr(new_stats, 'loc') else new_stats['min']
+                        new_max = new_stats.loc['max'] if hasattr(new_stats, 'loc') else new_stats['max']
+                        logging.info(f"Log-transformed {col}: original(mean={orig_mean:.3f}, std={orig_std:.3f}, min={orig_min:.3f}, max={orig_max:.3f}) → "
+                                    f"transformed(mean={new_mean:.3f}, std={new_std:.3f}, min={new_min:.3f}, max={new_max:.3f})")
+
+        # Handle grid features first - identify import/export columns which need special handling
+        import_export_cols = []
+        if hasattr(self, 'import_export_cols'):
+            import_export_cols = self.import_export_cols
+        else:
+            import_export_cols = grid_scaling_config.get("import_export_cols", [])
+        
+        import_export_cols = [col for col in import_export_cols if col in X.columns]  # Filter to only include existing columns
         
         # Apply log transformation to import/export features if enabled
+        should_log_transform = False
+        if hasattr(self, 'log_transform_large_values'):
+            should_log_transform = self.log_transform_large_values
+        else:
+            should_log_transform = grid_scaling_config.get("log_transform_large_values", False)
+        
         if should_log_transform and import_export_cols:
             logging.info("Applying log transformation to high-magnitude import/export features")
             for col in import_export_cols:
@@ -365,9 +621,11 @@ class PriceModelTrainer:
                     min_val = X[col].min()
                     
                     # Save original values for logging
-                    orig_mean = X[col].mean()
-                    orig_std = X[col].std()
-                    orig_max = X[col].max()
+                    stats = X[col].describe()
+                    # Safe way to access describe stats that works with all pandas versions
+                    orig_mean = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
+                    orig_std = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
+                    orig_max = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
                     orig_min = min_val
                     
                     if has_negative:
@@ -382,35 +640,67 @@ class PriceModelTrainer:
                     
                     # Log the transformation effect
                     new_stats = X[col].describe()
+                    # Safe way to access describe stats that works with all pandas versions
+                    new_mean = new_stats.loc['mean'] if hasattr(new_stats, 'loc') else new_stats['mean']
+                    new_std = new_stats.loc['std'] if hasattr(new_stats, 'loc') else new_stats['std']
+                    new_min = new_stats.loc['min'] if hasattr(new_stats, 'loc') else new_stats['min']
+                    new_max = new_stats.loc['max'] if hasattr(new_stats, 'loc') else new_stats['max']
                     logging.info(f"Log-transformed {col}: original(mean={orig_mean:.3f}, std={orig_std:.3f}, "
                                 f"min={orig_min:.3f}, max={orig_max:.3f}) → "
-                                f"transformed(mean={new_stats['mean']:.3f}, std={new_stats['std']:.3f}, "
-                                f"min={new_stats['min']:.3f}, max={new_stats['max']:.3f})")
+                                f"transformed(mean={new_mean:.3f}, std={new_std:.3f}, "
+                                f"min={new_min:.3f}, max={new_max:.3f})")
         
-        # Scale price features
-        if price_cols:
-            price_features = X[price_cols].copy()
+        # Apply clipping to negative price values if configured
+        if hasattr(self, 'clip_negative') and self.clip_negative and price_cols:
+            logging.info("Clipping negative price values to 0")
+            for col in price_cols:
+                if col in X.columns:
+                    neg_count = (X[col] < 0).sum()
+                    if neg_count > 0:
+                        logging.info(f"Clipping {neg_count} negative values in {col}")
+                        X.loc[X[col] < 0, col] = 0.0
+        
+        # Scale price features (make sure all columns exist)
+        existing_price_cols = [col for col in price_cols if col in X.columns]
+        if existing_price_cols:
+            price_features = X[existing_price_cols].copy()
             # Fix: Convert list to tuple for RobustScaler
             if hasattr(self.price_scaler, 'quantile_range') and isinstance(self.price_scaler.quantile_range, list):
                 self.price_scaler.quantile_range = tuple(self.price_scaler.quantile_range)
-            X.loc[:, price_cols] = self.price_scaler.fit_transform(price_features)
+            X.loc[:, existing_price_cols] = self.price_scaler.fit_transform(price_features)
+            
+            # Log sample of scaled price values
+            logging.info("Sample of scaled price values:")
+            sample_idx = min(5, len(X))
+            for col in existing_price_cols:
+                if col in X.columns:
+                    logging.info(f"{col} (scaled): {X[col].iloc[:sample_idx].values}")
         
         # Handle grid features with special care for import/export values
-        if grid_cols:
-            grid_features = X[grid_cols].copy()
+        existing_grid_cols = [col for col in grid_cols if col in X.columns]
+        if existing_grid_cols:
+            grid_features = X[existing_grid_cols].copy()
             
             # Handle extreme outliers if enabled
-            if hasattr(self, 'handle_extreme_values') and self.handle_extreme_values:
+            handle_extreme = False
+            if hasattr(self, 'handle_extreme_values'):
+                handle_extreme = self.handle_extreme_values
+            else:
+                handle_extreme = grid_scaling_config.get("handle_extreme_values", False)
+                
+            if handle_extreme:
                 # Log maximum values before capping
                 extreme_values = []
-                for col in grid_cols:
+                max_zscore = self.max_zscore if hasattr(self, 'max_zscore') else grid_scaling_config.get("max_zscore", 8)
+                
+                for col in existing_grid_cols:
                     if col in grid_features.columns:
                         col_max = grid_features[col].max()
+                        col_mean = grid_features[col].mean()
                         col_std = grid_features[col].std()
                         if col_std > 0:
-                            z_score_max = (col_max - grid_features[col].mean()) / col_std
-                            threshold = grid_scaling_config.get("max_zscore", 8)
-                            if z_score_max > threshold:
+                            z_score_max = (col_max - col_mean) / col_std
+                            if z_score_max > max_zscore:
                                 extreme_values.append((col, col_max, z_score_max))
                 
                 if extreme_values:
@@ -419,29 +709,38 @@ class PriceModelTrainer:
                         logging.warning(f"{col}: max={max_val:.2f}, z-score={z_score:.2f}")
                     
                     # Cap extreme values using winsorization
-                    for col in grid_cols:
+                    for col in existing_grid_cols:
                         if col in grid_features.columns:
                             mean = grid_features[col].mean()
                             std = grid_features[col].std()
                             if std > 0:  # Avoid division by zero
-                                threshold = grid_scaling_config.get("max_zscore", 8)
-                                upper_bound = mean + threshold * std
+                                upper_bound = mean + max_zscore * std
+                                lower_bound = mean - max_zscore * std
                                 if grid_features[col].max() > upper_bound:
-                                    count_capped = (grid_features[col] > upper_bound).sum()
-                                    if count_capped > 0:
-                                        logging.info(f"Capping {count_capped} extreme values in {col} at {upper_bound:.2f}")
+                                    count_capped_upper = (grid_features[col] > upper_bound).sum()
+                                    if count_capped_upper > 0:
+                                        logging.info(f"Capping {count_capped_upper} high extreme values in {col} at {upper_bound:.2f}")
                                         grid_features.loc[grid_features[col] > upper_bound, col] = upper_bound
+                                if grid_features[col].min() < lower_bound:
+                                    count_capped_lower = (grid_features[col] < lower_bound).sum()
+                                    if count_capped_lower > 0:
+                                        logging.info(f"Capping {count_capped_lower} low extreme values in {col} at {lower_bound:.2f}")
+                                        grid_features.loc[grid_features[col] < lower_bound, col] = lower_bound
             
             # Check if we should use individual scaling for grid columns
-            individual_scaling = grid_scaling_config.get("individual_scaling", False)
+            use_individual_scaling = False
+            if hasattr(self, 'individual_scaling'):
+                use_individual_scaling = self.individual_scaling
+            else:
+                use_individual_scaling = grid_scaling_config.get("individual_scaling", False)
             
-            if individual_scaling:
+            if use_individual_scaling:
                 logging.info("Using individual scaling for grid features")
-                for col in grid_cols:
+                for col in existing_grid_cols:
                     if col in grid_features.columns:
                         try:
                             # Create a new scaler for each column
-                            quantile_range = tuple(grid_scaling_config.get("quantile_range", (1, 99)))
+                            quantile_range = tuple(grid_scaling_config.get("quantile_range", (0, 100)))
                             unit_variance = grid_scaling_config.get("unit_variance", True)
                             col_scaler = RobustScaler(quantile_range=quantile_range, unit_variance=unit_variance)
                             X.loc[:, col] = col_scaler.fit_transform(grid_features[col].values.reshape(-1, 1))
@@ -453,7 +752,7 @@ class PriceModelTrainer:
                             std = grid_features[col].std() or 1.0  # Avoid division by zero
                             X.loc[:, col] = (grid_features[col] - mean) / std
                             logging.warning(f"Manual standardization applied to {col}")
-        else:
+            else:
                 try:
                     # Fix: Convert list to tuple for RobustScaler
                     if hasattr(self.grid_scaler, 'quantile_range') and isinstance(self.grid_scaler.quantile_range, list):
@@ -461,25 +760,30 @@ class PriceModelTrainer:
                     
                     # Try to scale grid features together
                     scaled_grid = self.grid_scaler.fit_transform(grid_features)
-                    X.loc[:, grid_cols] = scaled_grid
+                    X.loc[:, existing_grid_cols] = scaled_grid
                     
                     # Log post-scaling grid feature statistics
                     logging.info("Grid feature statistics after scaling:")
-                    for i, col in enumerate(grid_cols):
+                    for i, col in enumerate(existing_grid_cols):
                         if col in X.columns:
-                            col_data = X[col]
-                            logging.info(f"{col}: mean={col_data.mean():.3f}, std={col_data.std():.3f}, min={col_data.min():.3f}, max={col_data.max():.3f}")
+                            stats = X[col].describe()
+                            # Safe way to access describe stats that works with all pandas versions
+                            mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
+                            std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
+                            min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
+                            max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
+                            logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
                     
                 except (ValueError, RuntimeError) as e:
                     logging.error(f"Error scaling grid features: {e}")
                     logging.warning("Falling back to individual column scaling for grid features")
                     
                     # Fallback: scale each column individually
-                    for col in grid_cols:
+                    for col in existing_grid_cols:
                         if col in grid_features.columns:
                             try:
                                 # Create a new scaler for each column
-                                quantile_range = tuple(grid_scaling_config.get("quantile_range", (1, 99)))
+                                quantile_range = tuple(grid_scaling_config.get("quantile_range", (0, 100)))
                                 unit_variance = grid_scaling_config.get("unit_variance", True)
                                 col_scaler = RobustScaler(quantile_range=quantile_range, unit_variance=unit_variance)
                                 X.loc[:, col] = col_scaler.fit_transform(grid_features[col].values.reshape(-1, 1))
@@ -492,11 +796,84 @@ class PriceModelTrainer:
                                 X.loc[:, col] = (grid_features[col] - mean) / std
                                 logging.warning(f"Manual standardization applied to {col}")
         
+        # Scale new features added for spike prediction
+        # Handle the momentum features directly with MinMaxScaler, which is more robust to outliers
+        # than RobustScaler for these specific features
+        momentum_features = ['price_momentum_1h', 'price_momentum_24h']
+        momentum_present = [col for col in momentum_features if col in X.columns]
+        
+        if momentum_present:
+            logging.info("Scaling momentum features")
+            try:
+                # Use a simple MinMaxScaler instead of RobustScaler for more stability with momentum features
+                momentum_scaler = MinMaxScaler(feature_range=(-1, 1))
+                X.loc[:, momentum_present] = momentum_scaler.fit_transform(X[momentum_present])
+                logging.info("Successfully scaled momentum features")
+            except Exception as e:
+                logging.warning(f"Error scaling momentum features: {e}")
+                # Fallback to manual scaling
+                for col in momentum_present:
+                    values = X[col].values
+                    abs_max = max(abs(np.nanmin(values)), abs(np.nanmax(values))) or 1.0
+                    X[col] = X[col] / abs_max
+                    logging.info(f"Applied manual scaling to {col}")
+        
+        # Other spike features need less processing
+        spike_features = [
+            'morning_peak', 'evening_peak', 
+            'recent_spike', 'price_vs_day_high', 'price_vs_day_low'
+        ]
+        
+        spike_features_present = [col for col in spike_features if col in X.columns]
+        if spike_features_present:
+            # These binary/ratio features are already in good ranges
+            logging.info("Spike feature statistics after preparation:")
+            for col in spike_features_present:
+                stats = X[col].describe()
+                # Safe way to access describe stats that works with all pandas versions
+                mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
+                std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
+                min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
+                max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
+                logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
+        
         # Log overall statistics after scaling
         logging.info("Feature statistics after all scaling:")
         for col in X.columns:
-            stats = X[col].describe()
-            logging.info(f"{col}: mean={stats['mean']:.3f}, std={stats['std']:.3f}, min={stats['min']:.3f}, max={stats['max']:.3f}")
+            try:
+                stats = X[col].describe()
+                # Safe way to access describe stats that works with all pandas versions
+                mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
+                std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
+                min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
+                max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
+                logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
+            except Exception as e:
+                logging.warning(f"Unable to log statistics for {col}: {e}")
+                logging.info(f"{col}: Sample values = {X[col].iloc[:5].values}")
+        
+        # Further validation - check for NaNs or infinities in numeric columns only
+        # Get numeric columns to avoid TypeError with string columns
+        numeric_cols = X.select_dtypes(include=np.number).columns.tolist()
+        
+        # Check for NaNs
+        nan_cols = X[numeric_cols].columns[X[numeric_cols].isna().any()].tolist()
+        if nan_cols:
+            logging.error(f"Found NaN values in columns after scaling: {nan_cols}")
+            # Try to fix NaNs with fillna
+            X = X.fillna(0)
+            logging.warning("NaNs have been replaced with zeros")
+            
+        # Check for inf values - only on numeric columns
+        numeric_X = X[numeric_cols]
+        inf_mask = np.isinf(numeric_X)
+        inf_cols = numeric_X.columns[inf_mask.any()].tolist()
+        
+        if inf_cols:
+            logging.error(f"Found infinite values in columns after scaling: {inf_cols}")
+            # Try to replace infinities with large but finite values
+            X.loc[:, inf_cols] = X.loc[:, inf_cols].replace([np.inf, -np.inf], [1e6, -1e6])
+            logging.warning("Infinite values have been replaced with +/-1e6")
         
         return X, y
     
@@ -559,6 +936,48 @@ class PriceModelTrainer:
         learning_rate = training_params.get("learning_rate", 0.001)
         loss = training_params.get("loss", "huber")
         metrics = training_params.get("metrics", ["mae"])
+        
+        # Define custom asymmetric loss function that penalizes underprediction more than overprediction
+        # This helps the model better predict price spikes which are important for decision making
+        def asymmetric_huber_loss(y_true, y_pred, delta=1.0, asymmetry_factor=2.0):
+            """Custom asymmetric Huber loss that penalizes underprediction more heavily
+            
+            Args:
+                y_true: Ground truth values
+                y_pred: Predicted values
+                delta: Threshold for switching between MSE and MAE (as in Huber loss)
+                asymmetry_factor: Factor to multiply loss when underpredicting (y_pred < y_true)
+            """
+            import tensorflow as tf
+            error = y_true - y_pred
+            is_underpredict = tf.cast(tf.less(y_pred, y_true), tf.float32)
+            
+            # Calculate absolute error
+            abs_error = tf.abs(error)
+            
+            # Standard Huber loss calculation
+            huber_loss = tf.where(
+                abs_error <= delta,
+                0.5 * tf.square(error),  # MSE for small errors
+                delta * (abs_error - 0.5 * delta)  # MAE for large errors
+            )
+            
+            # Apply asymmetry factor to underpredictions
+            asymmetric_factor = 1.0 + (asymmetry_factor - 1.0) * is_underpredict
+            weighted_loss = huber_loss * asymmetric_factor
+            
+            return tf.reduce_mean(weighted_loss)
+        
+        # Use the custom loss function if specified in config
+        use_asymmetric_loss = training_params.get("use_asymmetric_loss", True)
+        if use_asymmetric_loss and loss == "huber":
+            # Custom loss with partial application to set default parameters
+            from functools import partial
+            asymmetry_factor = training_params.get("asymmetry_factor", 2.0)
+            custom_loss = partial(asymmetric_huber_loss, asymmetry_factor=asymmetry_factor)
+            custom_loss.__name__ = 'asymmetric_huber_loss'  # Required for Keras
+            logging.info(f"Using asymmetric Huber loss with asymmetry factor: {asymmetry_factor}")
+            loss = custom_loss
         
         # Compile model
         model.compile(
@@ -1380,8 +1799,6 @@ def main():
     parser = argparse.ArgumentParser(description='Train electricity price prediction model using LSTM architecture')
     parser.add_argument('mode', choices=['production', 'evaluation'], 
                         help='Training mode: "production" uses all data for deployment, "evaluation" creates train/validation/test split for model assessment without running evaluation')
-    parser.add_argument('--scaler', default='robust', choices=['robust', 'minmax', 'standard'],
-                        help='Type of scaler to use: "robust" (handles outliers), "minmax" (preserves magnitude), "standard" (normalizes to mean=0, std=1)')
     parser.add_argument('--window', type=int, default=None,
                         help='Override window size (past hours to use for prediction). Default is from config.')
     args = parser.parse_args()
@@ -1391,11 +1808,10 @@ def main():
     
     # Log the training mode
     logging.info(f"\n=== Training {args.mode.capitalize()} Model ===")
-    logging.info(f"Using {args.scaler} scaler")
     logging.info(f"Training with {'all available' if train_from_all_data else 'train/val/test split'} data")
     
     # Initialize and train the model
-    trainer = PriceModelTrainer(window_size=args.window, scaler_type=args.scaler, train_from_all_data=train_from_all_data)
+    trainer = PriceModelTrainer(window_size=args.window, train_from_all_data=train_from_all_data)
     
     # Train the model
     model, history, dates = trainer.run_training()

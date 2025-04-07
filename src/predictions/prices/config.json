@@ -65,11 +65,13 @@
     "model_config": {
         "architecture": {
             "lstm_layers": [
+                {"units": 512, "return_sequences": true, "dropout": 0.2},
                 {"units": 256, "return_sequences": true, "dropout": 0.2},
                 {"units": 128, "return_sequences": false, "dropout": 0.2}
             ],
             "dense_layers": [
-                {"units": 64, "activation": "relu"},
+                {"units": 192, "activation": "relu"},
+                {"units": 96, "activation": "relu"},
                 {"units": 24, "activation": null}
             ],
             "output_units": 24
@@ -78,24 +80,23 @@
             "window_size": 168,
             "prediction_horizon": 24,
             "batch_size": 32,
-            "max_epochs": 100,
+            "max_epochs": 200,
             "learning_rate": 0.001,
             "optimizer": "adam",
             "loss": "huber",
-            "metrics": ["mae"]
+            "metrics": ["mse", "mae"]
         },
         "callbacks": {
             "early_stopping": {
                 "monitor": "val_loss",
-                "patience": 10,
-                "min_delta": 0.001
+                "patience": 20,
+                "restore_best_weights": true
             },
             "reduce_lr": {
                 "monitor": "val_loss",
                 "factor": 0.5,
-                "patience": 5,
-                "min_delta": 0.001,
-                "min_lr": 0.00001
+                "patience": 10,
+                "min_lr": 1e-6
             }
         },
         "data_split": {
@@ -105,20 +106,27 @@
         },
         "scaling": {
             "price_scaler": {
-                "type": "robust",
-                "quantile_range": [1, 99]
+                "type": "MinMaxScaler",
+                "feature_range": [-1, 1],
+                "clip_negative": false,
+                "max_reasonable_price": 1500
+            },
+            "price_transform_config": {
+                "enable_log_transform": false,
+                "apply_to_cols": [],
+                "offset": 1.0,
+                "scaling_correction_factor": false
             },
             "grid_scaler": {
-                "type": "robust",
+                "type": "RobustScaler",
                 "quantile_range": [1, 99],
-                "unit_variance": true,
-                "outlier_threshold": 10,
+                "unit_variance": false,
                 "handle_extreme_values": true,
+                "outlier_threshold": 8,
                 "max_zscore": 8,
-                "individual_scaling": true,
-                "log_transform_large_values": true,
-                "signed_log": true,
                 "import_export_cols": [
+                    "powerImportTotal",
+                    "powerExportTotal",
                     "import_SE-SE2",
                     "export_SE-SE4",
                     "import_NO-NO1",
@@ -129,7 +137,9 @@
                     "export_FI",
                     "import_AX",
                     "export_AX"
-                ]
+                ],
+                "log_transform_large_values": true,
+                "individual_scaling": true
             }
         }
     }

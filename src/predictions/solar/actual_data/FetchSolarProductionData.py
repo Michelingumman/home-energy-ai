@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Constants
-ENTITY_ID = "solar_generated_power_2"
+ENTITY_ID = "sensor.solar_generated_power_2"
 RESOLUTION = "hourly"
 OUTPUT_FILE = "ActualSolarProductionData.csv"
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -114,8 +114,9 @@ def download_new_data(days):
 
 def merge_data(output_path):
     """Merge new data with existing data"""
-    # Path to the downloaded data
-    downloaded_file = DATA_DIR / f"{ENTITY_ID}_{RESOLUTION}.csv"
+    # Path to the downloaded data - extract entity name without domain for filename
+    entity_name = ENTITY_ID.split(".", 1)[1] if "." in ENTITY_ID else ENTITY_ID
+    downloaded_file = DATA_DIR / f"{entity_name}_{RESOLUTION}.csv"
     
     if not downloaded_file.exists():
         print(f"Downloaded data file not found: {downloaded_file}")
@@ -188,8 +189,8 @@ def transform_data_format(data):
     # Rename timestamp column to last_changed
     data = data.rename(columns={'timestamp': 'last_changed'})
     
-    # Add entity_id column
-    data['entity_id'] = f"sensor.{ENTITY_ID}"
+    # Add entity_id column - use the full entity ID
+    data['entity_id'] = ENTITY_ID
     
     # Reorder columns to match the expected format
     data = data[['entity_id', 'state', 'last_changed']]

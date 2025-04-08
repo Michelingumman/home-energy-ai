@@ -59,8 +59,11 @@ class TimeFeatureGenerator:
         """Generate binary and categorical time features."""
         logging.info("Generating binary and categorical features")
         
-        # Peak hours (6:00-22:00)
-        self.df['is_peak_hour'] = ((self.df.index.hour >= 6) & (self.df.index.hour <= 22)).astype(int)
+        # Morning peak hours (6:00-9:00)
+        self.df['is_morning_peak'] = ((self.df.index.hour >= 6) & (self.df.index.hour <= 9)).astype(int)
+        
+        # Evening peak hours (17:00-20:00)
+        self.df['is_evening_peak'] = ((self.df.index.hour >= 17) & (self.df.index.hour <= 20)).astype(int)
         
         # Weekend indicator
         self.df['is_weekend'] = (self.df.index.dayofweek >= 5).astype(int)

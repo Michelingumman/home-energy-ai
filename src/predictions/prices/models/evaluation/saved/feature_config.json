@@ -40,7 +40,8 @@
             "month_cos"
         ],
         "binary_cols": [
-            "is_peak_hour",
+            "is_morning_peak",
+            "is_evening_peak",
             "is_weekend",
             "is_holiday",
             "is_holiday_eve",
@@ -68,22 +69,17 @@
                 {
                     "units": 128,
                     "return_sequences": true,
-                    "dropout": 0.1
-                },
-                {
-                    "units": 96,
-                    "return_sequences": true,
-                    "dropout": 0.1
+                    "dropout": 0.2
                 },
                 {
                     "units": 64,
                     "return_sequences": false,
-                    "dropout": 0.1
+                    "dropout": 0.2
                 }
             ],
             "dense_layers": [
                 {
-                    "units": 96,
+                    "units": 48,
                     "activation": "relu"
                 },
                 {
@@ -97,27 +93,35 @@
             ],
             "output_units": 24
         },
+        "feature_weights": {
+            "price_cols": 1.0,
+            "cyclical_cols": 2.0,
+            "binary_cols": 2.0,
+            "grid_cols": 0.5,
+            "enable_weighting": true
+        },
         "training": {
             "window_size": 168,
             "prediction_horizon": 24,
             "batch_size": 32,
-            "max_epochs": 150,
+            "max_epochs": 200,
             "learning_rate": 0.001,
             "optimizer": "adam",
             "loss": "huber",
             "metrics": [
+                "mse",
                 "mae"
             ]
         },
         "callbacks": {
             "early_stopping": {
                 "monitor": "val_loss",
-                "patience": 15,
+                "patience": 20,
                 "restore_best_weights": true
             },
             "reduce_lr": {
                 "monitor": "val_loss",
-                "factor": 0.2,
+                "factor": 0.5,
                 "patience": 10,
                 "min_lr": 1e-06
             }
@@ -129,20 +133,17 @@
         },
         "scaling": {
             "price_scaler": {
-                "type": "RobustScaler",
-                "quantile_range": [
-                    1,
-                    99
+                "type": "MinMaxScaler",
+                "feature_range": [
+                    -1,
+                    1
                 ],
-                "unit_variance": false,
                 "clip_negative": false,
-                "max_reasonable_price": 1000
+                "max_reasonable_price": 400
             },
             "price_transform_config": {
-                "enable_log_transform": true,
-                "apply_to_cols": [
-                    "SE3_price_ore"
-                ],
+                "enable_log_transform": false,
+                "apply_to_cols": [],
                 "offset": 1.0,
                 "scaling_correction_factor": false
             },

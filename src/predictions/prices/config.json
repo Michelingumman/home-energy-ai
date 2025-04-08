@@ -40,7 +40,8 @@
             "month_cos"
         ],
         "binary_cols": [
-            "is_peak_hour",
+            "is_morning_peak",
+            "is_evening_peak",
             "is_weekend",
             "is_holiday",
             "is_holiday_eve",
@@ -65,16 +66,22 @@
     "model_config": {
         "architecture": {
             "lstm_layers": [
-                {"units": 512, "return_sequences": true, "dropout": 0.2},
-                {"units": 256, "return_sequences": true, "dropout": 0.2},
-                {"units": 128, "return_sequences": false, "dropout": 0.2}
+                {"units": 128, "return_sequences": true, "dropout": 0.2},
+                {"units": 64, "return_sequences": false, "dropout": 0.2}
             ],
             "dense_layers": [
-                {"units": 192, "activation": "relu"},
-                {"units": 96, "activation": "relu"},
+                {"units": 48, "activation": "relu"},
+                {"units": 48, "activation": "relu"},
                 {"units": 24, "activation": null}
             ],
             "output_units": 24
+        },
+        "feature_weights": {
+            "price_cols": 1.0,
+            "cyclical_cols": 2.0,
+            "binary_cols": 2.0,
+            "grid_cols": 0.5,
+            "enable_weighting": true
         },
         "training": {
             "window_size": 168,
@@ -109,7 +116,7 @@
                 "type": "MinMaxScaler",
                 "feature_range": [-1, 1],
                 "clip_negative": false,
-                "max_reasonable_price": 1500
+                "max_reasonable_price": 400
             },
             "price_transform_config": {
                 "enable_log_transform": false,

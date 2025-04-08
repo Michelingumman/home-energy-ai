@@ -24,7 +24,7 @@ Usage:
 5. Combine options:
    python download_entity_data_from_HA.py --entity entity_id --days 10 --res hourly
    
-All entity IDs should be provided without the 'sensor.' prefix as the script will add it automatically.
+All entity IDs should be provided with their full domain prefix (e.g., 'sensor.temperature', 'binary_sensor.motion', 'device_tracker.phone').
 
 Output:
 -------
@@ -97,14 +97,14 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.RawDescriptionHelpFormatter,
     epilog="""
 Examples:
-    python download_entity_data_from_HA.py --entity solar_power_hourly_average --days 1
-    python download_entity_data_from_HA.py --entity electricity_consumption --days 7 --res hourly
-    python download_entity_data_from_HA.py --entity water_consumption --days 30 --res daily
-    python download_entity_data_from_HA.py --entity temperature --days 14
+    python download_entity_data_from_HA.py --entity sensor.solar_power_hourly_average --days 1
+    python download_entity_data_from_HA.py --entity sensor.electricity_consumption --days 7 --res hourly
+    python download_entity_data_from_HA.py --entity binary_sensor.water_consumption --days 30 --res daily
+    python download_entity_data_from_HA.py --entity device_tracker.temperature --days 14
     """
 )
-parser.add_argument('--entity', type=str, default='solar_power_hourly_average',
-                    help='Entity ID to fetch data for (without the "sensor." prefix)')
+parser.add_argument('--entity', type=str, default='sensor.solar_power_hourly_average',
+                    help='Full entity ID to fetch data for (including domain prefix like sensor., binary_sensor., etc.)')
 parser.add_argument('--days', type=int, default=1,
                     help='Number of days to look back from today (default: 1 day)')
 parser.add_argument('--res', type=str, choices=['raw', 'hourly', 'daily'], default='raw',
@@ -152,12 +152,12 @@ try:
 
     print(f"Current date and time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Requesting data for: {days_back} days (from {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')})")
-    print(f"Entity: sensor.{entity_id}")
+    print(f"Entity: {entity_id}")
     print(f"Resolution: {resolution}")
 
     # Build the URL for the history API with explicit start and end times
     # We disable minimal_response and significant_changes_only to get ALL data points
-    url = f"{ha_url}/api/history/period/{start_iso}?end_time={end_iso}&filter_entity_id=sensor.{entity_id}&minimal_response=false&significant_changes_only=false"
+    url = f"{ha_url}/api/history/period/{start_iso}?end_time={end_iso}&filter_entity_id={entity_id}&minimal_response=false&significant_changes_only=false"
     print(f"Request URL: {url}")
 
     headers = {
@@ -175,7 +175,7 @@ try:
         print(f"API data length: {len(data) if isinstance(data, list) else 'not a list'}")
         
         if not data or len(data) == 0:
-            print(f"No data returned for entity: sensor.{entity_id}")
+            print(f"No data returned for entity: {entity_id}")
             sys.exit(0)
             
         else:
@@ -335,7 +335,9 @@ try:
                 output_dir = Path("Data/HomeAssistant")
                 output_dir.mkdir(exist_ok=True)
                 
-                output_filename = f'{entity_id}{"_hourly" if resolution == "hourly" else ""}{"_daily" if resolution == "daily" else ""}.csv'
+                # Extract entity name without domain for file naming
+                entity_name = entity_id.split(".", 1)[1] if "." in entity_id else entity_id
+                output_filename = f'{entity_name}{"_hourly" if resolution == "hourly" else ""}{"_daily" if resolution == "daily" else ""}.csv'
                 output_file = output_dir / output_filename
                 
                 # Ensure timezone consistency for saving

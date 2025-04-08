@@ -67,7 +67,14 @@ class FeatureConfig:
             "training": {},
             "callbacks": {},
             "data_split": {"train_ratio": 0.8, "val_ratio": 0.1, "test_ratio": 0.1},
-            "scaling": {}
+            "scaling": {},
+            "feature_weights": {
+                "price_cols": 1.0,
+                "cyclical_cols": 1.0,
+                "binary_cols": 1.0,
+                "grid_cols": 1.0,
+                "enable_weighting": False
+            }
         }
     
     def get_price_cols(self):
@@ -112,6 +119,25 @@ class FeatureConfig:
             return [target] + all_features
         
         return all_features
+    
+    def get_feature_weights(self):
+        """Get feature weights from config"""
+        default_weights = {
+            'price_cols': 1.0,
+            'cyclical_cols': 1.0,
+            'binary_cols': 1.0,
+            'grid_cols': 1.0,
+            'enable_weighting': False
+        }
+        
+        # Get feature weights from model_config
+        feature_weights = self.model_config.get("feature_weights", {})
+        
+        # Merge with defaults
+        weights = default_weights.copy()
+        weights.update(feature_weights)
+        
+        return weights
     
     def missing_columns(self, df):
         """Check for missing required columns in the dataframe."""

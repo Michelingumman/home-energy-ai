@@ -93,6 +93,111 @@ from src.predictions.prices.feature_config import FeatureConfig
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Add this new FeatureWeightingLayer
+class FeatureWeightingLayer(tf.keras.layers.Layer):
+    def __init__(self, feature_weights, feature_config=None, **kwargs):
+        """
+        Custom layer to apply feature weights directly to the input
+        
+        Args:
+            feature_weights: Dictionary mapping feature groups to weight values
+                            e.g. {'price_cols': 1.0, 'cyclical_cols': 2.0, 'binary_cols': 2.0, 'grid_cols': 0.5}
+            feature_config: FeatureConfig object (optional, can be set later)
+        """
+        super(FeatureWeightingLayer, self).__init__(**kwargs)
+        self.feature_weights = feature_weights
+        self.feature_config = feature_config
+        self.weight_array = None
+        
+    def build(self, input_shape):
+        # Initialize weights for each feature
+        # Shape: [1, 1, input_shape[2]] to broadcast across all samples and timesteps
+        self.w = self.add_weight(
+            shape=(1, 1, input_shape[2]),
+            initializer=tf.keras.initializers.Ones(),
+            trainable=False,
+            name='feature_weights'
+        )
+        
+        # Set weights if feature_config is available
+        if self.feature_config is not None:
+            self._set_weights_from_feature_groups()
+            
+        super(FeatureWeightingLayer, self).build(input_shape)
+        
+    def call(self, inputs):
+        # Multiply inputs by weights
+        return inputs * self.w
+    
+    def get_config(self):
+        config = super(FeatureWeightingLayer, self).get_config()
+        config.update({
+            "feature_weights": self.feature_weights,
+            # Don't serialize the feature_config object
+        })
+        return config
+    
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+    
+    def set_feature_config(self, feature_config):
+        """Set the feature config object"""
+        self.feature_config = feature_config
+        if self.built:
+            self._set_weights_from_feature_groups()
+            
+    def _set_weights_from_feature_groups(self):
+        """
+        Set the actual weight values based on feature groups and their weights
+        """
+        if self.feature_config is None:
+            logging.warning("Cannot set weights: feature_config is None")
+            return
+            
+        all_features = self.feature_config.get_all_feature_names()
+        weight_array = np.ones(len(all_features))
+        
+        # Keep track of which features have been assigned weights
+        assigned_features = set()
+        
+        # Set weights based on feature groups
+        for group, weight in self.feature_weights.items():
+            # Skip the enable_weighting flag
+            if group == 'enable_weighting':
+                continue
+                
+            # Get the feature list for this group
+            if hasattr(self.feature_config, f"get_{group}"):
+                # Use the specific getter method if available
+                group_features = getattr(self.feature_config, f"get_{group}")()
+            elif hasattr(self.feature_config, "feature_groups") and group in self.feature_config.feature_groups:
+                # Access feature_groups dictionary directly
+                group_features = self.feature_config.feature_groups[group]
+            else:
+                logging.warning(f"Feature group '{group}' not found, skipping weighting")
+                continue
+                
+            for feature in group_features:
+                if feature in all_features:
+                    idx = all_features.index(feature)
+                    weight_array[idx] = weight
+                    assigned_features.add(feature)
+        
+        # Log unassigned features
+        unassigned = set(all_features) - assigned_features
+        if unassigned:
+            logging.warning(f"Features without assigned weights (using default 1.0): {unassigned}")
+        
+        # Set the layer weights
+        self.weight_array = weight_array
+        weights = [weight_array.reshape(1, 1, -1)]
+        self.set_weights(weights)
+        
+        # Log the applied weights for verification
+        feature_weight_map = {feature: weight_array[i] for i, feature in enumerate(all_features)}
+        logging.info(f"Applied feature weights: {feature_weight_map}")
+
 class PriceModelTrainer:
     def __init__(self, window_size=None, train_from_all_data=False):
         """Initialize trainer with project paths and default settings
@@ -125,29 +230,33 @@ class PriceModelTrainer:
         #       └── test_data/ - Test data for evaluation
         self.models_dir = Path(__file__).resolve().parent / "models"
         
-        # Create specific paths based on training mode
-        if self.train_from_all_data:
-            # Production model paths
-            self.model_dir = self.models_dir / "production"
-            self.saved_dir = self.model_dir / "saved"
-            self.logs_dir = self.model_dir / "logs"
+        # Set model and data dirs based on whether we're training a production or evaluation model
+        if train_from_all_data:
+            self.model_dir = self.models_dir / "production" 
             self.model_name = "price_model_production.keras"
         else:
-            # Evaluation model paths
             self.model_dir = self.models_dir / "evaluation"
-            self.saved_dir = self.model_dir / "saved"
-            self.logs_dir = self.model_dir / "logs"
-            self.test_data_dir = self.model_dir / "test_data"
             self.model_name = "price_model_evaluation.keras"
+            
+        # Create necessary directories
+        self.saved_dir = self.model_dir / "saved"
+        self.logs_dir = self.model_dir / "logs"
         
-        # Create directories
+        if not train_from_all_data:
+            self.test_data_dir = self.model_dir / "test_data"
+            self.test_data_dir.mkdir(parents=True, exist_ok=True)
+        
         self.saved_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
-        if not self.train_from_all_data:
-            self.test_data_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize scalers
         self._initialize_scalers()
+        
+        # Get feature weights from config
+        self.feature_weights = self.feature_config.get_feature_weights()
+        
+        logging.info(f"Initialized trainer with window_size={self.window_size}, train_from_all_data={train_from_all_data}")
+        logging.info(f"Using feature weights: {self.feature_weights}")
     
     def _initialize_scalers(self):
         """Initialize the appropriate scalers based on config"""
@@ -893,8 +1002,23 @@ class PriceModelTrainer:
             {"units": 24, "activation": None}
         ])
         
-        # Build LSTM layers
+        # Only use feature weighting if enabled in config
         x = inputs
+        if self.feature_weights.get('enable_weighting', False):
+            logging.info("Feature weighting enabled - applying weights to input features")
+            # Create feature weighting layer with feature config
+            feature_weighting_layer = FeatureWeightingLayer(
+                feature_weights=self.feature_weights,
+                feature_config=self.feature_config,
+                name='feature_weighting'
+            )
+            
+            # Apply feature weighting layer
+            x = feature_weighting_layer(inputs)
+        else:
+            logging.info("Feature weighting disabled - using original features")
+        
+        # Build LSTM layers
         for i, layer in enumerate(lstm_layers):
             return_sequences = layer.get("return_sequences", False)
             dropout_rate = layer.get("dropout", 0)

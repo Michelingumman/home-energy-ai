@@ -24,7 +24,43 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Import the feature config
 from getPriceRelatedData import FeatureConfig
 
-class SimplePriceModelEvaluator:
+# Import the custom layer from the training module
+try:
+    from train import FeatureWeightingLayer
+    custom_layer_loaded = True
+except ImportError:
+    logging.warning("Could not import FeatureWeightingLayer. Full model loading may fail.")
+    custom_layer_loaded = False
+
+# Define the asymmetric Huber loss function 
+def asymmetric_huber_loss(y_true, y_pred, delta=1.0, asymmetry_factor=2.0):
+    """Custom asymmetric Huber loss that penalizes underprediction more heavily"""
+    import tensorflow as tf
+    error = y_true - y_pred
+    is_underpredict = tf.cast(tf.less(y_pred, y_true), tf.float32)
+    
+    # Calculate absolute error
+    abs_error = tf.abs(error)
+    
+    # Standard Huber loss calculation
+    huber_loss = tf.where(
+        abs_error <= delta,
+        0.5 * tf.square(error),  # MSE for small errors
+        delta * (abs_error - 0.5 * delta)  # MAE for large errors
+    )
+    
+    # Apply asymmetry factor to underpredictions
+    asymmetric_factor = 1.0 + (asymmetry_factor - 1.0) * is_underpredict
+    weighted_loss = huber_loss * asymmetric_factor
+    
+    return tf.reduce_mean(weighted_loss)
+
+# Create a specific version with asymmetry factor 2.0 to match the trained model
+def asymmetric_huber_loss_2_0(y_true, y_pred):
+    """Version of asymmetric Huber loss with asymmetry factor fixed at 2.0"""
+    return asymmetric_huber_loss(y_true, y_pred, delta=1.0, asymmetry_factor=2.0)
+
+class PriceModelEvaluator:
     def __init__(self):
         """Initialize the evaluator with model paths and data"""
         # Set up paths
@@ -34,20 +70,20 @@ class SimplePriceModelEvaluator:
         self.saved_dir = self.eval_dir / "saved"
         self.test_data_dir = self.eval_dir / "test_data"
         self.results_dir = self.eval_dir / "results"
-        self.simple_viz_dir = self.results_dir / "simple_visualizations"
+        self.viz_dir = self.results_dir / "visualizations"
         
         # Create results directory
         self.results_dir.mkdir(parents=True, exist_ok=True)
-        self.simple_viz_dir.mkdir(parents=True, exist_ok=True)
+        self.viz_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize feature config
         self.feature_config = FeatureConfig()
         
-        # Load model, scalers, and test data
-        self.load_model_and_data()
+        # Load test data
+        self.load_test_data()
         
-        # Initialize dataframes to store full predictions
-        self.predictions_df = None
+        # Load model - will raise an error if it fails
+        self.try_load_model()
         
         # Colors for consistent plotting
         self.colors = {
@@ -55,302 +91,133 @@ class SimplePriceModelEvaluator:
             'predicted': '#ff7f0e',  # orange
         }
     
-    def load_model_and_data(self):
-        """Load the evaluation model, scalers, and test data"""
+    def load_test_data(self):
+        """Load test data (X_test, y_test, timestamps)"""
         try:
-            # Load model and scalers
-            self.model = tf.keras.models.load_model(self.saved_dir / "price_model_evaluation.keras")
+            logging.info("Loading test data...")
+            self.X_test = np.load(self.test_data_dir / "X_test.npy")
+            self.y_test = np.load(self.test_data_dir / "y_test.npy") 
+            self.timestamps = pd.to_datetime(
+                np.load(self.test_data_dir / "test_timestamps.npy", allow_pickle=True)
+            )
+            
+            # Load the scalers
             self.price_scaler = joblib.load(self.saved_dir / "price_scaler.save")
             self.grid_scaler = joblib.load(self.saved_dir / "grid_scaler.save")
             
-            # Load the target index information if available
-            self.target_index = 0  # Default to first column
-            try:
-                if (self.saved_dir / "target_info.json").exists():
-                    with open(self.saved_dir / "target_info.json", 'r') as f:
-                        target_info = json.load(f)
-                        self.target_index = target_info.get("target_index", 0)
-                        logging.info(f"Loaded target index {self.target_index} for {target_info.get('target_feature', 'unknown')}")
-                else:
-                    # Try to load from config
-                    with open(Path(__file__).resolve().parent / "config.json", 'r') as f:
-                        config = json.load(f)
-                        target_feature = config.get("feature_metadata", {}).get("target_feature")
-                        if target_feature:
-                            price_cols = config.get("feature_groups", {}).get("price_cols", [])
-                            if target_feature in price_cols:
-                                self.target_index = price_cols.index(target_feature)
-                                logging.info(f"Inferred target index {self.target_index} for {target_feature} from config.json")
-            except Exception as e:
-                logging.warning(f"Could not load target index information: {e}. Using default index 0.")
-            
-            # Test the scaler with sample values
-            try:
-                test_val = np.array([100.0])  # A typical price value
-                dummy = np.zeros((1, len(self.price_scaler.scale_)))
-                dummy[0, self.target_index] = test_val[0]
-                
-                scaled = self.price_scaler.transform(dummy)[0, self.target_index]
-                inverse_test = self.inverse_transform_prices(np.array([scaled]))
-                
-                logging.info(f"Scaler test: original={test_val[0]}, scaled={scaled}, inverse_transform={inverse_test[0]}")
-                
-                if not np.isclose(test_val[0], inverse_test[0], rtol=1e-3):
-                    logging.warning(f"Price scaler verification issue - output {inverse_test[0]} doesn't match input {test_val[0]}")
-            except Exception as e:
-                logging.error(f"Error testing price scaler: {e}")
-            
-            # Try to load test data files
-            try:
-                self.test_data_dir.mkdir(parents=True, exist_ok=True)
-                
-                # Check if test data files exist
-                test_files_exist = (
-                    (self.test_data_dir / "X_test.npy").exists() and
-                    (self.test_data_dir / "y_test.npy").exists() and
-                    (self.test_data_dir / "test_timestamps.npy").exists()
-                )
-                
-                if test_files_exist:
-                    # Load test data
-                    self.X_test = np.load(self.test_data_dir / "X_test.npy")
-                    self.y_test = np.load(self.test_data_dir / "y_test.npy")
-                    self.test_timestamps = pd.to_datetime(
-                        np.load(self.test_data_dir / "test_timestamps.npy", allow_pickle=True)
-                    )
-                    
-                    # Load validation data 
-                    self.X_val = np.load(self.test_data_dir / "X_val.npy")
-                    self.y_val = np.load(self.test_data_dir / "y_val.npy")
-                    self.val_timestamps = pd.to_datetime(
-                        np.load(self.test_data_dir / "val_timestamps.npy", allow_pickle=True)
-                    )
-                    
-                    logging.info(f"Loaded test data: {len(self.X_test)} samples")
-                    logging.info(f"Loaded validation data: {len(self.X_val)} samples")
-                else:
-                    # Create synthetic data for visualization if test data doesn't exist
-                    logging.warning("Test data files not found. Creating synthetic data for visualization.")
-                    
-                    # Get input shape from model
-                    input_shape = self.model.input_shape
-                    output_shape = self.model.output_shape
-                    
-                    # Create synthetic test data
-                    num_samples = 10
-                    window_size = input_shape[1]
-                    num_features = input_shape[2]
-                    
-                    # Random features (normalized)
-                    self.X_test = np.random.normal(0, 1, (num_samples, window_size, num_features))
-                    
-                    # Generate predictions to see what reasonable y values might be
-                    self.y_test = self.model.predict(self.X_test)
-                    
-                    # Create synthetic timestamps
-                    end_date = datetime.now()
-                    hourly_dates = pd.date_range(end=end_date, periods=num_samples*24, freq='H')
-                    self.test_timestamps = hourly_dates[::24]  # Take every 24th timestamp
-                    
-                    # Create synthetic validation data too
-                    self.X_val = self.X_test.copy()
-                    self.y_val = self.y_test.copy()
-                    self.val_timestamps = self.test_timestamps.copy()
-                    
-                    logging.info(f"Created synthetic test and validation data: {num_samples} samples")
-                    
-                    # Save synthetic data for future use
-                    np.save(self.test_data_dir / "X_test.npy", self.X_test)
-                    np.save(self.test_data_dir / "y_test.npy", self.y_test)
-                    np.save(self.test_data_dir / "test_timestamps.npy", self.test_timestamps)
-                    np.save(self.test_data_dir / "X_val.npy", self.X_val)
-                    np.save(self.test_data_dir / "y_val.npy", self.y_val)
-                    np.save(self.test_data_dir / "val_timestamps.npy", self.val_timestamps)
-                    
-                    logging.info("Saved synthetic data for future use")
-            except Exception as e:
-                logging.error(f"Error loading or creating test data: {e}")
-                raise
-            
-            logging.info("Successfully loaded evaluation model and data")
-            
-            # Also load price data for additional context
-            try:
-                self.price_data = pd.read_csv(
-                    self.project_root / "data/processed/SE3prices.csv",
-                    parse_dates=['HourSE'],
-                    index_col='HourSE'
-                )
-            except:
-                logging.warning("Could not load price data for context. Continuing without it.")
-                self.price_data = None
-                
+            logging.info(f"Loaded test data with {len(self.X_test)} samples")
+            return True
         except Exception as e:
-            logging.error(f"Error loading model or data: {str(e)}")
-            raise
+            logging.error(f"Error loading test data: {str(e)}")
+            return False
     
-    def process_all_predictions(self):
-        """Process predictions and create combined dataframe"""
-        logging.info("Generating predictions for all test and validation data...")
+    def try_load_model(self):
+        """Load the trained model, raising detailed errors if it fails"""
+        logging.info("Loading model...")
         
-        # Predict on test data
-        test_pred = self.model.predict(self.X_test)
-        val_pred = self.model.predict(self.X_val)
+        # Create custom objects dict for the loss function
+        custom_objects = {
+            'asymmetric_huber_loss': asymmetric_huber_loss,
+            'asymmetric_huber_loss_2_0': asymmetric_huber_loss_2_0
+        }
         
-        # Create results dataframe for test data
-        test_actual = self.inverse_transform_prices(self.y_test)
-        test_predicted = self.inverse_transform_prices(test_pred)
+        # Add FeatureWeightingLayer if available
+        if custom_layer_loaded:
+            custom_objects['FeatureWeightingLayer'] = FeatureWeightingLayer
+        else:
+            raise ImportError("Could not import FeatureWeightingLayer. This is required for loading the model.")
         
-        # Create results dataframe for validation data
-        val_actual = self.inverse_transform_prices(self.y_val)
-        val_predicted = self.inverse_transform_prices(val_pred)
-        
-        # Combine test and validation results into one dataframe
-        test_timestamps = pd.to_datetime(np.load(self.test_data_dir / 'test_timestamps.npy', allow_pickle=True))
-        val_timestamps = pd.to_datetime(np.load(self.test_data_dir / 'val_timestamps.npy', allow_pickle=True))
-        
-        # Create individual datasets
-        test_dfs = []
-        val_dfs = []
-        
-        # For each prediction window
-        for i in range(len(test_timestamps)):
-            # Create dates for next 24 hours
-            dates = [test_timestamps[i] + pd.Timedelta(hours=h) for h in range(24)]
-            df = pd.DataFrame({
-                'actual': test_actual[i],
-                'predicted': test_predicted[i],
-                'dataset': 'test'  # Mark as test data
-            }, index=dates)
-            test_dfs.append(df)
-        
-        for i in range(len(val_timestamps)):
-            dates = [val_timestamps[i] + pd.Timedelta(hours=h) for h in range(24)]
-            df = pd.DataFrame({
-                'actual': val_actual[i],
-                'predicted': val_predicted[i],
-                'dataset': 'validation'  # Mark as validation data
-            }, index=dates)
-            val_dfs.append(df)
-        
-        # Combine all dataframes
-        predictions_df = pd.concat(test_dfs + val_dfs)
-        
-        # Make sure all numeric columns have numeric dtypes (not object)
-        for col in ['actual', 'predicted']:
-            predictions_df[col] = pd.to_numeric(predictions_df[col])
+        # First approach: Try to load with compile=False to bypass the partial function issue
+        try:
+            logging.info("Attempting to load model with compile=False...")
+            model_path = self.saved_dir / "price_model_evaluation.keras"
             
-        # Sort by timestamp
-        predictions_df = predictions_df.sort_index()
-        
-        # Add hour of day for later analysis
-        predictions_df['hour'] = predictions_df.index.hour
-        predictions_df['day_of_week'] = predictions_df.index.dayofweek
-        predictions_df['month'] = predictions_df.index.month
-        
-        # Remove duplicate indices if any
-        predictions_df = predictions_df[~predictions_df.index.duplicated(keep='first')]
-        
-        # Store the processed dataframe
-        self.predictions_df = predictions_df
-        
-        total_records = len(predictions_df)
-        logging.info(f"Generated predictions for {total_records} hourly data points")
-        
-        return predictions_df
+            if not model_path.exists():
+                raise FileNotFoundError(f"Model file not found at {model_path}")
+                
+            self.model = tf.keras.models.load_model(
+                model_path,
+                compile=False,
+                custom_objects=custom_objects
+            )
+            
+            logging.info("Model loaded successfully, recompiling with custom loss function...")
+            
+            # Recompile with our custom loss function
+            self.model.compile(
+                optimizer='adam',
+                loss=asymmetric_huber_loss_2_0,  # Use the fixed version with factor 2.0
+                metrics=['mae', 'mse']
+            )
+            
+            # Try to predict one sample to verify
+            _ = self.model.predict(self.X_test[0:1])
+            logging.info("Model prediction test successful")
+            
+            return True
+            
+        except Exception as e:
+            # If the first approach failed, try the standard loading
+            try:
+                logging.info(f"First loading approach failed: {e}")
+                logging.info("Attempting standard model loading...")
+                
+                self.model = tf.keras.models.load_model(
+                    model_path,
+                    custom_objects=custom_objects
+                )
+                
+                # Try to predict one sample to verify
+                _ = self.model.predict(self.X_test[0:1])
+                logging.info("Model prediction test successful")
+                
+                return True
+                
+            except Exception as e2:
+                error_msg = f"Failed to load model: {str(e2)}"
+                logging.error(error_msg)
+                
+                # Get more details from the traceback
+                import traceback
+                tb = traceback.format_exc()
+                logging.error(f"Detailed error:\n{tb}")
+                
+                raise RuntimeError(f"Could not load model: {error_msg}")
+    
+    def generate_predictions(self):
+        """Generate predictions for test data using the loaded model"""
+        if not hasattr(self, 'model'):
+            raise RuntimeError("Model not loaded. Cannot generate predictions.")
+            
+        logging.info("Generating predictions using model...")
+        try:
+            self.y_pred = self.model.predict(self.X_test)
+            
+            # Save predictions
+            np.save(self.test_data_dir / "y_pred.npy", self.y_pred)
+            logging.info(f"Saved predictions to {self.test_data_dir / 'y_pred.npy'}")
+            return self.y_pred
+        except Exception as e:
+            error_msg = f"Failed to generate predictions: {str(e)}"
+            logging.error(error_msg)
+            
+            # Get more details from the traceback
+            import traceback
+            tb = traceback.format_exc()
+            logging.error(f"Detailed error:\n{tb}")
+            
+            raise RuntimeError(f"Failed to generate predictions: {error_msg}")
     
     def inverse_transform_prices(self, y_scaled):
-        """Helper to inverse transform scaled prices
-        
-        Works with either:
-        - 1D array of price values
-        - 2D array where each row contains 24 hourly predictions
-        """
-        # Check the shape of the input
-        y_scaled = np.asarray(y_scaled)  # Ensure numpy array
-        
-        # Handle empty array or None
-        if y_scaled is None or y_scaled.size == 0:
-            return np.array([])
-        
-        # Log some sample scaled values for diagnostics
-        if len(y_scaled) > 5:
-            logging.info(f"Sample scaled values: {y_scaled[:5]}")
-        else:
-            logging.info(f"All scaled values: {y_scaled}")
-            
-        # Use the target_index loaded from the target_info.json file (default is 0)
-        target_idx = getattr(self, 'target_index', 0)
-        logging.info(f"Using target index {target_idx} for inverse transform")
-        
-        # Check if we should apply log transform inversion
-        apply_log_inverse = False
-        target_feature = None
-        transform_offset = 1.0
-        
-        # Try to load transformation config
-        try:
-            if hasattr(self, 'feature_config'):
-                # Get target feature name
-                target_feature = self.feature_config.get_target_name()
-                
-                # Get scaling config
-                scaling_config = self.feature_config.get_scaling_params()
-                if scaling_config and 'price_transform_config' in scaling_config:
-                    price_transform = scaling_config['price_transform_config']
-                    if price_transform.get('enable_log_transform', False):
-                        cols_to_transform = price_transform.get('apply_to_cols', [])
-                        if target_feature in cols_to_transform:
-                            apply_log_inverse = True
-                            transform_offset = price_transform.get('offset', 1.0)
-                            logging.info(f"Will apply log inverse transform to {target_feature} with offset {transform_offset}")
-        except Exception as e:
-            logging.warning(f"Could not determine log transform settings: {e}")
+        """Helper to inverse transform scaled prices"""
+        # Set target index (default is 0)
+        target_idx = 0
         
         if len(y_scaled.shape) == 1:
             # For 1D array (single sequence of prices)
             dummy = np.zeros((len(y_scaled), len(self.price_scaler.scale_)))
             dummy[:, target_idx] = y_scaled
             result = self.price_scaler.inverse_transform(dummy)[:, target_idx]
-            
-            # Check if we need to apply log inverse transform
-            if apply_log_inverse:
-                logging.info("Applying log inverse transform to 1D data")
-                # Check if we need to handle negative values
-                has_negative = (result < 0).any()
-                if has_negative:
-                    # Inverse of signed log transform: sign(x) * (exp(|x|) - offset)
-                    signs = np.sign(result)
-                    abs_vals = np.abs(result)
-                    result = signs * (np.exp(abs_vals) - transform_offset + 1.0)
-                else:
-                    # Standard inverse: exp(x) - offset
-                    result = np.exp(result) - transform_offset + 1.0
-            
-            # Apply max price clipping if configured
-            max_reasonable = 1000  # Default fallback
-            try:
-                if hasattr(self, 'feature_config'):
-                    scaling_config = self.feature_config.get_scaling_params()
-                    if scaling_config and 'price_scaler' in scaling_config:
-                        max_reasonable = scaling_config['price_scaler'].get('max_reasonable_price', 1000)
-            except Exception as e:
-                logging.warning(f"Could not determine max reasonable price: {e}")
-            
-            # Only apply correction if median is truly unreasonable (> max_reasonable)
-            if np.median(result) > max_reasonable:
-                median_price = np.median(result)
-                scaling_factor = median_price / 100  # Aim for a median around 100 öre/kWh
-                result = result / scaling_factor
-                logging.warning(f"Applied scaling correction factor of {scaling_factor:.2f} to bring prices to normal range")
-                logging.warning("This indicates a potential issue with the scaling process. Check the model training.")
-            
-            # Log some sample values
-            if len(result) > 5:
-                logging.info(f"Sample inverse-transformed values: {result[:5]}")
-            else:
-                logging.info(f"All inverse-transformed values: {result}")
-                
             return result
         
         elif len(y_scaled.shape) == 2:
@@ -367,328 +234,354 @@ class SimplePriceModelEvaluator:
             # Inverse transform
             inverse_flat = self.price_scaler.inverse_transform(dummy)[:, target_idx]
             
-            # Check if we need to apply log inverse transform
-            if apply_log_inverse:
-                logging.info("Applying log inverse transform to 2D data")
-                # Check if we need to handle negative values
-                has_negative = (inverse_flat < 0).any()
-                if has_negative:
-                    # Inverse of signed log transform: sign(x) * (exp(|x|) - offset)
-                    signs = np.sign(inverse_flat)
-                    abs_vals = np.abs(inverse_flat)
-                    inverse_flat = signs * (np.exp(abs_vals) - transform_offset + 1.0)
-                else:
-                    # Standard inverse: exp(x) - offset
-                    inverse_flat = np.exp(inverse_flat) - transform_offset + 1.0
-            
-            # Apply max price clipping if configured
-            max_reasonable = 1000  # Default fallback
-            try:
-                if hasattr(self, 'feature_config'):
-                    scaling_config = self.feature_config.get_scaling_params()
-                    if scaling_config and 'price_scaler' in scaling_config:
-                        max_reasonable = scaling_config['price_scaler'].get('max_reasonable_price', 1000)
-            except Exception as e:
-                logging.warning(f"Could not determine max reasonable price: {e}")
-                
-            # Only apply correction if median is truly unreasonable (> max_reasonable)
-            if np.median(inverse_flat) > max_reasonable:
-                median_price = np.median(inverse_flat)
-                scaling_factor = median_price / 100  # Aim for a median around 100 öre/kWh
-                inverse_flat = inverse_flat / scaling_factor
-                logging.warning(f"Applied scaling correction factor of {scaling_factor:.2f} to bring prices to normal range")
-                logging.warning("This indicates a potential issue with the scaling process. Check the model training.")
-            
             # Reshape back to original structure
             result = inverse_flat.reshape(num_sequences, seq_length)
-            
-            # Log some sample values
-            if num_sequences > 0:
-                logging.info(f"Sample inverse-transformed sequence: {result[0]}")
-                
-            return result
+
+            return result / 100 # Convert to öre/kWh
         
         else:
             raise ValueError(f"Unexpected shape for y_scaled: {y_scaled.shape}")
     
-    def create_visualizations(self):
-        """Create simple visualizations for different time periods"""
-        if self.predictions_df is None:
-            self.process_all_predictions()
+    def prepare_dataframe(self):
+        """Process predictions and create dataframe for analysis"""
+        # Generate predictions if needed
+        if not hasattr(self, 'y_pred'):
+            self.generate_predictions()
+        
+        # Convert scaled values back to original range
+        actual = self.inverse_transform_prices(self.y_test)
+        predicted = self.inverse_transform_prices(self.y_pred)
+        
+        # Create a list of dataframes for each prediction window
+        dfs = []
+        
+        # For each prediction window
+        for i in range(len(self.timestamps)):
+            # Create dates for next 24 hours
+            dates = [self.timestamps[i] + pd.Timedelta(hours=h) for h in range(24)]
             
-        plt.rcParams.update({'font.size': 12})
+            # Create dataframe
+            df = pd.DataFrame({
+                'actual': actual[i],
+                'predicted': predicted[i]
+            }, index=dates)
+            dfs.append(df)
         
-        # Create visualizations for different time periods with error handling
-        visualizations = [
-            ('daily', self.plot_daily_comparison),
-            ('weekly', self.plot_weekly_comparison),
-            ('monthly', self.plot_monthly_comparison),
-            ('yearly', self.plot_yearly_comparison)
-        ]
+        # Combine all dataframes
+        combined_df = pd.concat(dfs)
         
-        successful_plots = []
+        # Sort by timestamp
+        combined_df = combined_df.sort_index()
         
-        for viz_name, viz_func in visualizations:
-            try:
-                viz_func()
-                successful_plots.append(viz_name)
-            except Exception as e:
-                logging.warning(f"Failed to generate {viz_name} visualization: {str(e)}")
+        # Add hour, day of week, etc.
+        combined_df['hour'] = combined_df.index.hour
+        combined_df['day_of_week'] = combined_df.index.dayofweek
+        combined_df['month'] = combined_df.index.month
         
-        if successful_plots:
-            logging.info(f"Successfully created visualizations: {', '.join(successful_plots)}")
-            logging.info(f"Visualizations saved to {self.simple_viz_dir}")
-        else:
-            logging.warning("No visualizations were successfully created")
+        # Remove duplicate indices if any
+        combined_df = combined_df[~combined_df.index.duplicated(keep='first')]
+        
+        # Store the processed dataframe
+        self.predictions_df = combined_df
+        
+        return combined_df
     
-    def plot_daily_comparison(self):
-        """Plot comparison of actual vs predicted prices for a few representative days"""
-        try:
-            df = self.predictions_df
+    def calculate_metrics(self):
+        """Calculate evaluation metrics"""
+        if not hasattr(self, 'predictions_df'):
+            self.prepare_dataframe()
             
-            # Find days with complete data (24 hours)
-            day_counts = df.groupby([d.date() for d in df.index]).size()
-            complete_days = day_counts[day_counts == 24].index
-            
-            if len(complete_days) == 0:
-                logging.warning("No complete days found for daily comparison")
-                return
-            
-            # Select representative days (most recent, if possible)
-            days_to_plot = min(4, len(complete_days))
-            selected_days = sorted(complete_days, reverse=True)[:days_to_plot]
-            
-            # Create a figure with subplots for each day
-            fig, axes = plt.subplots(days_to_plot, 1, figsize=(12, 4*days_to_plot))
-            if days_to_plot == 1:
-                axes = [axes]
-            
-            for i, day in enumerate(selected_days):
-                # Use direct comparison of date objects
-                day_data = df[[d.date() == day for d in df.index]].sort_index()
-                
-                ax = axes[i]
-                ax.plot(day_data.index.hour, day_data['actual'], 'o-', 
-                       color=self.colors['actual'], label='Actual', linewidth=2)
-                ax.plot(day_data.index.hour, day_data['predicted'], 's--', 
-                       color=self.colors['predicted'], label='Predicted', linewidth=2)
-                
-                # Highlight morning and evening peak hours
-                ax.axvspan(7, 9, alpha=0.2, color='lightgray')
-                ax.axvspan(17, 20, alpha=0.2, color='lightgray')
-                
-                ax.set_title(f'Day: {day}')
-                ax.set_xlabel('Hour of Day')
-                ax.set_ylabel('Price (öre/kWh)')
-                ax.set_xticks(range(0, 24, 2))
-                ax.grid(True, alpha=0.3)
-                
-                # Only add legend to the first subplot
-                if i == 0:
-                    ax.legend(loc='upper right')
-            
-            plt.tight_layout()
-            plt.savefig(self.simple_viz_dir / "daily_comparison.png", dpi=300)
-            plt.close()
-            
-            logging.info("Daily comparison plot created successfully")
-        except Exception as e:
-            logging.warning(f"Error in daily comparison plot: {str(e)}")
-            plt.close('all')  # Ensure no hanging figures
+        df = self.predictions_df
         
+        # Overall metrics
+        mae = np.mean(np.abs(df['actual'] - df['predicted']))
+        rmse = np.sqrt(np.mean((df['actual'] - df['predicted'])**2))
+        
+        # Avoid division by zero for MAPE
+        mape = np.mean(np.abs((df['actual'] - df['predicted']) / (df['actual'] + 1e-8))) * 100
+        
+        # Print overall metrics
+        logging.info(f"Overall Metrics:")
+        logging.info(f"Mean Absolute Error (MAE): {mae:.2f} öre/kWh")
+        logging.info(f"Root Mean Squared Error (RMSE): {rmse:.2f} öre/kWh")
+        logging.info(f"Mean Absolute Percentage Error (MAPE): {mape:.2f}%")
+        
+        # Calculate metrics by hour of day
+        hourly_metrics = {}
+        for hour in range(24):
+            hour_data = df[df['hour'] == hour]
+            hour_mae = np.mean(np.abs(hour_data['actual'] - hour_data['predicted']))
+            hourly_metrics[hour] = hour_mae
+        
+        # Find worst and best predicted hours
+        worst_hour = max(hourly_metrics, key=hourly_metrics.get)
+        best_hour = min(hourly_metrics, key=hourly_metrics.get)
+        
+        logging.info(f"\nHourly Performance:")
+        logging.info(f"Best predicted hour: {best_hour}:00 (MAE: {hourly_metrics[best_hour]:.2f})")
+        logging.info(f"Worst predicted hour: {worst_hour}:00 (MAE: {hourly_metrics[worst_hour]:.2f})")
+        
+        # Calculate metrics for morning and evening peaks
+        morning_peak = df[(df['hour'] >= 6) & (df['hour'] <= 9)]
+        evening_peak = df[(df['hour'] >= 17) & (df['hour'] <= 20)]
+        
+        morning_mae = np.mean(np.abs(morning_peak['actual'] - morning_peak['predicted']))
+        evening_mae = np.mean(np.abs(evening_peak['actual'] - evening_peak['predicted']))
+        
+        logging.info(f"\nPeak Performance:")
+        logging.info(f"Morning peak (6-9): MAE = {morning_mae:.2f}")
+        logging.info(f"Evening peak (17-20): MAE = {evening_mae:.2f}")
+        
+        return {
+            'overall': {'mae': mae, 'rmse': rmse, 'mape': mape},
+            'hourly': hourly_metrics,
+            'peaks': {'morning': morning_mae, 'evening': evening_mae}
+        }
+    
+    def plot_daily_comparison(self, n_days=4):
+        """Plot comparison of actual vs predicted prices for representative days"""
+        if not hasattr(self, 'predictions_df'):
+            self.prepare_dataframe()
+            
+        df = self.predictions_df
+        
+        # Find days with complete data (24 hours)
+        day_counts = df.groupby(df.index.date).size()
+        complete_days = day_counts[day_counts == 24].index
+        
+        if len(complete_days) == 0:
+            logging.warning("No complete days found for daily comparison")
+            return False
+        
+        # Select representative days (most recent ones)
+        days_to_plot = min(n_days, len(complete_days))
+        selected_days = sorted(complete_days, reverse=True)[:days_to_plot]
+        
+        # Create figure with subplots
+        fig, axes = plt.subplots(days_to_plot, 1, figsize=(12, 4*days_to_plot))
+        if days_to_plot == 1:
+            axes = [axes]  # Make sure axes is iterable
+        
+        for i, day in enumerate(selected_days):
+            # Get data for this day
+            day_data = df[df.index.date == day].sort_index()
+            
+            # Plot actual and predicted prices
+            ax = axes[i]
+            ax.plot(day_data.index.hour, day_data['actual'], 'o-', 
+                   color=self.colors['actual'], label='Actual', linewidth=2)
+            ax.plot(day_data.index.hour, day_data['predicted'], 's--', 
+                   color=self.colors['predicted'], label='Predicted', linewidth=2)
+            
+            # Highlight morning and evening peak hours
+            ax.axvspan(6, 9, alpha=0.2, color='lightgray')
+            ax.axvspan(17, 20, alpha=0.2, color='lightgray')
+            
+            # Set title and labels
+            ax.set_title(f'Day: {day}')
+            ax.set_xlabel('Hour of Day')
+            ax.set_ylabel('Price (öre/kWh)')
+            ax.set_xticks(range(0, 24, 2))
+            ax.grid(True, alpha=0.3)
+            
+            # Add legend to first subplot only
+            if i == 0:
+                ax.legend()
+        
+        plt.tight_layout()
+        plt.savefig(self.viz_dir / "daily_comparison.png", dpi=300)
+        plt.close()
+        
+        logging.info(f"Saved daily comparison plot to {self.viz_dir / 'daily_comparison.png'}")
+        return True
+    
     def plot_weekly_comparison(self):
         """Plot comparison of actual vs predicted prices for a representative week"""
-        try:
-            df = self.predictions_df
+        if not hasattr(self, 'predictions_df'):
+            self.prepare_dataframe()
             
-            # Find a complete week
-            max_date = df.index.max().date()
+        df = self.predictions_df
+        
+        # Find a complete week
+        max_date = df.index.max().date()
+        
+        # Look for a week ending on max_date or earlier
+        for end_date in [max_date - timedelta(days=i) for i in range(14)]:
+            start_date = end_date - timedelta(days=6)
+            mask = (df.index.date >= start_date) & (df.index.date <= end_date)
+            week_data = df[mask]
             
-            # Look for a week ending on max_date or earlier
-            for end_date in [max_date - timedelta(days=i) for i in range(14)]:
-                start_date = end_date - timedelta(days=6)
-                week_data = df[[d.date() >= start_date and d.date() <= end_date for d in df.index]]
-                
-                # Check if we have at least 5 days with some data
-                # Fix: use len(np.unique()) instead of .nunique() on numpy array
-                day_coverage = len(np.unique([d.date() for d in week_data.index]))
-                if day_coverage >= 5 and len(week_data) >= 120:  # At least 5 days with 120 hours total
-                    break
-            else:
-                # If no good week found
-                logging.warning("Could not find a representative week with sufficient data")
-                return
-                
-            # Create the plot
-            fig, ax = plt.subplots(figsize=(14, 6))
-            
-            # Plot the data
-            ax.plot(week_data.index, week_data['actual'], '-', 
-                   color=self.colors['actual'], label='Actual', linewidth=2)
-            ax.plot(week_data.index, week_data['predicted'], '--', 
-                   color=self.colors['predicted'], label='Predicted', linewidth=2)
-            
-            # Shade weekends
-            for date in pd.date_range(start=start_date, end=end_date):
-                if date.dayofweek >= 5:  # Weekend
-                    ax.axvspan(date, date + pd.Timedelta(days=1), alpha=0.2, color='lightgray')
-            
-            # Format the x-axis to show days of week
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%a\n%d %b'))
-            ax.xaxis.set_major_locator(mdates.DayLocator())
-            
-            ax.set_title(f'Week: {start_date} to {end_date}')
-            ax.set_xlabel('Date')
-            ax.set_ylabel('Price (öre/kWh)')
-            ax.grid(True, alpha=0.3)
-            ax.legend()
-            
-            plt.tight_layout()
-            plt.savefig(self.simple_viz_dir / "weekly_comparison.png", dpi=300)
-            plt.close()
-            
-            logging.info("Weekly comparison plot created successfully")
-        except Exception as e:
-            logging.warning(f"Error in weekly comparison plot: {str(e)}")
-            plt.close('all')  # Ensure no hanging figures
+            # Check if we have at least 5 days with data
+            day_coverage = len(np.unique([d.date() for d in week_data.index]))
+            if day_coverage >= 5 and len(week_data) >= 120:  # At least 5 days with 120 hours total
+                break
+        else:
+            # If no good week found
+            logging.warning("Could not find a representative week with sufficient data")
+            return False
+        
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(14, 6))
+        
+        # Plot actual and predicted prices
+        ax.plot(week_data.index, week_data['actual'], '-', 
+               color=self.colors['actual'], label='Actual', linewidth=2)
+        ax.plot(week_data.index, week_data['predicted'], '--', 
+               color=self.colors['predicted'], label='Predicted', linewidth=2)
+        
+        # Shade weekends
+        for date in pd.date_range(start=start_date, end=end_date):
+            if date.dayofweek >= 5:  # Weekend
+                ax.axvspan(date, date + pd.Timedelta(days=1), alpha=0.2, color='lightgray')
+        
+        # Format x-axis
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%a\n%d %b'))
+        ax.xaxis.set_major_locator(mdates.DayLocator())
+        
+        # Set title and labels
+        ax.set_title(f'Week: {start_date} to {end_date}')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Price (öre/kWh)')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        
+        plt.tight_layout()
+        plt.savefig(self.viz_dir / "weekly_comparison.png", dpi=300)
+        plt.close()
+        
+        logging.info(f"Saved weekly comparison plot to {self.viz_dir / 'weekly_comparison.png'}")
+        return True
     
-    def plot_monthly_comparison(self):
-        """Plot comparison of actual vs predicted prices for representative months"""
-        try:
-            df = self.predictions_df
+    def plot_error_distribution(self):
+        """Plot the distribution of prediction errors"""
+        if not hasattr(self, 'predictions_df'):
+            self.prepare_dataframe()
             
-            # Alternative approach that doesn't rely on groupby with index attributes
-            # Extract year and month directly for aggregation
-            years = [d.year for d in df.index]
-            months = [d.month for d in df.index]
-            
-            # Create a temporary dataframe with explicit columns
-            temp_df = pd.DataFrame({
-                'year': years,
-                'month': months,
-                'actual': df['actual'].values,
-                'predicted': df['predicted'].values
-            })
-            
-            # Group by year and month
-            monthly_grouped = temp_df.groupby(['year', 'month']).agg({
-                'actual': 'mean',
-                'predicted': 'mean'
-            })
-            
-            # Reset index to get year and month as columns
-            monthly_data = monthly_grouped.reset_index()
-            
-            # Create proper datetime objects for plotting
-            monthly_data['month_date'] = [datetime(int(row.year), int(row.month), 15) 
-                                        for _, row in monthly_data.iterrows()]
-            
-            # Sort by date
-            monthly_data = monthly_data.sort_values('month_date')
-            
-            # Select the last 12 months if we have that many
-            months_to_show = min(12, len(monthly_data))
-            plot_data = monthly_data.tail(months_to_show)
-            
-            # Create the plot
-            fig, ax = plt.subplots(figsize=(14, 6))
-            
-            # Plot the data
-            ax.plot(plot_data['month_date'], plot_data['actual'], 'o-', 
-                   color=self.colors['actual'], label='Actual', linewidth=2)
-            ax.plot(plot_data['month_date'], plot_data['predicted'], 's--', 
-                   color=self.colors['predicted'], label='Predicted', linewidth=2)
-            
-            # Format x-axis to show month names
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
-            
-            ax.set_title(f'Monthly Average Prices (Last {months_to_show} Months)')
-            ax.set_xlabel('Month')
-            ax.set_ylabel('Average Price (öre/kWh)')
-            ax.grid(True, alpha=0.3)
-            ax.legend()
-            
-            plt.tight_layout()
-            plt.savefig(self.simple_viz_dir / "monthly_comparison.png", dpi=300)
-            plt.close()
-            
-            logging.info("Monthly comparison plot created successfully")
-        except Exception as e:
-            logging.warning(f"Error in monthly comparison plot: {str(e)}")
-            plt.close('all')  # Ensure no hanging figures
+        df = self.predictions_df
+        
+        # Calculate errors
+        errors = df['predicted'] - df['actual']
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Plot error histogram
+        bins = np.linspace(errors.min(), errors.max(), 50)
+        ax.hist(errors, bins=bins, alpha=0.7, color='steelblue')
+        
+        # Add vertical line at zero
+        ax.axvline(x=0, color='r', linestyle='--', alpha=0.7)
+        
+        # Add text with statistics
+        stats_text = f"Mean: {errors.mean():.2f}\n"
+        stats_text += f"Std Dev: {errors.std():.2f}\n"
+        stats_text += f"Min: {errors.min():.2f}\n"
+        stats_text += f"Max: {errors.max():.2f}"
+        
+        ax.text(0.95, 0.95, stats_text, transform=ax.transAxes, 
+               verticalalignment='top', horizontalalignment='right',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        # Set title and labels
+        ax.set_title('Distribution of Prediction Errors')
+        ax.set_xlabel('Error (Predicted - Actual) [öre/kWh]')
+        ax.set_ylabel('Frequency')
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(self.viz_dir / "error_distribution.png", dpi=300)
+        plt.close()
+        
+        logging.info(f"Saved error distribution plot to {self.viz_dir / 'error_distribution.png'}")
+        return True
     
-    def plot_yearly_comparison(self):
-        """Plot comparison of actual vs predicted prices across years"""
-        try:
-            df = self.predictions_df
+    def plot_hourly_performance(self):
+        """Plot model performance by hour of day"""
+        if not hasattr(self, 'predictions_df'):
+            self.prepare_dataframe()
             
-            # Resample to daily data for clearer visualization of long-term trends
-            daily_data = df.resample('D').mean()
-            
-            # Create the plot
-            fig, ax = plt.subplots(figsize=(14, 6))
-            
-            # Plot the data
-            ax.plot(daily_data.index, daily_data['actual'], '-', 
-                   color=self.colors['actual'], label='Actual', linewidth=2)
-            ax.plot(daily_data.index, daily_data['predicted'], '--', 
-                   color=self.colors['predicted'], label='Predicted', linewidth=2)
-            
-            # Add year dividers
-            # Convert years to list to avoid numpy array issues
-            years = sorted(list(set([d.year for d in daily_data.index])))
-            for year in years[1:]:  # Skip the first year divider
-                ax.axvline(pd.Timestamp(f"{year}-01-01"), color='gray', alpha=0.5, linestyle='-')
-                
-            # Format x-axis to show years
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
-            ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))  # Show every 3 months
-            
-            ax.set_title('Long-term Price Trends (Daily Averages)')
-            ax.set_xlabel('Date')
-            ax.set_ylabel('Price (öre/kWh)')
-            ax.grid(True, alpha=0.3)
-            ax.legend()
-            
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            plt.savefig(self.simple_viz_dir / "yearly_comparison.png", dpi=300)
-            plt.close()
-            
-            logging.info("Yearly comparison plot created successfully")
-        except Exception as e:
-            logging.warning(f"Error in yearly comparison plot: {str(e)}")
-            plt.close('all')  # Ensure no hanging figures
-
-    def run_simple_evaluation(self):
-        """Run a simple visualization-focused evaluation"""
-        logging.info("Starting simple visualization-focused evaluation...")
+        df = self.predictions_df
+        
+        # Calculate metrics by hour
+        hourly_metrics = {}
+        for hour in range(24):
+            hour_data = df[df['hour'] == hour]
+            hour_mae = np.mean(np.abs(hour_data['actual'] - hour_data['predicted']))
+            hourly_metrics[hour] = hour_mae
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # Plot hourly MAE
+        hours = list(hourly_metrics.keys())
+        mae_values = list(hourly_metrics.values())
+        
+        ax.bar(hours, mae_values, alpha=0.7, color='steelblue')
+        
+        # Highlight morning and evening peak hours
+        ax.axvspan(6, 9, alpha=0.2, color='lightgray')
+        ax.axvspan(17, 20, alpha=0.2, color='lightgray')
+        
+        # Set title and labels
+        ax.set_title('Prediction Error by Hour of Day')
+        ax.set_xlabel('Hour of Day')
+        ax.set_ylabel('Mean Absolute Error (öre/kWh)')
+        ax.set_xticks(range(0, 24, 2))
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(self.viz_dir / "hourly_performance.png", dpi=300)
+        plt.close()
+        
+        logging.info(f"Saved hourly performance plot to {self.viz_dir / 'hourly_performance.png'}")
+        return True
+    
+    def run_evaluation(self):
+        """Run a comprehensive evaluation with metrics and visualizations"""
+        logging.info("Starting comprehensive evaluation...")
         
         try:
+            # Check if we have test data
+            if not hasattr(self, 'X_test') or not hasattr(self, 'y_test'):
+                logging.error("Test data not available. Check paths and run training first.")
+                return False
+            
             # Generate predictions
-            self.process_all_predictions()
+            self.generate_predictions()
             
-            # Create visualizations
-            self.create_visualizations()
+            # Prepare dataframe for analysis
+            self.prepare_dataframe()
             
-            logging.info("Simple evaluation complete")
+            # Calculate metrics
+            metrics = self.calculate_metrics()
+            
+            # Generate visualizations
+            self.plot_daily_comparison()
+            self.plot_weekly_comparison()
+            self.plot_error_distribution()
+            self.plot_hourly_performance()
+            
+            logging.info("\nEvaluation complete! Check visualizations directory for plots.")
+            return True
+            
         except Exception as e:
-            logging.error(f"Evaluation error: {str(e)}")
+            logging.error(f"Error running evaluation: {str(e)}")
             import traceback
             logging.error(traceback.format_exc())
+            return False
 
 def main():
-    """Run the simple evaluation without requiring command arguments"""
-    logging.info("Starting simple price model evaluation...")
+    """Run the comprehensive evaluation"""
+    logging.info("Starting price model evaluation...")
     
     try:
         # Create evaluator
-        evaluator = SimplePriceModelEvaluator()
+        evaluator = PriceModelEvaluator()
         
-        # Run simple evaluation
-        evaluator.run_simple_evaluation()
+        # Run evaluation
+        evaluator.run_evaluation()
         
-        logging.info("Simple evaluation complete!")
+        logging.info("Evaluation complete!")
         
     except Exception as e:
         logging.error(f"Evaluation failed: {str(e)}")

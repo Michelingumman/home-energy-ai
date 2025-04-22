@@ -66,61 +66,63 @@
     "model_config": {
         "architecture": {
             "lstm_layers": [
-                {"units": 128, "return_sequences": true, "dropout": 0.2},
-                {"units": 64, "return_sequences": false, "dropout": 0.2}
+                {"units": 128, "return_sequences": true, "dropout": 0.3, "regularizer": {"l1": 0.001, "l2": 0.001}},
+                {"units": 128, "return_sequences": false, "dropout": 0.3, "regularizer": {"l1": 0.001, "l2": 0.001}}
             ],
             "dense_layers": [
-                {"units": 48, "activation": "relu"},
-                {"units": 48, "activation": "relu"},
-                {"units": 24, "activation": null}
+                {"units": 48, "activation": "relu", "regularizer": {"l1": 0.001, "l2": 0.001}},
+                {"units": 48, "activation": "relu", "regularizer": {"l1": 0.001, "l2": 0.001}}
             ],
-            "output_units": 24
+            "output_units": 24,
+            "use_residual_connections": true
         },
         "feature_weights": {
-            "price_cols": 1.0,
-            "cyclical_cols": 2.0,
-            "binary_cols": 2.0,
+            "price_cols": 2.0,
+            "cyclical_cols": 2.5,
+            "binary_cols": 1.5,
             "grid_cols": 0.5,
             "enable_weighting": true
         },
         "training": {
-            "window_size": 168,
+            "window_size": 96,
             "prediction_horizon": 24,
-            "batch_size": 32,
-            "max_epochs": 200,
-            "learning_rate": 0.001,
+            "batch_size": 64,
+            "max_epochs": 150,
+            "learning_rate": 0.0005,
             "optimizer": "adam",
             "loss": "huber",
+            "asymmetry_factor": 3.0,
+            "use_asymmetric_loss": true,
             "metrics": ["mse", "mae"]
         },
         "callbacks": {
             "early_stopping": {
                 "monitor": "val_loss",
-                "patience": 20,
+                "patience": 15,
                 "restore_best_weights": true
             },
             "reduce_lr": {
                 "monitor": "val_loss",
-                "factor": 0.5,
-                "patience": 10,
+                "factor": 0.2,
+                "patience": 7,
                 "min_lr": 1e-6
             }
         },
         "data_split": {
-            "train_ratio": 0.90,
-            "val_ratio": 0.05,
-            "test_ratio": 0.05
+            "train_ratio": 0.8,
+            "val_ratio": 0.1,
+            "test_ratio": 0.1
         },
         "scaling": {
             "price_scaler": {
                 "type": "MinMaxScaler",
                 "feature_range": [-1, 1],
                 "clip_negative": false,
-                "max_reasonable_price": 400
+                "max_reasonable_price": 1000
             },
             "price_transform_config": {
-                "enable_log_transform": false,
-                "apply_to_cols": [],
+                "enable_log_transform": true,
+                "apply_to_cols": ["SE3_price_ore", "price_24h_avg", "price_168h_avg"],
                 "offset": 1.0,
                 "scaling_correction_factor": false
             },

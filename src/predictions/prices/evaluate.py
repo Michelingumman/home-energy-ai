@@ -21,6 +21,9 @@ import matplotlib.dates as mdates
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Enable unsafe deserialization for Lambda layers
+tf.keras.config.enable_unsafe_deserialization()
+
 # Import the feature config
 from getPriceRelatedData import FeatureConfig
 
@@ -31,6 +34,37 @@ try:
 except ImportError:
     logging.warning("Could not import FeatureWeightingLayer. Full model loading may fail.")
     custom_layer_loaded = False
+
+# Import regularizers for model loading
+from tensorflow.keras import regularizers
+
+# Custom regularization deserializer
+def deserialize_regularizer(config):
+    """Helper function to deserialize regularizers during model loading"""
+    if config is None:
+        return None
+        
+    if isinstance(config, dict):
+        if 'l1' in config or 'l2' in config:
+            l1 = config.get('l1', 0.0)
+            l2 = config.get('l2', 0.0)
+            return regularizers.l1_l2(l1=l1, l2=l2)
+    
+    # If not recognized, try standard deserializer
+    return regularizers.deserialize(config)
+
+# Define a custom Lambda layer for residual connections
+# This matches what we added in train.py
+class LastTimestepExtractor(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(LastTimestepExtractor, self).__init__(**kwargs)
+        
+    def call(self, inputs):
+        return inputs[:, -1, :]
+        
+    def get_config(self):
+        config = super(LastTimestepExtractor, self).get_config()
+        return config
 
 # Define the asymmetric Huber loss function 
 def asymmetric_huber_loss(y_true, y_pred, delta=1.0, asymmetry_factor=2.0):
@@ -118,7 +152,10 @@ class PriceModelEvaluator:
         # Create custom objects dict for the loss function
         custom_objects = {
             'asymmetric_huber_loss': asymmetric_huber_loss,
-            'asymmetric_huber_loss_2_0': asymmetric_huber_loss_2_0
+            'asymmetric_huber_loss_2_0': asymmetric_huber_loss_2_0,
+            'LastTimestepExtractor': LastTimestepExtractor,
+            'l1_l2': regularizers.l1_l2,
+            'deserialize_regularizer': deserialize_regularizer
         }
         
         # Add FeatureWeightingLayer if available
@@ -237,7 +274,7 @@ class PriceModelEvaluator:
             # Reshape back to original structure
             result = inverse_flat.reshape(num_sequences, seq_length)
 
-            return result / 100 # Convert to öre/kWh
+            return result
         
         else:
             raise ValueError(f"Unexpected shape for y_scaled: {y_scaled.shape}")

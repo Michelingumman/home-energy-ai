@@ -2,8 +2,19 @@ venv
 api.env
 
 data/raw
-data/processed
 
 
 src/predictions/prices/models/evaluation/test_data/X_test.npy
 src/predictions/prices/models/evaluation/test_data/X_val.npy
+
+src/predictions/prices/models_v2/X_test_v2.npy
+src/predictions/prices/models_v2/X_val_v2.npy
+
+src/predictions/prices/models_v2_baseline/X_test_v2_baseline.npy
+src/predictions/prices/models_v2_baseline/X_val_v2_baseline.npy
+
+src/predictions/prices/models_v2_price_weather/X_test_v2_price_weather.npy
+src/predictions/prices/models_v2_price_weather/X_val_v2_price_weather.npy
+
+src/predictions/prices/models_v2_price_weather_grid/X_test_v2_price_weather_grid.npy
+src/predictions/prices/models_v2_price_weather_grid/X_val_v2_price_weather_grid.npy

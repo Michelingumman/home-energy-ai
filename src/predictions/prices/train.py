@@ -62,9 +62,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import LSTM, Dense, Input, Dropout
+from tensorflow.keras.layers import LSTM, Dense, Input, Dropout, Add
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras import backend as K
+from tensorflow.keras import regularizers
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import joblib
@@ -197,6 +199,20 @@ class FeatureWeightingLayer(tf.keras.layers.Layer):
         # Log the applied weights for verification
         feature_weight_map = {feature: weight_array[i] for i, feature in enumerate(all_features)}
         logging.info(f"Applied feature weights: {feature_weight_map}")
+
+# After the FeatureWeightingLayer class definition, add our custom LastTimestepExtractor class
+
+class LastTimestepExtractor(tf.keras.layers.Layer):
+    """Custom layer to extract the last timestep from a sequence for residual connections"""
+    def __init__(self, **kwargs):
+        super(LastTimestepExtractor, self).__init__(**kwargs)
+        
+    def call(self, inputs):
+        return inputs[:, -1, :]
+        
+    def get_config(self):
+        config = super(LastTimestepExtractor, self).get_config()
+        return config
 
 class PriceModelTrainer:
     def __init__(self, window_size=None, train_from_all_data=False):
@@ -556,6 +572,11 @@ class PriceModelTrainer:
         # Evening peak (17-20pm)
         df_enhanced['evening_peak'] = df_enhanced.index.hour.isin([17, 18, 19, 20]).astype(float)
         
+        # Add more detailed hour-of-day one-hot encoding for key hours with extreme prices
+        # This helps the model distinguish specific hours that often have price spikes
+        for peak_hour in [8, 9, 17, 18, 19]:
+            df_enhanced[f'is_hour_{peak_hour}'] = (df_enhanced.index.hour == peak_hour).astype(float)
+        
         # Calculate price momentum features using robust methods that avoid division by zero
         # For price_momentum_1h, use difference instead of percentage for stability
         prices = df_enhanced[target_name].values
@@ -578,7 +599,16 @@ class PriceModelTrainer:
         diffs_24h[24:] = prices[24:] - prices[:-24]
         df_enhanced['price_momentum_24h'] = diffs_24h / avg_prices
         
-        # Create spike indicators
+        # Add 3-hour and 6-hour momentum for finer granularity
+        diffs_3h = np.zeros_like(prices)
+        diffs_3h[3:] = prices[3:] - prices[:-3]
+        df_enhanced['price_momentum_3h'] = diffs_3h / avg_prices
+        
+        diffs_6h = np.zeros_like(prices)
+        diffs_6h[6:] = prices[6:] - prices[:-6]
+        df_enhanced['price_momentum_6h'] = diffs_6h / avg_prices
+        
+        # Create spike indicators with multiple thresholds
         mean_price = df_enhanced[target_name].rolling(168).mean().fillna(df_enhanced[target_name].mean())
         std_price = df_enhanced[target_name].rolling(168).std().fillna(df_enhanced[target_name].std())
         
@@ -586,6 +616,17 @@ class PriceModelTrainer:
         spike_threshold = mean_price + 2 * std_price
         df_enhanced['recent_spike'] = df_enhanced[target_name].rolling(24).max().fillna(0) > spike_threshold
         df_enhanced['recent_spike'] = df_enhanced['recent_spike'].astype(float)
+        
+        # Add extreme spike indicator (3 std above mean)
+        extreme_threshold = mean_price + 3 * std_price
+        df_enhanced['extreme_spike'] = df_enhanced[target_name].rolling(24).max().fillna(0) > extreme_threshold
+        df_enhanced['extreme_spike'] = df_enhanced['extreme_spike'].astype(float)
+        
+        # Add yesterday's price at same hour feature
+        df_enhanced['price_24h_ago'] = df_enhanced[target_name].shift(24)
+        
+        # Add indicator for rising/falling price trend
+        df_enhanced['price_rising_24h'] = (diffs_24h > 0).astype(float)
         
         # Add price differential to nearest extremes, using robust methods
         # Use rolling max with fillna to prevent division by zero
@@ -599,31 +640,36 @@ class PriceModelTrainer:
         df_enhanced['price_vs_day_high'] = prices / day_high
         df_enhanced['price_vs_day_low'] = prices / day_low
         
+        # Add volatility indicators
+        df_enhanced['price_volatility_24h'] = df_enhanced[target_name].rolling(24).std().fillna(0) / avg_prices
+        df_enhanced['price_volatility_168h'] = df_enhanced[target_name].rolling(168).std().fillna(0) / avg_prices
+        
         # Replace any potential infinities or NaNs with zeros
-        for col in ['price_momentum_1h', 'price_momentum_24h', 'price_vs_day_high', 'price_vs_day_low']:
+        price_derived_cols = [
+            'price_momentum_1h', 'price_momentum_3h', 'price_momentum_6h', 
+            'price_momentum_24h', 'price_vs_day_high', 'price_vs_day_low',
+            'price_volatility_24h', 'price_volatility_168h', 'price_24h_ago'
+        ]
+        for col in price_derived_cols:
             df_enhanced[col] = df_enhanced[col].replace([np.inf, -np.inf, np.nan], 0)
         
         # Fill NaN values that might be introduced
         df_enhanced = df_enhanced.fillna(0)
         
         # Make sure the enhanced dataframe has all the original columns plus the new ones
-        all_columns = list(df.columns) + [
+        original_cols = list(df.columns)
+        new_cols = [
             'hour', 'morning_peak', 'evening_peak', 
-            'price_momentum_1h', 'price_momentum_24h', 
-            'recent_spike', 'price_vs_day_high', 'price_vs_day_low'
+            'is_hour_8', 'is_hour_9', 'is_hour_17', 'is_hour_18', 'is_hour_19',
+            'price_momentum_1h', 'price_momentum_3h', 'price_momentum_6h', 'price_momentum_24h', 
+            'recent_spike', 'extreme_spike', 'price_24h_ago', 'price_rising_24h',
+            'price_vs_day_high', 'price_vs_day_low',
+            'price_volatility_24h', 'price_volatility_168h'
         ]
+        all_columns = original_cols + new_cols
         
         # Log the new features
-        logging.info(f"Added spike prediction features: {[col for col in all_columns if col not in df.columns]}")
-        logging.info("Feature value ranges after calculation:")
-        for col in ['price_momentum_1h', 'price_momentum_24h', 'price_vs_day_high', 'price_vs_day_low']:
-            stats = df_enhanced[col].describe()
-            # Safe way to access describe stats that works with all pandas versions
-            mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
-            std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
-            min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
-            max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
-            logging.info(f"  {col}: min={min_val:.4f}, max={max_val:.4f}, mean={mean_val:.4f}, std={std_val:.4f}")
+        logging.info(f"Added spike prediction features: {new_cols}")
         
         # Get features and target from the enhanced dataframe
         X = df_enhanced[[col for col in all_columns if col != target_name and col in df_enhanced.columns]].copy()
@@ -987,130 +1033,198 @@ class PriceModelTrainer:
         return X, y
     
     def build_model(self, input_shape):
-        """Build LSTM model using Keras Functional API for better architecture"""
-        # Input layer with explicit shape
-        inputs = Input(shape=(input_shape[0], input_shape[1]), name='sequence_input')
+        """Build the LSTM model architecture
         
-        # Get architecture config
-        architecture = self.feature_config.get_architecture_params()
-        lstm_layers = architecture.get("lstm_layers", [
-            {"units": 256, "return_sequences": True, "dropout": 0.2},
-            {"units": 128, "return_sequences": False, "dropout": 0.2}
-        ])
-        dense_layers = architecture.get("dense_layers", [
-            {"units": 64, "activation": "relu"},
-            {"units": 24, "activation": None}
-        ])
+        Args:
+            input_shape: Shape of input data (samples, timesteps, features)
+            
+        Returns:
+            Compiled Keras model
+        """
+        # Load model configuration
+        with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
+            config = json.load(f)
         
-        # Only use feature weighting if enabled in config
+        model_config = config["model_config"]
+        architecture = model_config["architecture"]
+        training = model_config["training"]
+        
+        logging.info(f"Building model with input shape {input_shape}")
+        
+        # Use Functional API from the beginning, which is more suitable for residual connections
+        use_residual = architecture.get("use_residual_connections", False)
+        
+        # Create input layer
+        inputs = Input(shape=(input_shape[0], input_shape[1]))
         x = inputs
-        if self.feature_weights.get('enable_weighting', False):
-            logging.info("Feature weighting enabled - applying weights to input features")
-            # Create feature weighting layer with feature config
-            feature_weighting_layer = FeatureWeightingLayer(
-                feature_weights=self.feature_weights,
-                feature_config=self.feature_config,
-                name='feature_weighting'
-            )
-            
-            # Apply feature weighting layer
-            x = feature_weighting_layer(inputs)
-        else:
-            logging.info("Feature weighting disabled - using original features")
         
-        # Build LSTM layers
-        for i, layer in enumerate(lstm_layers):
-            return_sequences = layer.get("return_sequences", False)
-            dropout_rate = layer.get("dropout", 0)
+        # Add feature weighting layer if enabled
+        if model_config["feature_weights"].get("enable_weighting", False):
+            logging.info("Adding feature weighting layer")
+            feature_weighting = FeatureWeightingLayer(
+                feature_weights=model_config["feature_weights"],
+                feature_config=self.feature_config
+            )
+            x = feature_weighting(x)
+        
+        # Store previous outputs for potential residual connections
+        previous_outputs = []
+        
+        # Add LSTM layers
+        for i, lstm_config in enumerate(architecture["lstm_layers"]):
+            lstm_units = lstm_config.get("units", 64)
+            return_sequences = lstm_config.get("return_sequences", False)
+            dropout = lstm_config.get("dropout", 0.0)
             
-            # Add LSTM layer
-            lstm_layer = LSTM(
-                units=layer.get("units", 128),
-                return_sequences=return_sequences,
-                activation='tanh',
-                name=f'lstm_{i+1}'
+            # Get regularization parameters if they exist
+            l1_reg = lstm_config.get("regularizer", {}).get("l1", 0.0)
+            l2_reg = lstm_config.get("regularizer", {}).get("l2", 0.0)
+            recurrent_l1 = lstm_config.get("regularizer", {}).get("recurrent_l1", 0.0)
+            recurrent_l2 = lstm_config.get("regularizer", {}).get("recurrent_l2", 0.0)
+            
+            logging.info(f"Adding LSTM layer {i+1}: units={lstm_units}, return_sequences={return_sequences}, dropout={dropout}, l1={l1_reg}, l2={l2_reg}, recurrent_l1={recurrent_l1}, recurrent_l2={recurrent_l2}")
+            
+            # Create LSTM layer with regularization
+            kernel_regularizer = None
+            recurrent_regularizer = None
+            
+            if l1_reg > 0 or l2_reg > 0:
+                kernel_regularizer = regularizers.l1_l2(l1=l1_reg, l2=l2_reg)
+            
+            if recurrent_l1 > 0 or recurrent_l2 > 0:
+                recurrent_regularizer = regularizers.l1_l2(l1=recurrent_l1, l2=recurrent_l2)
+            
+            x = LSTM(
+                units=lstm_units, 
+                return_sequences=return_sequences, 
+                dropout=dropout,
+                kernel_regularizer=kernel_regularizer,
+                recurrent_regularizer=recurrent_regularizer
             )(x)
             
-            # Add dropout if specified
-            if dropout_rate > 0:
-                lstm_layer = Dropout(dropout_rate, name=f'lstm_dropout_{i+1}')(lstm_layer)
+            # Add residual connection if applicable - but with special handling for sequence/non-sequence mismatch
+            if use_residual and i > 0 and len(previous_outputs) > 0:
+                prev_output = previous_outputs[-1]
+                
+                # Check if shapes match directly
+                if K.int_shape(prev_output)[1:] == K.int_shape(x)[1:]:
+                    logging.info(f"Adding residual connection to LSTM layer {i+1}")
+                    x = Add()([prev_output, x])
+                # Special case: if previous output is sequence and current is not (common LSTM pattern)
+                elif len(K.int_shape(prev_output)) > 2 and len(K.int_shape(x)) > 1:
+                    prev_seq = K.int_shape(prev_output)[1]  # sequence length
+                    feature_dim = K.int_shape(prev_output)[2]  # feature dimension
+                    if feature_dim == K.int_shape(x)[1] and not return_sequences:
+                        # Use our custom layer to extract last timestep instead of Lambda
+                        logging.info(f"Adding adapted residual connection from sequence to non-sequence for LSTM layer {i+1}")
+                        last_timestep = LastTimestepExtractor()(prev_output)
+                        x = Add()([last_timestep, x])
+                    else:
+                        logging.warning(f"Shapes don't match for residual connection to LSTM layer {i+1}: "
+                                      f"{K.int_shape(prev_output)[1:]} vs {K.int_shape(x)[1:]}")
+                else:
+                    logging.warning(f"Shapes don't match for residual connection to LSTM layer {i+1}: "
+                                  f"{K.int_shape(prev_output)[1:]} vs {K.int_shape(x)[1:]}")
             
-            x = lstm_layer
+            previous_outputs.append(x)
         
         # Add Dense layers
-        for i, layer in enumerate(dense_layers[:-1]):
+        dense_outputs = []
+        for i, dense_config in enumerate(architecture["dense_layers"]):
+            dense_units = dense_config.get("units", 32)
+            activation = dense_config.get("activation", "relu")
+            
+            # Get regularization parameters if they exist
+            l1_reg = dense_config.get("regularizer", {}).get("l1", 0.0)
+            l2_reg = dense_config.get("regularizer", {}).get("l2", 0.0)
+            
+            logging.info(f"Adding Dense layer {i+1}: units={dense_units}, activation={activation}, l1={l1_reg}, l2={l2_reg}")
+            
+            # Create Dense layer with regularization
+            kernel_regularizer = None
+            if l1_reg > 0 or l2_reg > 0:
+                kernel_regularizer = regularizers.l1_l2(l1=l1_reg, l2=l2_reg)
+            
+            # Add Dense layer
             x = Dense(
-                units=layer.get("units", 64),
-                activation=layer.get("activation", "relu"),
-                name=f'dense_{i+1}'
+                units=dense_units, 
+                activation=activation,
+                kernel_regularizer=kernel_regularizer
             )(x)
+            
+            # Add residual connection if applicable
+            if use_residual and i > 0 and len(dense_outputs) > 0:
+                prev_output = dense_outputs[-1]
+                
+                # Check if shapes match
+                if K.int_shape(prev_output)[1:] == K.int_shape(x)[1:]:
+                    logging.info(f"Adding residual connection to Dense layer {i+1}")
+                    x = Add()([prev_output, x])
+                else:
+                    logging.warning(f"Shapes don't match for residual connection to Dense layer {i+1}: "
+                                  f"{K.int_shape(prev_output)[1:]} vs {K.int_shape(x)[1:]}")
+            
+            dense_outputs.append(x)
         
-        # Add output layer separately to ensure proper shape
-        outputs = Dense(
-            units=dense_layers[-1].get("units", 24) if dense_layers else 24,
-            activation=dense_layers[-1].get("activation") if dense_layers else None,
-            name='output'
-        )(x)
+        # Add output layer
+        output_units = architecture.get("output_units", 24)
+        if output_units > 0:
+            # Check for output layer regularization
+            output_reg = architecture.get("output_regularizer", {})
+            l1_reg = output_reg.get("l1", 0.0)
+            l2_reg = output_reg.get("l2", 0.0)
+            
+            kernel_regularizer = None
+            if l1_reg > 0 or l2_reg > 0:
+                kernel_regularizer = regularizers.l1_l2(l1=l1_reg, l2=l2_reg)
+                logging.info(f"Adding output layer with {output_units} units and regularization (l1={l1_reg}, l2={l2_reg})")
+            else:
+                logging.info(f"Adding output layer with {output_units} units")
+            
+            outputs = Dense(output_units, kernel_regularizer=kernel_regularizer)(x)
+        else:
+            outputs = x
         
-        # Create model
+        # Create and compile model
         model = Model(inputs=inputs, outputs=outputs)
         
-        # Get training parameters from config
-        training_params = self.feature_config.get_training_params()
-        learning_rate = training_params.get("learning_rate", 0.001)
-        loss = training_params.get("loss", "huber")
-        metrics = training_params.get("metrics", ["mae"])
+        # Set up optimizer
+        optimizer_name = training.get("optimizer", "adam") 
+        learning_rate = training.get("learning_rate", 0.001)
         
-        # Define custom asymmetric loss function that penalizes underprediction more than overprediction
-        # This helps the model better predict price spikes which are important for decision making
-        def asymmetric_huber_loss(y_true, y_pred, delta=1.0, asymmetry_factor=2.0):
-            """Custom asymmetric Huber loss that penalizes underprediction more heavily
-            
-            Args:
-                y_true: Ground truth values
-                y_pred: Predicted values
-                delta: Threshold for switching between MSE and MAE (as in Huber loss)
-                asymmetry_factor: Factor to multiply loss when underpredicting (y_pred < y_true)
-            """
-            import tensorflow as tf
-            error = y_true - y_pred
-            is_underpredict = tf.cast(tf.less(y_pred, y_true), tf.float32)
-            
-            # Calculate absolute error
-            abs_error = tf.abs(error)
-            
-            # Standard Huber loss calculation
-            huber_loss = tf.where(
-                abs_error <= delta,
-                0.5 * tf.square(error),  # MSE for small errors
-                delta * (abs_error - 0.5 * delta)  # MAE for large errors
-            )
-            
-            # Apply asymmetry factor to underpredictions
-            asymmetric_factor = 1.0 + (asymmetry_factor - 1.0) * is_underpredict
-            weighted_loss = huber_loss * asymmetric_factor
-            
-            return tf.reduce_mean(weighted_loss)
+        if optimizer_name.lower() == "adam":
+            optimizer = Adam(learning_rate=learning_rate)
+        else:
+            optimizer = optimizer_name
         
-        # Use the custom loss function if specified in config
-        use_asymmetric_loss = training_params.get("use_asymmetric_loss", True)
-        if use_asymmetric_loss and loss == "huber":
-            # Custom loss with partial application to set default parameters
-            from functools import partial
-            asymmetry_factor = training_params.get("asymmetry_factor", 2.0)
-            custom_loss = partial(asymmetric_huber_loss, asymmetry_factor=asymmetry_factor)
-            custom_loss.__name__ = 'asymmetric_huber_loss'  # Required for Keras
-            logging.info(f"Using asymmetric Huber loss with asymmetry factor: {asymmetry_factor}")
-            loss = custom_loss
+        # Set up loss function
+        loss = training.get("loss", "mse")
+        if training.get("use_asymmetric_loss", False):
+            asymmetry_factor = training.get("asymmetry_factor", 2.0)
+            logging.info(f"Using asymmetric loss with factor: {asymmetry_factor}")
+            loss = self._create_asymmetric_huber_loss(asymmetry_factor)
         
-        # Compile model
+        # Get metrics from config
+        metrics = training.get("metrics", ["mae"])
+        
         model.compile(
-            optimizer=Adam(learning_rate=learning_rate),
+            optimizer=optimizer,
             loss=loss,
             metrics=metrics
         )
         
-        model.summary()
+        logging.info("Model architecture built from configuration:")
+        logging.info(f"LSTM layers: {architecture['lstm_layers']}")
+        logging.info(f"Dense layers: {architecture['dense_layers']}")
+        logging.info(f"Residual connections: {use_residual}")
+        logging.info(f"Optimizer: {optimizer_name}")
+        logging.info(f"Learning rate: {learning_rate}")
+        logging.info(f"Loss function: {loss.__name__ if hasattr(loss, '__name__') else loss}")
+        logging.info(f"Metrics: {metrics}")
+        
+        # Print model summary
+        model.summary(print_fn=logging.info)
+        
         return model
     
     def train(self, epochs=None, batch_size=None):
@@ -1118,13 +1232,18 @@ class PriceModelTrainer:
         logging.info("Preparing data...")
         (X_train, y_train, X_val, y_val, X_test, y_test), timestamps = self.prepare_data()
         
-        # Get training parameters from config
-        training_params = self.feature_config.get_training_params()
-        epochs = epochs or training_params["max_epochs"]
-        batch_size = batch_size or training_params["batch_size"]
+        # Load training parameters from config
+        with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
+            config = json.load(f)
         
-        # Get callback parameters
-        callback_params = self.feature_config.get_callback_params()
+        training_params = config["model_config"]["training"]
+        callback_params = config["model_config"]["callbacks"]
+        
+        # Get training parameters from config with fallbacks to feature_config
+        epochs = epochs or training_params.get("max_epochs", 100)
+        batch_size = batch_size or training_params.get("batch_size", 32)
+        
+        logging.info(f"Training with epochs={epochs}, batch_size={batch_size}")
         
         # Save scalers
         joblib.dump(self.price_scaler, self.saved_dir / 'price_scaler.save')
@@ -1154,24 +1273,28 @@ class PriceModelTrainer:
         model_checkpoint_path = self.saved_dir / self.model_name
         log_dir = self.logs_dir / datetime.now().strftime("%Y%m%d-%H%M%S")
         
+        # Get callback parameters from config
+        early_stopping_params = callback_params.get("early_stopping", {})
+        reduce_lr_params = callback_params.get("reduce_lr", {})
+        
         callbacks = [
             EarlyStopping(
-                monitor=callback_params["early_stopping"]["monitor"],
-                patience=callback_params["early_stopping"]["patience"],
-                restore_best_weights=callback_params["early_stopping"]["restore_best_weights"],
+                monitor=early_stopping_params.get("monitor", "val_loss"),
+                patience=early_stopping_params.get("patience", 10),
+                restore_best_weights=early_stopping_params.get("restore_best_weights", True),
                 mode='min'
             ),
             ModelCheckpoint(
                 model_checkpoint_path,
-                monitor=callback_params["early_stopping"]["monitor"],
+                monitor=early_stopping_params.get("monitor", "val_loss"),
                 save_best_only=True,
                 mode='min'
             ),
             ReduceLROnPlateau(
-                monitor=callback_params["reduce_lr"]["monitor"],
-                factor=callback_params["reduce_lr"]["factor"],
-                patience=callback_params["reduce_lr"]["patience"],
-                min_lr=callback_params["reduce_lr"]["min_lr"],
+                monitor=reduce_lr_params.get("monitor", "val_loss"),
+                factor=reduce_lr_params.get("factor", 0.5),
+                patience=reduce_lr_params.get("patience", 5),
+                min_lr=reduce_lr_params.get("min_lr", 1e-6),
                 mode='min'
             ),
             tf.keras.callbacks.TensorBoard(
@@ -1541,10 +1664,17 @@ class PriceModelTrainer:
         # Create sequences
         X, y = self.create_sequences(df_scaled)
         
+        # Load data split configuration from config.json
+        with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
+            config = json.load(f)
+        
+        data_split = config["model_config"]["data_split"]
+        
         if self.train_from_all_data:
             logging.info("\nUsing all data for production model training")
             # Use all data for training, keeping a small validation set for monitoring
-            val_size = min(int(len(X) * 0.05), 5000)  # Use 5% or max 5000 samples for validation
+            val_ratio = min(0.05, data_split.get("val_ratio", 0.1))  # Use 5% or config value, whichever is smaller
+            val_size = int(len(X) * val_ratio)
             
             # Take the validation set from the middle of the dataset to avoid recent data
             mid_point = len(X) // 2
@@ -1573,9 +1703,9 @@ class PriceModelTrainer:
             return model, history, df.index[self.window_size + 24:]
         else:
             # Get data split ratios from config for evaluation model
-            split_ratios = self.feature_config.get_data_split_ratios()
-            train_ratio = split_ratios["train_ratio"]
-            val_ratio = split_ratios["val_ratio"]
+            train_ratio = data_split.get("train_ratio", 0.8)
+            val_ratio = data_split.get("val_ratio", 0.1)
+            test_ratio = data_split.get("test_ratio", 0.1)
             
             # Calculate split indices
             total_samples = len(X)
@@ -1587,7 +1717,7 @@ class PriceModelTrainer:
             logging.info(f"Total samples: {total_samples}")
             logging.info(f"Training samples: {train_split} ({train_ratio*100:.1f}%)")
             logging.info(f"Validation samples: {val_split - train_split} ({val_ratio*100:.1f}%)")
-            logging.info(f"Test samples: {total_samples - val_split} ({split_ratios['test_ratio']*100:.1f}%)")
+            logging.info(f"Test samples: {total_samples - val_split} ({test_ratio*100:.1f}%)")
             
             # Split the data
             X_train = X[:train_split]
@@ -1630,13 +1760,16 @@ class PriceModelTrainer:
 
     def train_model(self, model, X_train, y_train, X_val, y_val):
         """Train the model with the provided data"""
-        # Get training parameters from config
-        training_params = self.feature_config.get_training_params()
+        # Load training parameters from config
+        with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
+            config = json.load(f)
+        
+        training_params = config["model_config"]["training"]
+        callback_params = config["model_config"]["callbacks"]
+        
+        # Get training parameters
         batch_size = training_params.get("batch_size", 32)
         max_epochs = training_params.get("max_epochs", 100)
-        
-        # Get callback parameters from config
-        callback_params = self.feature_config.get_callback_params()
         
         # Early stopping callback
         early_stopping_params = callback_params.get("early_stopping", {})
@@ -1644,7 +1777,7 @@ class PriceModelTrainer:
             monitor=early_stopping_params.get("monitor", "val_loss"),
             patience=early_stopping_params.get("patience", 10),
             min_delta=early_stopping_params.get("min_delta", 0.001),
-            restore_best_weights=True,
+            restore_best_weights=early_stopping_params.get("restore_best_weights", True),
             verbose=1
         )
         
@@ -1659,14 +1792,35 @@ class PriceModelTrainer:
             verbose=1
         )
         
+        # Model checkpoint callback
+        model_checkpoint_path = self.saved_dir / self.model_name
+        checkpoint = ModelCheckpoint(
+            model_checkpoint_path,
+            monitor=early_stopping_params.get("monitor", "val_loss"),
+            save_best_only=True,
+            mode='min',
+            verbose=1
+        )
+        
+        # TensorBoard callback
+        log_dir = self.logs_dir / datetime.now().strftime("%Y%m%d-%H%M%S")
+        tensorboard = tf.keras.callbacks.TensorBoard(
+            log_dir=log_dir,
+            histogram_freq=1,
+            write_graph=True
+        )
+        
         # Train the model
         logging.info(f"Training model with batch_size={batch_size}, max_epochs={max_epochs}")
+        logging.info(f"Model will be saved to: {model_checkpoint_path}")
+        logging.info(f"TensorBoard logs: {log_dir}")
+        
         history = model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),
             epochs=max_epochs,
             batch_size=batch_size,
-            callbacks=[early_stopping, reduce_lr],
+            callbacks=[early_stopping, reduce_lr, checkpoint, tensorboard],
             verbose=1
         )
         
@@ -1743,6 +1897,19 @@ class PriceModelTrainer:
             logging.info(f"Feature configuration saved to {config_path}")
         except Exception as e:
             logging.error(f"Error saving feature configuration: {e}")
+        
+        # Save the config used for this model
+        try:
+            with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
+                config = json.load(f)
+            
+            # Save to the model directory
+            with open(save_dir / "model_config.json", 'w') as f:
+                json.dump(config, f, indent=4)
+            
+            logging.info(f"Model configuration saved to {save_dir / 'model_config.json'}")
+        except Exception as e:
+            logging.error(f"Error saving model configuration: {e}")
             
         logging.info("Model, scalers, and configuration saved successfully")
 
@@ -1917,6 +2084,48 @@ class PriceModelTrainer:
         samples_path = save_dir / "sample_predictions.csv"
         samples_df.to_csv(samples_path, index=False)
         logging.info(f"Sample predictions saved to {samples_path}")
+
+    def _create_asymmetric_huber_loss(self, asymmetry_factor):
+        """Create an asymmetric Huber loss function that penalizes underprediction more than overprediction
+        
+        Args:
+            asymmetry_factor: Factor to multiply loss when underpredicting (y_pred < y_true)
+            
+        Returns:
+            Custom loss function
+        """
+        def asymmetric_huber_loss(y_true, y_pred, delta=1.0):
+            """Custom asymmetric Huber loss that penalizes underprediction more heavily
+            
+            Args:
+                y_true: Ground truth values
+                y_pred: Predicted values
+                delta: Threshold for switching between MSE and MAE (as in Huber loss)
+            """
+            error = y_true - y_pred
+            is_underpredict = K.cast(K.less(y_pred, y_true), K.floatx())
+            
+            # Calculate absolute error
+            abs_error = K.abs(error)
+            
+            # Standard Huber loss calculation
+            huber_loss = K.switch(
+                abs_error <= delta,
+                0.5 * K.square(error),  # MSE for small errors
+                delta * (abs_error - 0.5 * delta)  # MAE for large errors
+            )
+            
+            # Apply asymmetry factor to underpredictions
+            asymmetric_factor = 1.0 + (asymmetry_factor - 1.0) * is_underpredict
+            weighted_loss = huber_loss * asymmetric_factor
+            
+            return K.mean(weighted_loss)
+            
+        # Set the name for the loss function
+        asymmetric_huber_loss.__name__ = 'asymmetric_huber_loss'
+        
+        logging.info(f"Created asymmetric Huber loss with asymmetry factor: {asymmetry_factor}")
+        return asymmetric_huber_loss
 
 def main():
     # Set up argument parser

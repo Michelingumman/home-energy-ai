@@ -7,14 +7,14 @@ from pathlib import Path
 # Define the paths to the scripts
 
 # This script fetches the actual solar production data from Home Assistant and merged with the previous data in "ActualSolarProductionData.csv"
-solar_updateData_script = "src/predictions/solar/actual_data/FetchSolarProductionData.py" 
+solar_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/solar/actual_data/FetchSolarProductionData.py" 
 
 # This script makes the solar prediction based on the Forecast.Solar API
-solar_prediction_script = "src/predictions/solar/makeSolarPrediction.py"
+solar_prediction_script = "C:/_Projects/home-energy-ai/src/predictions/solar/makeSolarPrediction.py"
 
 
 # This script fetches the price related data from ElectricityMaps API (grid features) and mgrey.se/espot API (current e-spot price)
-price_updateData_script = "src/predictions/prices/getPriceRelatedData.py"
+price_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py"
 
 
 
@@ -22,7 +22,8 @@ price_updateData_script = "src/predictions/prices/getPriceRelatedData.py"
 
 
 # Log file path
-log_file = "gather_data_log.txt"
+log_file = "C:/_Projects/home-energy-ai/Gather_Data_log.txt"
+
 
 def log_message(message):
     """Logs messages with timestamps to a log file."""

@@ -16,7 +16,7 @@ params = {
 	"latitude": 59.295923,
 	"longitude": 18.010528,
 	"start_date": "2017-01-01",
-	"end_date": "2025-04-08",
+	"end_date": "2025-04-22",
 	"daily": "shortwave_radiation_sum",
 	"hourly": ["temperature_2m", "cloud_cover", "relative_humidity_2m", "wind_speed_100m", "wind_direction_100m"],
 	"timezone": "Europe/Berlin"

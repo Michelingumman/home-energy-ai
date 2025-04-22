@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import numpy as np
 import os
 import time
+import argparse
 
 project_root = Path(__file__).resolve().parents[1]
 class FeatureConfig:
@@ -95,8 +96,13 @@ class FeatureConfig:
         """Get scaling configurations"""
         return self.scaling
 
-def update_grid_data(project_root):
-    """Update the grid data using Electricity Maps API with hourly resolution"""
+def update_grid_data(project_root, fetch_total=False):
+    """Update the grid data using Electricity Maps API with hourly resolution
+    
+    Args:
+        project_root: Path to the project root
+        fetch_total: If True, fetch all data from 2017-01-01 regardless of existing data
+    """
     grid_file_path = project_root / 'data' / 'processed' / 'SwedenGrid.csv'
     
     # Load API key from env file
@@ -125,58 +131,69 @@ def update_grid_data(project_root):
     # Define the power sources matching config
     power_sources = ['nuclear', 'wind', 'hydro', 'solar', 'unknown']
     
-    # Load existing data or create new DataFrame
-    if grid_file_path.exists():
-        try:
-            existing_df = pd.read_csv(grid_file_path, index_col=0)
-            if not existing_df.empty:
-                existing_df.index = pd.to_datetime(existing_df.index)
-                
-                # Ensure existing index is timezone-aware UTC
-                if existing_df.index.tzinfo is None:
-                    print("Existing index is timezone-naive. Assuming UTC and localizing.")
-                    # *** Assumption: Naive timestamps in CSV represent UTC. ***
-                    # If they represent local time (e.g., Europe/Stockholm), use:
-                    # existing_df.index = existing_df.index.tz_localize('Europe/Stockholm', ambiguous='infer', nonexistent='shift_forward').tz_convert('UTC')
-                    try:
-                        existing_df.index = existing_df.index.tz_localize('UTC')
-                    except Exception as tz_err:
-                        print(f"Error localizing naive index to UTC: {tz_err}. Proceeding without timezone conversion for existing data.")
-                        # Handle error - perhaps skip update or log? Here, we proceed but sorting might fail later.
-                elif str(existing_df.index.tzinfo) != 'UTC':
-                    print(f"Existing index has timezone {existing_df.index.tzinfo}. Converting to UTC.")
-                    try:
-                        existing_df.index = existing_df.index.tz_convert('UTC')
-                    except Exception as tz_err:
-                         print(f"Error converting existing index to UTC: {tz_err}. Proceeding without timezone conversion.")
-
-                # Ensure existing data has all required columns from config
-                for col in grid_cols:
-                    if col not in existing_df.columns:
-                        existing_df[col] = 0.0 # Initialize with float
-                existing_df = existing_df[grid_cols] # Keep only config columns and ensure order
-                existing_df = existing_df.round(2) # Round existing data
-                existing_df = existing_df.fillna(0.0) # Fill NA
-                latest_timestamp = existing_df.index.max() # Get latest timestamp *after* potential UTC conversion
-            else:
-                existing_df = pd.DataFrame(columns=grid_cols) # Empty file, create empty df
-                existing_df.index.name = 'datetime'
-                latest_timestamp = pd.Timestamp.utcnow() - timedelta(days=7) # Start from 7 days ago
-        except pd.errors.EmptyDataError:
-            print("Existing file was empty or corrupted, starting fresh.")
-            existing_df = pd.DataFrame(columns=grid_cols)
-            existing_df.index.name = 'datetime'
-            latest_timestamp = pd.Timestamp.utcnow() - timedelta(days=7) # Start from 7 days ago
-        except Exception as e:
-            print(f"Error reading existing grid data: {e}. Starting fresh with last 7 days.")
-            existing_df = pd.DataFrame(columns=grid_cols)
-            existing_df.index.name = 'datetime'
-            latest_timestamp = pd.Timestamp.utcnow() - timedelta(days=7) # Start from 7 days ago
-    else:
-        print("Grid data file not found, creating new file starting from 7 days ago.")
+    # Set the start date based on the fetch_total flag
+    if fetch_total:
+        # If --total is specified, start from January 1, 2017
+        start_date = pd.Timestamp('2017-01-01', tz='UTC')
+        print(f"Total fetch requested. Will attempt to fetch all data from {start_date} to present.")
+        
+        # Create a new empty DataFrame if fetching total
         existing_df = pd.DataFrame(columns=grid_cols)
         existing_df.index.name = 'datetime'
-        latest_timestamp = pd.Timestamp.utcnow() - timedelta(days=7) # Start from 7 days ago
+        latest_timestamp = start_date
+    else:
+        # Load existing data or create new DataFrame
+        if grid_file_path.exists():
+            try:
+                existing_df = pd.read_csv(grid_file_path, index_col=0)
+                if not existing_df.empty:
+                    existing_df.index = pd.to_datetime(existing_df.index)
+                    
+                    # Ensure existing index is timezone-aware UTC
+                    if existing_df.index.tzinfo is None:
+                        print("Existing index is timezone-naive. Assuming UTC and localizing.")
+                        # *** Assumption: Naive timestamps in CSV represent UTC. ***
+                        # If they represent local time (e.g., Europe/Stockholm), use:
+                        # existing_df.index = existing_df.index.tz_localize('Europe/Stockholm', ambiguous='infer', nonexistent='shift_forward').tz_convert('UTC')
+                        try:
+                            existing_df.index = existing_df.index.tz_localize('UTC')
+                        except Exception as tz_err:
+                            print(f"Error localizing naive index to UTC: {tz_err}. Proceeding without timezone conversion for existing data.")
+                            # Handle error - perhaps skip update or log? Here, we proceed but sorting might fail later.
+                    elif str(existing_df.index.tzinfo) != 'UTC':
+                        print(f"Existing index has timezone {existing_df.index.tzinfo}. Converting to UTC.")
+                        try:
+                            existing_df.index = existing_df.index.tz_convert('UTC')
+                        except Exception as tz_err:
+                            print(f"Error converting existing index to UTC: {tz_err}. Proceeding without timezone conversion.")
+
+                    # Ensure existing data has all required columns from config
+                    for col in grid_cols:
+                        if col not in existing_df.columns:
+                            existing_df[col] = 0.0 # Initialize with float
+                    existing_df = existing_df[grid_cols] # Keep only config columns and ensure order
+                    existing_df = existing_df.round(2) # Round existing data
+                    existing_df = existing_df.fillna(0.0) # Fill NA
+                    latest_timestamp = existing_df.index.max() # Get latest timestamp *after* potential UTC conversion
+                else:
+                    existing_df = pd.DataFrame(columns=grid_cols) # Empty file, create empty df
+                    existing_df.index.name = 'datetime'
+                    latest_timestamp = pd.Timestamp.utcnow() - timedelta(days=7) # Start from 7 days ago
+            except pd.errors.EmptyDataError:
+                print("Existing file was empty or corrupted, starting fresh.")
+                existing_df = pd.DataFrame(columns=grid_cols)
+                existing_df.index.name = 'datetime'
+                latest_timestamp = pd.Timestamp.utcnow() - timedelta(days=7) # Start from 7 days ago
+            except Exception as e:
+                print(f"Error reading existing grid data: {e}. Starting fresh with last 7 days.")
+                existing_df = pd.DataFrame(columns=grid_cols)
+                existing_df.index.name = 'datetime'
+                latest_timestamp = pd.Timestamp.utcnow() - timedelta(days=7) # Start from 7 days ago
+        else:
+            print("Grid data file not found, creating new file starting from 7 days ago.")
+            existing_df = pd.DataFrame(columns=grid_cols)
+            existing_df.index.name = 'datetime'
+            latest_timestamp = pd.Timestamp.utcnow() - timedelta(days=7) # Start from 7 days ago
 
     # Ensure latest_timestamp is timezone-aware (UTC) for comparison
     if latest_timestamp.tzinfo is None:
@@ -189,17 +206,36 @@ def update_grid_data(project_root):
     # Get current time in UTC, rounded down to the nearest hour
     current_time = pd.Timestamp.utcnow().floor('h')
     
+    # If fetching total data, we start from Jan 1, 2017, otherwise from the latest timestamp + 1 hour
+    start_time = latest_timestamp if fetch_total else latest_timestamp + timedelta(hours=1)
+    
+    # Create timestamps to fetch, limited by API restrictions
+    timestamps_to_fetch = pd.date_range(start=start_time, end=current_time, freq='h')
+    
+    # Prepare for incremental saves for large dataset fetches
+    save_interval = 500  # Save every 500 records to avoid losing data if script crashes
+    last_save = 0
     new_hourly_records = []
-    timestamps_to_fetch = pd.date_range(start=latest_timestamp + timedelta(hours=1), end=current_time, freq='h')
 
-    print(f"Found {len(existing_df)} existing records. Latest record: {latest_timestamp}. Current time: {current_time}")
+    print(f"Found {len(existing_df)} existing records.")
+    if fetch_total:
+        print(f"Will fetch ALL data from {start_time} to {current_time}, total of {len(timestamps_to_fetch)} hours")
+    else:
+        print(f"Latest record: {latest_timestamp}. Current time: {current_time}")
+        
     if not timestamps_to_fetch.empty:
-        print(f"Attempting to fetch data for {len(timestamps_to_fetch)} missing hours from {timestamps_to_fetch[0]} to {timestamps_to_fetch[-1]}...")
+        if not fetch_total:
+            print(f"Attempting to fetch data for {len(timestamps_to_fetch)} missing hours from {timestamps_to_fetch[0]} to {timestamps_to_fetch[-1]}...")
 
-        for timestamp in timestamps_to_fetch:
+        for i, timestamp in enumerate(timestamps_to_fetch):
             # Format timestamp for API call (ISO 8601 format with Z for UTC)
             datetime_str = timestamp.strftime('%Y-%m-%dT%H:%M:%SZ')
             api_url = f"https://api.electricitymap.org/v3/power-breakdown/past?zone=SE-SE3&datetime={datetime_str}"
+            
+            # Progress update for long fetches
+            if i % 50 == 0 or i == len(timestamps_to_fetch) - 1:
+                progress_pct = (i+1) / len(timestamps_to_fetch) * 100
+                print(f"Progress: {i+1}/{len(timestamps_to_fetch)} ({progress_pct:.1f}%) - Current timestamp: {timestamp}")
             
             try:
                 response = requests.get(
@@ -246,6 +282,13 @@ def update_grid_data(project_root):
                     
                     # Use the timestamp as the key for the record
                     new_hourly_records.append(pd.Series(record, name=record_time))
+                    
+                    # Incremental save for large fetches
+                    if fetch_total and len(new_hourly_records) >= last_save + save_interval:
+                        print(f"Performing incremental save with {len(new_hourly_records)} records...")
+                        save_progress(grid_file_path, existing_df, new_hourly_records, grid_cols)
+                        last_save = len(new_hourly_records)
+                        print(f"Saved progress up to {timestamp}")
 
                 elif response.status_code == 429: # Rate limit hit
                     print("Rate limit hit. Waiting 60 seconds...")
@@ -255,71 +298,139 @@ def update_grid_data(project_root):
                     # Simple retry (could be more robust)
                     response = requests.get(api_url, headers={"auth-token": api_key})
                     if response.status_code == 200:
-                         # Reprocess if successful after retry (code omitted for brevity, copy from above)
-                         print("Retry successful.")
-                         # Need to re-add the processing logic here...
+                        # Reprocess if successful after retry
+                        print("Retry successful.")
+                        entry = response.json()
+                        
+                        # Process the single entry for this hour (same code as above)
+                        record = {col: 0.0 for col in grid_cols}
+                        record_time = timestamp
+                        
+                        if not entry or entry.get('powerProductionBreakdown') is None:
+                            print(f"Warning: No valid data returned for {datetime_str} after retry. Skipping.")
+                            continue
+                            
+                        record['fossilFreePercentage'] = round(entry.get('fossilFreePercentage', 0) or 0, 2)
+                        record['renewablePercentage'] = round(entry.get('renewablePercentage', 0) or 0, 2)
+                        record['powerConsumptionTotal'] = round(entry.get('powerConsumptionTotal', 0) or 0, 2)
+                        record['powerProductionTotal'] = round(entry.get('powerProductionTotal', 0) or 0, 2)
+                        record['powerImportTotal'] = round(entry.get('powerImportTotal', 0) or 0, 2)
+                        record['powerExportTotal'] = round(entry.get('powerExportTotal', 0) or 0, 2)
+                        
+                        prod = entry.get('powerProductionBreakdown', {})
+                        for source in power_sources:
+                            record[source] = round(prod.get(source, 0) or 0, 2)
+                            
+                        import_breakdown = entry.get('powerImportBreakdown', {})
+                        export_breakdown = entry.get('powerExportBreakdown', {})
+                        for zone in zones:
+                            record[f'import_{zone}'] = round(import_breakdown.get(zone, 0) or 0, 2)
+                            record[f'export_{zone}'] = round(export_breakdown.get(zone, 0) or 0, 2)
+                            
+                        new_hourly_records.append(pd.Series(record, name=record_time))
                     else:
-                         print(f"Retry failed for {datetime_str}. Status: {response.status_code}. Skipping.")
-
+                        print(f"Retry failed for {datetime_str}. Status: {response.status_code}. Skipping.")
                 else:
                     print(f"Failed to fetch grid data for {datetime_str}. Status code: {response.status_code}")
-                    # Optionally break or continue based on error type
-                    # print("Response content:", response.content.decode() if hasattr(response, 'content') else "No response content")
+                    if response.status_code == 402: # Payment required
+                        print("API subscription may have expired. Stopping fetch.")
+                        break
+                    elif response.status_code == 403: # Forbidden
+                        print("API key may be invalid. Stopping fetch.")
+                        break
+                    # For other errors, continue with next timestamp
 
             except requests.exceptions.RequestException as e:
                 print(f"Network error fetching data for {datetime_str}: {e}")
-                # Decide how to handle network errors (e.g., retry, skip, stop)
+                # Wait a bit before continuing to avoid hammering the API
+                time.sleep(5)
             except Exception as e:
                 print(f"Error processing grid data for {datetime_str}: {e}")
-                # Log unexpected errors during processing
+                # Continue with next timestamp
         
+        # Final save
         if new_hourly_records:
-            new_df = pd.DataFrame(new_hourly_records)
-            new_df.index.name = 'datetime'
-            
-            # Ensure new_df has the correct columns in the correct order, fill missing with 0.0
-            for col in grid_cols:
-                if col not in new_df.columns:
-                    new_df[col] = 0.0
-            new_df = new_df[grid_cols] 
-
-            # Combine with existing data
-            combined_df = pd.concat([existing_df, new_df])
-            
-            # Remove duplicates, keeping the newly fetched data
-            combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
-            
-            # Sort by date, round all values, and save
-            combined_df.sort_index(inplace=True)
-            combined_df = combined_df.round(2) # Final rounding
-            combined_df = combined_df.fillna(0.0) # Ensure no NaNs remain
-
-            try:
-                combined_df.to_csv(grid_file_path)
-                print(f"Successfully added/updated {len(new_hourly_records)} hourly grid records. New latest record: {combined_df.index.max()}")
-            except Exception as e:
-                 print(f"Error writing updated grid data to CSV: {e}")
-
+            save_final_results(grid_file_path, existing_df, new_hourly_records, grid_cols)
         else:
             print("No new grid data fetched or processed.")
-
     else:
-         print("Grid data appears to be up-to-date.")
+        print("Grid data appears to be up-to-date.")
+
+def save_progress(grid_file_path, existing_df, new_records, grid_cols):
+    """Save progress for incremental updates to avoid losing data"""
+    try:
+        new_df = pd.DataFrame(new_records)
+        new_df.index.name = 'datetime'
+        
+        # Ensure new_df has correct columns in correct order
+        for col in grid_cols:
+            if col not in new_df.columns:
+                new_df[col] = 0.0
+        new_df = new_df[grid_cols]
+        
+        # Combine with existing data
+        combined_df = pd.concat([existing_df, new_df])
+        
+        # Remove duplicates, keeping newest data
+        combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+        
+        # Sort, round, and save
+        combined_df.sort_index(inplace=True)
+        combined_df = combined_df.round(2)
+        combined_df = combined_df.fillna(0.0)
+        
+        combined_df.to_csv(grid_file_path)
+        return True
+    except Exception as e:
+        print(f"Error during incremental save: {e}")
+        return False
+
+def save_final_results(grid_file_path, existing_df, new_records, grid_cols):
+    """Save final results after all data fetching is complete"""
+    try:
+        new_df = pd.DataFrame(new_records)
+        new_df.index.name = 'datetime'
+        
+        # Ensure new_df has the correct columns in the correct order, fill missing with 0.0
+        for col in grid_cols:
+            if col not in new_df.columns:
+                new_df[col] = 0.0
+        new_df = new_df[grid_cols] 
+
+        # Combine with existing data
+        combined_df = pd.concat([existing_df, new_df])
+        
+        # Remove duplicates, keeping the newly fetched data
+        combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+        
+        # Sort by date, round all values, and save
+        combined_df.sort_index(inplace=True)
+        combined_df = combined_df.round(2) # Final rounding
+        combined_df = combined_df.fillna(0.0) # Ensure no NaNs remain
+
+        combined_df.to_csv(grid_file_path)
+        print(f"Successfully added/updated {len(new_records)} hourly grid records. New latest record: {combined_df.index.max()}")
+    except Exception as e:
+        print(f"Error writing updated grid data to CSV: {e}")
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Update grid data from Electricity Maps API")
+    parser.add_argument("--total", action="store_true", help="Fetch all data from 2017-01-01 regardless of existing data")
+    args = parser.parse_args()
+    
     feature_config = FeatureConfig() 
     print(feature_config.get_ordered_features())
     
     project_root = Path(__file__).resolve().parents[1]
     
-    """Update grid data only"""
     # Create processed data directory if it doesn't exist
     processed_dir = project_root / 'data' / 'processed'
     processed_dir.mkdir(parents=True, exist_ok=True)
     
-    # Update grid data only
+    # Update grid data
     print("\nUpdating grid data...")
-    update_grid_data(project_root)
+    update_grid_data(project_root, fetch_total=args.total)
 
 if __name__ == "__main__":
     main()

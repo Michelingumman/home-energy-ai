@@ -2,23 +2,26 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import logging
+import argparse
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class TimeFeatureGenerator:
-    def __init__(self, price_data_path=None):
+    def __init__(self, price_data_path=None, decimal_precision=3):
         """
         Initialize time feature generator
         
         Args:
             price_data_path (str, optional): Path to the processed price data CSV.
                                             Only needed for validation of date range.
+            decimal_precision (int): Number of decimal places to keep in output
         """
         self.price_data_path = Path(price_data_path) if price_data_path else None
         self.df = None
         self.start_date = None
         self.end_date = None
+        self.decimal_precision = decimal_precision
         
     def load_price_data(self):
         """Load the processed price data to determine start date and create full date range up to 2050-01-01."""
@@ -42,16 +45,16 @@ class TimeFeatureGenerator:
         logging.info("Generating cyclical time features")
         
         # Hour of day
-        self.df['hour_sin'] = np.sin(2 * np.pi * self.df.index.hour / 24)
-        self.df['hour_cos'] = np.cos(2 * np.pi * self.df.index.hour / 24)
+        self.df['hour_sin'] = np.sin(2 * np.pi * self.df.index.hour / 24).round(self.decimal_precision)
+        self.df['hour_cos'] = np.cos(2 * np.pi * self.df.index.hour / 24).round(self.decimal_precision)
         
         # Day of week
-        self.df['day_of_week_sin'] = np.sin(2 * np.pi * self.df.index.dayofweek / 7)
-        self.df['day_of_week_cos'] = np.cos(2 * np.pi * self.df.index.dayofweek / 7)
+        self.df['day_of_week_sin'] = np.sin(2 * np.pi * self.df.index.dayofweek / 7).round(self.decimal_precision)
+        self.df['day_of_week_cos'] = np.cos(2 * np.pi * self.df.index.dayofweek / 7).round(self.decimal_precision)
         
         # Month
-        self.df['month_sin'] = np.sin(2 * np.pi * self.df.index.month / 12)
-        self.df['month_cos'] = np.cos(2 * np.pi * self.df.index.month / 12)
+        self.df['month_sin'] = np.sin(2 * np.pi * self.df.index.month / 12).round(self.decimal_precision)
+        self.df['month_cos'] = np.cos(2 * np.pi * self.df.index.month / 12).round(self.decimal_precision)
         
         return self
     
@@ -104,8 +107,13 @@ def main():
     price_data_path = project_root / "data/processed/SE3prices.csv"
     output_path = project_root / "data/processed/time_features.csv"
     
+    # Get decimal precision from args if provided
+    parser = argparse.ArgumentParser(description='Generate time features with specified precision')
+    parser.add_argument('--precision', type=int, default=3, help='Number of decimal places for floating-point values')
+    args = parser.parse_args()
+    
     # Generate features
-    generator = TimeFeatureGenerator(price_data_path)
+    generator = TimeFeatureGenerator(price_data_path, decimal_precision=args.precision)
     feature_df = (generator
                     .load_price_data()
                     .generate_features()
@@ -114,13 +122,19 @@ def main():
     # Display sample and info
     print("\nGenerated Features Sample:")
     print(feature_df.head())
-    print("\nFeatures Info:")
-    print(feature_df.info())
     
-    # Save features
+    # Calculate file size estimate
+    original_size_kb = feature_df.memory_usage(deep=True).sum() / 1024
+    print(f"\nEstimated memory usage: {original_size_kb:.2f} KB")
+    
+    # Save features with space-efficient settings
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    feature_df.to_csv(output_path)
-    logging.info(f"Saved feature data to {output_path}")
+    feature_df.to_csv(output_path, float_format=f'%.{args.precision}f')
+    
+    # Log output info
+    file_size_kb = output_path.stat().st_size / 1024
+    logging.info(f"Saved feature data to {output_path} ({file_size_kb:.2f} KB)")
+    logging.info(f"Using {args.precision} decimal places for floating-point values")
 
 if __name__ == "__main__":
     main()

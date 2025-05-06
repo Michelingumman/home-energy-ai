@@ -332,7 +332,7 @@ def plot_valley_labels(df, output_dir=None, num_samples=3, days_per_sample=14):
         for valley_idx in valley_indices:
             ax1.axvspan(valley_idx - timedelta(hours=1), 
                       valley_idx + timedelta(hours=1),
-                      color='green', alpha=0.3)
+                      color='lightgreen', alpha=0.3)
         
         # Add points at valley locations
         valley_prices = sample.loc[valley_indices, TARGET_VARIABLE]
@@ -738,7 +738,7 @@ def weekly_averaging(data, timestamps):
     
     return smoothed
 
-def adaptive_trend_smoothing(data, timestamps, smoothing_level='medium'):
+def adaptive_trend_smoothing(data, timestamps, smoothing_level='daily'):
     """
     Apply adaptive smoothing based on the desired smoothing level.
     
@@ -1131,7 +1131,7 @@ def train_trend_model(data, production_mode=False):
     
     # Use the heavy smoothing level rather than daily averaging
     # Choose from: 'light', 'medium', 'heavy', 'daily', 'weekly'
-    smoothing_level = 'heavy'  # Changed from 'daily' to 'heavy' since the model itself should be smoother
+    smoothing_level = 'daily'  # Changed from 'daily' to 'heavy' since the model itself should be smoother
     logging.info(f"Using {smoothing_level} smoothing level")
     
     val_pred_values = adaptive_trend_smoothing(val_pred_raw, X_val.index, smoothing_level=smoothing_level)

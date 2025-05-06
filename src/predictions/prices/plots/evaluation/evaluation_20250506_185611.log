@@ -1,0 +1,43 @@
+2025-05-06 18:56:11,638 - INFO - Starting merged model evaluation (trend + valley)...
+2025-05-06 18:56:11,639 - INFO - Loading data...
+2025-05-06 18:56:11,726 - INFO - Loaded price data with shape (73007, 11)
+2025-05-06 18:56:11,820 - INFO - Loaded grid data with shape (73132, 19)
+2025-05-06 18:56:12,096 - INFO - Loaded time features with shape (289296, 10)
+2025-05-06 18:56:12,596 - INFO - Loaded holidays data with shape (710017, 4)
+2025-05-06 18:56:12,716 - INFO - Loaded weather data with shape (73080, 6)
+2025-05-06 18:56:16,037 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-06 18:56:16,043 - INFO - Identified 14059 valleys (19.3% of data) using robust valley detection
+2025-05-06 18:56:16,044 - INFO - Final merged data shape: (73007, 65)
+2025-05-06 18:56:16,048 - INFO - Loading trend model...
+2025-05-06 18:56:16,048 - INFO - Searching for trend models...
+2025-05-06 18:56:16,049 - INFO - Using best trend model: C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.pkl
+2025-05-06 18:56:16,050 - INFO - Loaded parameters for XGBoost model
+2025-05-06 18:56:16,540 - INFO - Successfully loaded model from C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.pkl
+2025-05-06 18:56:16,541 - INFO - Loaded feature order list with 22 features
+2025-05-06 18:56:16,541 - INFO - Model uses 22 features
+2025-05-06 18:56:16,541 - INFO - Top features: ['price_24h_avg', 'price_168h_avg', 'is_business_hour', 'hour_avg_price', 'is_morning_peak']
+2025-05-06 18:56:16,541 - INFO - Loading valley model...
+2025-05-06 18:56:16,541 - INFO - Loading valley detection model...
+2025-05-06 18:56:16,542 - INFO - Using model from best_valley_model.keras
+2025-05-06 18:56:17,401 - WARNING - From C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-05-06 18:56:17,553 - INFO - Loaded valley model from C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\best_valley_model.keras
+2025-05-06 18:56:17,553 - INFO - Loaded feature list with 27 features
+2025-05-06 18:56:17,554 - INFO - Loaded feature scaler from C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\feature_scaler_valley_model.save
+2025-05-06 18:56:17,554 - INFO - Starting combined trend and valley model evaluation...
+2025-05-06 18:56:17,584 - INFO - Using validation data with 14601 rows from 2021-12-31 05:00:00+00:00 to 2023-08-31 14:00:00+00:00
+2025-05-06 18:56:17,584 - INFO - Adding specialized features for valley detection...
+2025-05-06 18:56:17,598 - INFO - Making trend predictions...
+2025-05-06 18:56:17,598 - INFO - Adding time features for trend model...
+2025-05-06 18:56:17,613 - INFO - Making predictions with trend model using 22 features...
+2025-05-06 18:56:17,614 - INFO - Creating DMatrix without feature names to avoid mismatch
+2025-05-06 18:56:17,782 - INFO - Successfully generated trend predictions with shape (14601,)
+2025-05-06 18:56:17,826 - INFO - Making valley predictions with threshold 0.6...
+2025-05-06 18:56:21,435 - INFO - Truncating trend predictions to match valley predictions: 14601 -> 14410
+2025-05-06 18:56:21,436 - WARNING - Length mismatch between actual_valleys (14433) and valley_predictions (14410)
+2025-05-06 18:56:21,436 - INFO - Truncated arrays to common length: 14410
+2025-05-06 18:56:21,437 - INFO - Generating visualizations for 3 weeks...
+2025-05-06 18:56:22,201 - INFO - Generated visualization for week starting 2022-01-07
+2025-05-06 18:56:23,035 - INFO - Generated visualization for week starting 2022-01-14
+2025-05-06 18:56:23,700 - INFO - Generated visualization for week starting 2022-01-21
+2025-05-06 18:56:23,723 - INFO - Merged model evaluation complete.

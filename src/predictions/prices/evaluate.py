@@ -32,6 +32,7 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import xgboost as xgb  # For loading and using XGBoost models
 from scipy.signal import medfilt, savgol_filter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.lines import Line2D
 
 # Define custom layers needed for model loading
 class GlobalSumPooling1D(tf.keras.layers.Layer):
@@ -110,7 +111,7 @@ def savitzky_golay_filter(data, window=11, polyorder=2):
             
     return savgol_filter(data, window, polyorder)
 
-def adaptive_trend_smoothing(data, timestamps, smoothing_level='medium'):
+def adaptive_trend_smoothing(data, timestamps, smoothing_level='light'):
     """
     Apply adaptive smoothing based on the level specified.
     
@@ -767,9 +768,9 @@ def generate_weekly_valley_plots(timestamps, predictions, probabilities, actuals
         
         # Add title with metrics
         ax.set_title(f'Week starting {week_key} ({eval_name} Data)\n' +
-                 f'Valleys: {np.sum(week_actuals)} actual, {np.sum(week_predictions)} predicted | ' +
-                 f'Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}',
-                 fontsize=14)
+                    f'Valleys: {np.sum(week_actuals)} actual, {np.sum(week_predictions)} predicted | ' +
+                    f'Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}',
+                    fontsize=14)
         
         # Formatting
         ax.set_xlabel('Date', fontsize=12)
@@ -1083,7 +1084,7 @@ def evaluate_trend_model(df, model_artifacts, num_weeks=4):
         median_window = smoothing_params.get('median_window', 5)
         savgol_window = smoothing_params.get('savgol_window', 11)
         savgol_polyorder = smoothing_params.get('savgol_polyorder', 2)
-        smoothing_level = smoothing_params.get('smoothing_level', 'medium')
+        smoothing_level = smoothing_params.get('smoothing_level', 'light')
         
         logging.info(f"Applying {smoothing_level} smoothing level from trained model")
         
@@ -1795,34 +1796,8 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
     
     # Ensure all needed grid features are available
     grid_features = ['powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 
-                     'powerExportTotal', 'nuclear', 'hydro', 'wind']
-    
-    for feature in grid_features:
-        if feature not in result_df.columns:
-            logging.warning(f"Missing grid feature: {feature}, creating dummy values")
-            # Create placeholder based on time of day patterns if we don't have real data
-            if feature == 'powerConsumptionTotal':
-                # Consumption follows a daily pattern
-                base = 15000 + 5000 * np.sin(2 * np.pi * (result_df['hour'] - 9) / 24)
-                result_df[feature] = base + np.random.normal(0, 500, len(result_df))
-            elif feature == 'powerProductionTotal':
-                # Production is roughly similar to consumption
-                base = 14000 + 4000 * np.sin(2 * np.pi * (result_df['hour'] - 8) / 24)
-                result_df[feature] = base + np.random.normal(0, 500, len(result_df))
-            elif feature == 'nuclear':
-                # Nuclear is fairly constant
-                result_df[feature] = 6000 + np.random.normal(0, 100, len(result_df))
-            elif feature == 'hydro':
-                # Hydro follows consumption somewhat
-                base = 5000 + 2000 * np.sin(2 * np.pi * (result_df['hour'] - 8) / 24)
-                result_df[feature] = base + np.random.normal(0, 300, len(result_df))
-            elif feature == 'wind':
-                # Wind has its own pattern
-                result_df[feature] = 2000 + np.random.normal(0, 800, len(result_df))
-            else:
-                # For other features, use plausible constants with noise
-                result_df[feature] = 1000 + np.random.normal(0, 200, len(result_df))
-    
+                        'powerExportTotal', 'nuclear', 'hydro', 'wind']
+        
     # Fill any missing values
     for col in result_df.columns:
         if result_df[col].isnull().any():
@@ -1873,7 +1848,7 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
         
         # Apply smoothing to trend predictions if needed
         smoothing_params = trend_artifacts.get('smoothing_params', {})
-        smoothing_level = smoothing_params.get('smoothing_level', 'medium')
+        smoothing_level = smoothing_params.get('smoothing_level', 'light')
         trend_predictions = adaptive_trend_smoothing(trend_predictions, result_df.index, smoothing_level)
     except Exception as e:
         logging.error(f"Error making trend predictions: {e}")
@@ -1997,6 +1972,37 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
         week_probabilities = valley_probabilities[start_idx:end_idx]
         week_actual_valleys = actual_valleys[start_idx:end_idx]
         
+        # Create merged prediction using probability-based valley depth adjustment
+        merged_prediction = week_trend.copy()
+        
+        # Apply probability-based adjustments for all potential valley points
+        for i, probability in enumerate(week_probabilities):
+            if probability >= valley_threshold:
+                # Scale the adjustment by the confidence level
+                # Higher probability = deeper valley (stronger adjustment)
+                adjustment_factor = 0.85 - (probability - valley_threshold) * 0.8
+                # Ensure it doesn't go below some reasonable minimum (60% of trend)
+                adjustment_factor = max(adjustment_factor, 0.6)
+                # Apply the adjustment
+                merged_prediction[i] = week_trend[i] * adjustment_factor
+        
+        # Apply extra smoothing for visualization purposes
+        from scipy.signal import savgol_filter
+        
+        # Get smoothing window size (must be odd and less than data points)
+        vis_window = min(47, len(week_trend) - 1)
+        if vis_window % 2 == 0:
+            vis_window -= 1  # Make sure it's odd
+            
+        # Make a visual-only smoothed copy of trend and merged predictions
+        trend_smooth = savgol_filter(week_trend, window_length=vis_window, polyorder=2)
+        merged_smooth = merged_prediction.copy()
+        
+        # Only smooth the non-valley parts of the merged prediction to preserve the valleys
+        valley_mask = week_valleys == 0  # Where there are no valleys
+        merged_smooth_temp = savgol_filter(merged_prediction, window_length=vis_window, polyorder=2)
+        merged_smooth[valley_mask] = merged_smooth_temp[valley_mask]
+        
         # Calculate week metrics
         week_accuracy = accuracy_score(week_actual_valleys, week_valleys)
         week_precision = precision_score(week_actual_valleys, week_valleys, zero_division=0)
@@ -2016,39 +2022,25 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
         # Plot actual prices
         ax1.plot(week_timestamps, week_prices, 'b-', linewidth=2, label='Actual Price')
         
-        # Plot trend predictions
-        ax1.plot(week_timestamps, week_trend, 'r-', linewidth=2, label='Trend Prediction')
+        # Plot trend predictions in purple (changed from red)
+        ax1.plot(week_timestamps, trend_smooth, 'purple', linewidth=2.5, label='Trend Prediction')
+        
+        # Plot the merged trend+valley prediction line in red
+        ax1.plot(week_timestamps, merged_smooth, 'r-', linewidth=2.5, label='Merged Trend+Valley')
         
         # Mark valley detection with vertical green bands
         for i, is_valley in enumerate(week_valleys):
             if is_valley:
-                # Make the valley bands wider by extending 2 hours in each direction instead of 1
+                # Make the valley bands wider by extending 2 hours in each direction
                 valley_start = max(0, i-2)
                 valley_end = min(len(week_timestamps)-1, i+2)
                 ax1.axvspan(week_timestamps[valley_start], week_timestamps[valley_end], 
-                          color='green', alpha=0.2)  # Reduced alpha for better visualization
+                          color='green', alpha=0.2)
                 
                 # Add a marker at the exact valley point
                 ax1.plot(week_timestamps[i], week_prices[i], 'gv', markersize=8)
-        
-        # Mark actual valleys with triangles
-        for i, is_valley in enumerate(week_actual_valleys):
-            if is_valley:
-                ax1.scatter(week_timestamps[i], week_prices[i], color='green', marker='v', s=100)
-        
-        # Mark predicted valleys with triangles
-        for i, is_valley in enumerate(week_valleys):
-            if is_valley:
-                # Mark true positives with green, false positives with red
-                is_tp = is_valley and week_actual_valleys[i]
-                is_fp = is_valley and not week_actual_valleys[i]
                 
-                if is_tp:
-                    ax1.scatter(week_timestamps[i], week_prices[i], color='green', marker='v', s=100, zorder=3)
-                elif is_fp:
-                    ax1.scatter(week_timestamps[i], week_prices[i], color='red', marker='x', s=100, zorder=3)
-                
-                # Add probability value as text
+                # Add probability value as text above the marker
                 ax1.text(week_timestamps[i], week_prices[i] * 1.05, 
                         f"{week_probabilities[i]:.2f}", fontsize=8, 
                         ha='center', va='bottom',
@@ -2067,43 +2059,52 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
         # Add metrics to plot
         valley_count = week_valleys.sum()
         actual_valley_count = week_actual_valleys.sum()
-        metrics_text = (
-            f"Valleys: {actual_valley_count} actual, {valley_count} predicted | "
-            f"Precision: {week_precision:.2f}, Recall: {week_recall:.2f}, F1: {week_f1:.2f}\n"
-            f"Trend MAE: {week_trend_mae:.2f} öre/kWh"
-        )
-        ax1.text(0.5, 0.02, metrics_text, transform=ax1.transAxes, 
-                ha='center', va='bottom', fontsize=10,
-                bbox=dict(facecolor='white', alpha=0.8))
+        # metrics_text = (
+        #     f"Valleys: {actual_valley_count} actual, {valley_count} predicted | "
+        #     f"Precision: {week_precision:.2f}, Recall: {week_recall:.2f}, F1: {week_f1:.2f}\n"
+        #     f"Trend MAE: {week_trend_mae:.2f} öre/kWh"
+        # )
+        # ax1.text(0.5, 0.02, metrics_text, transform=ax1.transAxes, 
+        #         ha='center', va='bottom', fontsize=10,
+        #         bbox=dict(facecolor='white', alpha=0.8))
+        
+        # Add a dummy plot element for the valley markers in the legend
+        handles, labels = ax1.get_legend_handles_labels()
+        handles.append(Line2D([0], [0], marker='v', color='g', linestyle='None', 
+                             markersize=8, label='Valley Detection'))
+        ax1.legend(handles=handles, loc='upper right', fontsize=10)
         
         # Bottom plot - Valley probabilities
         ax2 = plt.subplot(gs[1], sharex=ax1)
         
-        # Plot probability line
-        ax2.plot(week_timestamps, week_probabilities, 'g-', linewidth=1.5)
+        # Plot probability line in green to match the valley band color
+        ax2.plot(week_timestamps, week_probabilities, 'g-', linewidth=1.5, label='Valley Probability')
         
         # Add horizontal line for threshold
         ax2.axhline(y=valley_threshold, color='r', linestyle='--', 
                   label=f'Threshold ({valley_threshold:.2f})')
         
-        # Show binary valley predictions as bars
-        ax2.bar(week_timestamps, week_valleys * 0.2, bottom=0.8, 
-              color='g', alpha=0.3, width=0.02, align='center')
+        # Show binary valley predictions as triangles
+        for i, is_valley in enumerate(week_valleys):
+            if is_valley:
+                ax2.scatter(week_timestamps[i], 0.9, color='g', marker='v', s=50)
         
-        # Add actual valleys as markers
+        # Add actual valleys as blue triangles
         for i, is_valley in enumerate(week_actual_valleys):
             if is_valley:
-                ax2.scatter(week_timestamps[i], 0.9, color='blue', marker='^', s=50)
+                ax2.scatter(week_timestamps[i], 0.9, color='b', marker='^', s=50)
+        
+        # Add a legend to explain the markers
+        handles, labels = ax2.get_legend_handles_labels()
+        handles.append(plt.Line2D([0], [0], marker='v', color='g', linestyle='None', markersize=8, label='Predicted Valley'))
+        handles.append(plt.Line2D([0], [0], marker='^', color='b', linestyle='None', markersize=8, label='Actual Valley'))
+        ax2.legend(handles=handles, loc='upper right', fontsize=10)
         
         # Add labels
         ax2.set_ylabel('Valley Probability', fontsize=12)
         ax2.set_xlabel('Date', fontsize=12)
         ax2.set_ylim(0, 1.1)
         ax2.grid(True, alpha=0.3)
-        
-        # Add legend to both plots
-        ax1.legend(loc='upper right')
-        ax2.legend(loc='upper right')
         
         plt.tight_layout()
         

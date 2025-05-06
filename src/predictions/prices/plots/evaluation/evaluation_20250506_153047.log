@@ -1,7 +1,0 @@
-2025-05-06 15:30:47,407 - INFO - Starting merged model evaluation (trend + valley)...
-2025-05-06 15:30:47,408 - INFO - Loading data...
-2025-05-06 15:30:47,522 - INFO - Loaded price data with shape (73007, 11)
-2025-05-06 15:30:47,621 - INFO - Loaded grid data with shape (73132, 19)
-2025-05-06 15:30:47,942 - INFO - Loaded time features with shape (289296, 10)
-2025-05-06 15:30:48,502 - INFO - Loaded holidays data with shape (710017, 4)
-2025-05-06 15:30:48,694 - INFO - Loaded weather data with shape (73080, 6)

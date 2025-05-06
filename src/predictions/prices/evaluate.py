@@ -1574,8 +1574,8 @@ def parse_arguments():
                       help='Number of weeks to visualize in evaluation')
     parser.add_argument('--test', action='store_true', 
                       help='Use test data instead of validation data for evaluation')
-    parser.add_argument('--threshold', type=float, default=0.05,
-                      help='Probability threshold for valley detection (default: 0.05, lower is more sensitive)')
+    parser.add_argument('--valley-threshold', type=float, default=0.4,
+                      help='Probability threshold for valley detection (default: 0.4, higher values reduce sensitivity). Works with --model valley or --merge')
     parser.add_argument('--find-threshold', action='store_true',
                       help='Find the optimal threshold for peak/valley detection')
     parser.add_argument('--merge', action='store_true',
@@ -1667,7 +1667,7 @@ def find_optimal_threshold(probabilities, actuals):
     }
 
 # Add a new function to evaluate combined trend and valley models
-def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4, use_test_data=False, valley_threshold=0.38):
+def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4, use_test_data=False, valley_threshold=0.4):
     """
     Evaluate combined trend and valley models.
     
@@ -1711,7 +1711,9 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
     
     # Make trend predictions
     trend_model = trend_artifacts.get('model')
-    trend_feature_names = trend_artifacts.get('feature_names', [])
+    trend_feature_names = trend_artifacts.get('feature_order', [])  # Try to use feature_order first
+    if not trend_feature_names:
+        trend_feature_names = trend_artifacts.get('feature_names', [])  # Fall back to feature_names
     
     # Check if we have feature names
     if not trend_feature_names or len(trend_feature_names) == 0:
@@ -1830,10 +1832,15 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
                     method='bfill').fillna(result_df[col].median())
     
     # Now ensure all trend feature columns are present
+    missing_features = []
     for feature in trend_feature_names:
         if feature not in result_df.columns:
+            missing_features.append(feature)
             logging.warning(f"Missing trend feature: {feature}, using zero values")
             result_df[feature] = 0
+    
+    if missing_features:
+        logging.warning(f"Missing {len(missing_features)} trend features: {missing_features[:5]}...")
     
     # Get feature matrix for trend prediction
     X_trend = result_df[trend_feature_names].values
@@ -1843,9 +1850,21 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
     
     try:
         if isinstance(trend_model, xgb.Booster):
-            # For XGBoost models
+            # For XGBoost models - avoid feature name validation
+            logging.info("Creating DMatrix without feature names to avoid mismatch")
             dmatrix = xgb.DMatrix(X_trend)
+            
+            # Temporarily clear feature names if they exist
+            orig_feature_names = None
+            if hasattr(trend_model, 'feature_names'):
+                orig_feature_names = trend_model.feature_names
+                trend_model.feature_names = None
+            
             trend_predictions = trend_model.predict(dmatrix)
+            
+            # Restore original feature names
+            if orig_feature_names is not None:
+                trend_model.feature_names = orig_feature_names
         else:
             # For other model types
             trend_predictions = trend_model.predict(X_trend)
@@ -1878,7 +1897,8 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
     
     # Prepare data for valley detection
     X_valley = result_df[valley_feature_names].values
-    X_valley = valley_feature_scaler.transform(X_valley)
+    if valley_feature_scaler:
+        X_valley = valley_feature_scaler.transform(X_valley)
     
     # Create sequences for TCN valley model
     X_val_seq, _ = create_sequences(
@@ -1997,14 +2017,19 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
         ax1.plot(week_timestamps, week_prices, 'b-', linewidth=2, label='Actual Price')
         
         # Plot trend predictions
-        ax1.plot(week_timestamps, week_trend, 'r-', linewidth=1.5, label='Trend Prediction')
+        ax1.plot(week_timestamps, week_trend, 'r-', linewidth=2, label='Trend Prediction')
         
-        # Highlight valleys with vertical spans
+        # Mark valley detection with vertical green bands
         for i, is_valley in enumerate(week_valleys):
             if is_valley:
-                ax1.axvspan(week_timestamps[i] - timedelta(hours=0.5), 
-                          week_timestamps[i] + timedelta(hours=0.5),
-                          color='green', alpha=0.3)
+                # Make the valley bands wider by extending 2 hours in each direction instead of 1
+                valley_start = max(0, i-2)
+                valley_end = min(len(week_timestamps)-1, i+2)
+                ax1.axvspan(week_timestamps[valley_start], week_timestamps[valley_end], 
+                          color='green', alpha=0.2)  # Reduced alpha for better visualization
+                
+                # Add a marker at the exact valley point
+                ax1.plot(week_timestamps[i], week_prices[i], 'gv', markersize=8)
         
         # Mark actual valleys with triangles
         for i, is_valley in enumerate(week_actual_valleys):
@@ -2133,7 +2158,7 @@ def main():
                 valley_artifacts,
                 num_weeks=args.weeks,
                 use_test_data=args.test,
-                valley_threshold=args.threshold
+                valley_threshold=args.valley_threshold
             )
             
             if results:
@@ -2232,7 +2257,7 @@ def main():
                 valley_artifacts, 
                 num_weeks=args.weeks, 
                 use_test_data=args.test,
-                prob_threshold=args.threshold,
+                prob_threshold=args.valley_threshold,
                 find_optimal_threshold=args.find_threshold
             )
             

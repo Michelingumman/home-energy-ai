@@ -1,0 +1,58 @@
+2025-05-06 14:38:30,308 - INFO - Starting trend model evaluation with 4 weeks of visualizations...
+2025-05-06 14:38:30,308 - INFO - Loading data...
+2025-05-06 14:38:30,396 - INFO - Loaded price data with shape (73007, 11)
+2025-05-06 14:38:30,486 - INFO - Loaded grid data with shape (73132, 19)
+2025-05-06 14:38:30,789 - INFO - Loaded time features with shape (289296, 10)
+2025-05-06 14:38:31,514 - INFO - Loaded holidays data with shape (710017, 4)
+2025-05-06 14:38:31,664 - INFO - Loaded weather data with shape (73080, 6)
+2025-05-06 14:38:35,703 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-06 14:38:35,707 - INFO - Identified 14059 valleys (19.3% of data) using robust valley detection
+2025-05-06 14:38:35,707 - INFO - Final merged data shape: (73007, 65)
+2025-05-06 14:38:35,712 - INFO - Loading trend model...
+2025-05-06 14:38:35,712 - INFO - Searching for trend models...
+2025-05-06 14:38:35,712 - INFO - Using best trend model: C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.pkl
+2025-05-06 14:38:35,713 - INFO - Loaded parameters for XGBoost model
+2025-05-06 14:38:36,179 - INFO - Successfully loaded model from C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.pkl
+2025-05-06 14:38:36,180 - INFO - Loaded feature order list with 22 features
+2025-05-06 14:38:36,180 - INFO - Model uses 22 features
+2025-05-06 14:38:36,180 - INFO - Top features: ['price_24h_avg', 'price_168h_avg', 'is_business_hour', 'hour_avg_price', 'is_morning_peak']
+2025-05-06 14:38:36,180 - INFO - Evaluating trend model with 4 weeks of visualizations...
+2025-05-06 14:38:36,180 - INFO - Evaluating XGBoost trend model
+2025-05-06 14:38:36,180 - INFO - Using 22 features with top important: ['price_24h_avg', 'price_168h_avg', 'is_business_hour']
+2025-05-06 14:38:36,184 - INFO - Test data shape: (10952, 65), starting from 2024-01-30 15:00:00+00:00
+2025-05-06 14:38:36,185 - INFO - Forecasting test period (10952 steps)...
+2025-05-06 14:38:36,201 - INFO - Using saved feature order with 22 features
+2025-05-06 14:38:36,202 - INFO - Final test feature matrix: (10952, 22)
+2025-05-06 14:38:36,203 - INFO - Creating DMatrix with only feature values (no column names)
+2025-05-06 14:38:36,206 - INFO - Clearing existing feature names in model: ['price_24h_avg', 'dayofweek_cos', 'powerExportTotal', 'day_cos', 'hour_avg_price', 'month_cos', 'hour_cos', 'is_evening_peak', 'powerConsumptionTotal', 'wind', 'powerImportTotal', 'powerProductionTotal', 'day_sin', 'is_weekend', 'is_business_hour', 'hour_sin', 'dayofweek_sin', 'nuclear', 'month_sin', 'is_morning_peak', 'hydro', 'price_168h_avg']
+2025-05-06 14:38:36,206 - INFO - Creating DMatrix with matching feature order
+2025-05-06 14:38:36,385 - INFO - Successfully made predictions
+2025-05-06 14:38:36,386 - INFO - Applying heavy smoothing level from trained model
+2025-05-06 14:38:36,535 - INFO - Saved forecast results to C:\_Projects\home-energy-ai\src\predictions\prices\plots\evaluation\trend\trend_forecast_results.csv
+2025-05-06 14:38:36,536 - INFO - Test MAE: 12.12, RMSE: 21.82, MAPE: 79.30%
+2025-05-06 14:38:36,537 - INFO - Direction Accuracy: 0.67, SMAPE: 43.76%
+2025-05-06 14:38:36,538 - INFO - Saved evaluation metrics to C:\_Projects\home-energy-ai\src\predictions\prices\plots\evaluation\trend\trend_model_evaluation_metrics.json
+2025-05-06 14:38:36,538 - INFO - Generating visualizations...
+2025-05-06 14:38:36,967 - INFO - Generating weekly visualizations for 4 weeks...
+2025-05-06 14:38:37,221 - INFO - Generated visualization for week 2024-01-30
+2025-05-06 14:38:37,474 - INFO - Generated visualization for week 2024-05-21
+2025-05-06 14:38:37,721 - INFO - Generated visualization for week 2024-09-10
+2025-05-06 14:38:38,131 - INFO - Generated visualization for week 2024-12-31
+2025-05-06 14:38:38,132 - INFO - Generating monthly visualizations...
+2025-05-06 14:38:38,700 - INFO - Generated visualization for month February 2024
+2025-05-06 14:38:39,290 - INFO - Generated visualization for month March 2024
+2025-05-06 14:38:39,864 - INFO - Generated visualization for month April 2024
+2025-05-06 14:38:40,464 - INFO - Generated visualization for month May 2024
+2025-05-06 14:38:41,044 - INFO - Generated visualization for month June 2024
+2025-05-06 14:38:41,871 - INFO - Generated visualization for month July 2024
+2025-05-06 14:38:42,464 - INFO - Generated visualization for month August 2024
+2025-05-06 14:38:43,063 - INFO - Generated visualization for month September 2024
+2025-05-06 14:38:43,667 - INFO - Generated visualization for month October 2024
+2025-05-06 14:38:44,255 - INFO - Generated visualization for month November 2024
+2025-05-06 14:38:45,075 - INFO - Generated visualization for month December 2024
+2025-05-06 14:38:45,678 - INFO - Generated visualization for month January 2025
+2025-05-06 14:38:46,245 - INFO - Generated visualization for month February 2025
+2025-05-06 14:38:46,825 - INFO - Generated visualization for month March 2025
+2025-05-06 14:38:47,434 - INFO - Generated visualization for month April 2025
+2025-05-06 14:38:47,910 - INFO - Trend model evaluation complete.
+2025-05-06 14:38:47,913 - INFO - Trend model evaluation completed successfully.

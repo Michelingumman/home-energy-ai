@@ -33,6 +33,7 @@ import xgboost as xgb  # For loading and using XGBoost models
 from scipy.signal import medfilt, savgol_filter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.lines import Line2D
+from sklearn.preprocessing import StandardScaler
 
 # Define custom layers needed for model loading
 class GlobalSumPooling1D(tf.keras.layers.Layer):
@@ -56,7 +57,7 @@ sys.path.append(current_dir)
 # Import utility functions
 from utils import (
     add_lag_features, add_rolling_features, detect_price_valleys_derivative,
-    create_sequences  # Added create_sequences import
+    create_sequences, detect_peaks_robust  # Removed plot_peak_labels from utils import
 )
 
 # Import config parameters
@@ -74,14 +75,27 @@ from config import (
     PEAK_CORE_FEATURES, VALLEY_CORE_FEATURES
 )
 
+# Import plot_peak_labels from train
+from train import plot_peak_labels
+
 # Create necessary directories
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
 EVALUATION_DIR = PLOTS_DIR / "evaluation"
 EVALUATION_DIR.mkdir(parents=True, exist_ok=True)
+
 VALLEY_MODEL_DIR = MODELS_DIR / "valley_model"
 VALLEY_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+PEAK_MODEL_DIR = MODELS_DIR / "peak_model"
+PEAK_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
 VALLEY_EVAL_DIR = EVALUATION_DIR / "valley"
 VALLEY_EVAL_DIR.mkdir(parents=True, exist_ok=True)
+
+PEAK_EVAL_DIR = EVALUATION_DIR / "peak"
+PEAK_EVAL_DIR.mkdir(parents=True, exist_ok=True)
+
 TREND_EVAL_DIR = EVALUATION_DIR / "trend"
 TREND_EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -464,18 +478,18 @@ def load_valley_model():
 
 def evaluate_valley_model(df, model_artifacts, num_weeks=3, use_test_data=False, prob_threshold=None, find_optimal_threshold=False):
     """
-    Evaluate the valley detection model on a validation dataset.
+    Evaluate the valley detection model on the validation or test set.
     
     Args:
-        df: DataFrame with price data and features
-        model_artifacts: Dictionary with model and preprocessing objects
-        num_weeks: Number of weeks to evaluate
-        use_test_data: If True, use test data, otherwise validation data
-        prob_threshold: Optional probability threshold for classification (overrides the optimal threshold)
-        find_optimal_threshold: If True, find optimal threshold using PR curve
+        df: DataFrame with full data
+        model_artifacts: Dictionary with model and preprocessing tools
+        num_weeks: Number of weeks to plot
+        use_test_data: If True, evaluate on test data instead of validation data
+        prob_threshold: Probability threshold for valley detection (if None, use default 0.5)
+        find_optimal_threshold: If True, find optimal threshold using F1 score
         
     Returns:
-        Dictionary with evaluation metrics
+        Dictionary with evaluation results
     """
     logging.info(f"Evaluating valley detection model on {'test' if use_test_data else 'validation'} data...")
     
@@ -1569,18 +1583,18 @@ def generate_summary_report(results, model_type):
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Evaluate electricity price prediction models')
-    parser.add_argument('--model', type=str, choices=['trend', 'peak', 'valley'], default='trend',
-                      help='Model type to evaluate (trend, peak, valley)')
+    parser.add_argument('--model', type=str, choices=['trend', 'peak', 'valley', 'merged'], default='trend',
+                      help='Model type to evaluate (trend, peak, valley, or merged)')
     parser.add_argument('--weeks', type=int, default=4,
-                      help='Number of weeks to visualize in evaluation')
-    parser.add_argument('--test', action='store_true', 
+                      help='Number of weeks to visualize in evaluation (or number of samples for peak/valley detection)')
+    parser.add_argument('--test-data', action='store_true', dest='test_data',
                       help='Use test data instead of validation data for evaluation')
-    parser.add_argument('--valley-threshold', type=float, default=0.4,
-                      help='Probability threshold for valley detection (default: 0.4, higher values reduce sensitivity). Works with --model valley or --merge')
-    parser.add_argument('--find-threshold', action='store_true',
+    parser.add_argument('--threshold', type=float, default=0.5,
+                      help='Probability threshold for peak/valley detection (default: 0.5)')
+    parser.add_argument('--peak-threshold', type=float, default=None,
+                      help='Separate probability threshold for peak detection in merged model (default: None, uses --threshold)')
+    parser.add_argument('--optimize-threshold', action='store_true', dest='optimize_threshold',
                       help='Find the optimal threshold for peak/valley detection')
-    parser.add_argument('--merge', action='store_true',
-                      help='Combine trend and valley model predictions and visualize together')
     return parser.parse_args()
 
 # Add a new function to find optimal threshold
@@ -1668,22 +1682,24 @@ def find_optimal_threshold(probabilities, actuals):
     }
 
 # Add a new function to evaluate combined trend and valley models
-def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4, use_test_data=False, valley_threshold=0.4):
+def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_artifacts=None, num_weeks=4, use_test_data=False, peak_threshold=0.5, valley_threshold=0.4):
     """
-    Evaluate combined trend and valley models.
+    Evaluate combined trend, peak, and valley models.
     
     Args:
         data: DataFrame with electricity price data
         trend_artifacts: Dictionary with trend model artifacts
-        valley_artifacts: Dictionary with valley model artifacts
+        peak_artifacts: Dictionary with peak model artifacts (optional)
+        valley_artifacts: Dictionary with valley model artifacts (optional)
         num_weeks: Number of weeks to visualize
         use_test_data: Whether to use test data instead of validation data
+        peak_threshold: Probability threshold for peak detection
         valley_threshold: Probability threshold for valley detection
         
     Returns:
         Dictionary with evaluation results
     """
-    logging.info("Starting combined trend and valley model evaluation...")
+    logging.info("Starting combined model evaluation...")
     
     # The data is a single DataFrame, not a dictionary
     df = data.copy()
@@ -1707,8 +1723,14 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
     
     logging.info(f"Using {subset_name} data with {len(df)} rows from {df.index[0]} to {df.index[-1]}")
     
-    # Add features for valley detection
-    df = add_valley_features(df)
+    # Add features for peak and valley detection
+    if peak_artifacts:
+        df = add_peak_features(df)
+        logging.info("Added peak detection features")
+    
+    if valley_artifacts:
+        df = add_valley_features(df)
+        logging.info("Added valley detection features")
     
     # Make trend predictions
     trend_model = trend_artifacts.get('model')
@@ -1716,614 +1738,1325 @@ def evaluate_merged_models(data, trend_artifacts, valley_artifacts, num_weeks=4,
     if not trend_feature_names:
         trend_feature_names = trend_artifacts.get('feature_names', [])  # Fall back to feature_names
     
-    # Check if we have feature names
-    if not trend_feature_names or len(trend_feature_names) == 0:
-        logging.warning("No feature names found in trend artifacts, trying to load from file")
-        try:
-            # Try to load feature names from the feature_names.json file
-            feature_names_path = Path(__file__).resolve().parent / "models" / "trend_model" / "feature_names.json"
-            with open(feature_names_path, 'r') as f:
-                trend_feature_names = json.load(f)
-            logging.info(f"Loaded {len(trend_feature_names)} feature names from file")
-        except Exception as e:
-            logging.error(f"Error loading feature names: {e}")
-            # Create a fallback feature list with commonly used features
-            trend_feature_names = [
-                'price_24h_avg', 'price_168h_avg', 'hour_avg_price',
-                'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
-                'month_sin', 'month_cos', 'dayofweek_sin', 'dayofweek_cos',
-                'is_weekend', 'is_business_hour', 'is_morning_peak', 'is_evening_peak',
-                'powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 'powerExportTotal',
-                'nuclear', 'hydro', 'wind'
-            ]
-            logging.info(f"Using fallback feature list with {len(trend_feature_names)} features")
+    # Check if we have the necessary features for trend prediction
+    missing_trend_features = [f for f in trend_feature_names if f not in df.columns]
+    if missing_trend_features:
+        logging.warning(f"Missing {len(missing_trend_features)} trend features: {missing_trend_features[:5]}...")
+        # Add dummy values for missing features
+        for feature in missing_trend_features:
+            df[feature] = 0
     
-    logging.info("Making trend predictions...")
+    # For XGBoost we need to ensure a specific ordering of features
+    df_trend = df[trend_feature_names].copy()
     
-    # Ensure we have all required lag features
-    # Add rolling price statistics if not already present
-    if 'price_24h_avg' not in df.columns:
-        logging.info("Adding price lag and rolling features for trend prediction...")
-        if 'SE3_price_lag_24h' not in df.columns:
-            # Add lag features
-            for lag in [1, 2, 3, 6, 12, 24, 48, 72, 168]:
-                lag_col = f'SE3_price_lag_{lag}h'
-                if lag_col not in df.columns:
-                    df[lag_col] = df[TARGET_VARIABLE].shift(lag)
-        
-        # Add rolling averages
-        if 'price_24h_avg' not in df.columns:
-            df['price_24h_avg'] = df[TARGET_VARIABLE].rolling(window=24, center=False).mean()
-        
-        if 'price_168h_avg' not in df.columns:
-            df['price_168h_avg'] = df[TARGET_VARIABLE].rolling(window=168, center=False).mean()
+    # Use XGBoost model for trend predictions
+    trend_predictions = trend_model.predict(df_trend)
     
-        # Calculate hour-of-day average prices if needed
-        if 'hour_avg_price' not in df.columns:
-            # Group by hour of day
-            hour_avg = df.groupby(df.index.hour)[TARGET_VARIABLE].mean()
-            # Map hour averages back to the dataframe
-            df['hour_avg_price'] = df.index.hour.map(hour_avg)
-    
-    # Add time features for trend model
-    logging.info("Adding time features for trend model...")
+    # Create result dataframe with trend predictions
     result_df = df.copy()
-    idx = result_df.index
+    result_df['trend_prediction'] = trend_predictions
     
-    # Basic time components
-    result_df['hour'] = idx.hour
-    result_df['day'] = idx.day
-    result_df['month'] = idx.month
-    result_df['dayofweek'] = idx.dayofweek
-    result_df['quarter'] = idx.quarter
+    # Apply smoothing to trend predictions if requested
+    smoothing_params = trend_artifacts.get('smoothing_params', {})
+    if smoothing_params:
+        logging.info(f"Applying {smoothing_params.get('smoothing_level', 'medium')} smoothing to trend predictions")
+        from utils import adaptive_trend_smoothing
+        smooth_trend = adaptive_trend_smoothing(
+            trend_predictions, 
+            result_df.index,
+            smoothing_level=smoothing_params.get('smoothing_level', 'medium')
+        )
+        result_df['trend_prediction_smooth'] = smooth_trend
+    else:
+        # Apply a default light smoothing
+        logging.info("Applying default light smoothing to trend predictions")
+        from utils import adaptive_trend_smoothing
+        smooth_trend = adaptive_trend_smoothing(
+            trend_predictions, 
+            result_df.index,
+            smoothing_level='light'
+        )
+        result_df['trend_prediction_smooth'] = smooth_trend
     
-    # Cyclical encoding
-    result_df['hour_sin'] = np.sin(2 * np.pi * result_df['hour']/24)
-    result_df['hour_cos'] = np.cos(2 * np.pi * result_df['hour']/24)
-    result_df['day_sin'] = np.sin(2 * np.pi * result_df['day']/31)
-    result_df['day_cos'] = np.cos(2 * np.pi * result_df['day']/31)
-    result_df['month_sin'] = np.sin(2 * np.pi * result_df['month']/12)
-    result_df['month_cos'] = np.cos(2 * np.pi * result_df['month']/12)
-    result_df['dayofweek_sin'] = np.sin(2 * np.pi * result_df['dayofweek']/7)
-    result_df['dayofweek_cos'] = np.cos(2 * np.pi * result_df['dayofweek']/7)
-    
-    # Special time flags
-    result_df['is_weekend'] = (result_df['dayofweek'] >= 5).astype(int)
-    result_df['is_business_hour'] = ((result_df['hour'] >= 8) & (result_df['hour'] <= 18) & 
-                               (result_df['dayofweek'] < 5)).astype(int)
-    result_df['is_morning_peak'] = ((result_df['hour'] >= 7) & (result_df['hour'] <= 9)).astype(int)
-    result_df['is_evening_peak'] = ((result_df['hour'] >= 17) & (result_df['hour'] <= 20)).astype(int)
-    
-    # Ensure all needed grid features are available
-    grid_features = ['powerConsumptionTotal', 'powerProductionTotal', 'powerImportTotal', 
-                        'powerExportTotal', 'nuclear', 'hydro', 'wind']
+    # Make peak predictions if peak model was provided
+    peak_probabilities = None
+    peak_predictions = None
+    if peak_artifacts:
+        peak_model = peak_artifacts.get('model')
+        peak_feature_names = peak_artifacts.get('feature_names', [])
+        peak_feature_scaler = peak_artifacts.get('feature_scaler')
         
-    # Fill any missing values
-    for col in result_df.columns:
-        if result_df[col].isnull().any():
-            if result_df[col].dtype.kind in 'iufc':  # For numeric columns
-                # Use forward fill, backward fill, and finally the median
-                result_df[col] = result_df[col].fillna(method='ffill').fillna(
-                    method='bfill').fillna(result_df[col].median())
-    
-    # Now ensure all trend feature columns are present
-    missing_features = []
-    for feature in trend_feature_names:
-        if feature not in result_df.columns:
-            missing_features.append(feature)
-            logging.warning(f"Missing trend feature: {feature}, using zero values")
-            result_df[feature] = 0
-    
-    if missing_features:
-        logging.warning(f"Missing {len(missing_features)} trend features: {missing_features[:5]}...")
-    
-    # Get feature matrix for trend prediction
-    X_trend = result_df[trend_feature_names].values
-    
-    # Make prediction using trend model
-    logging.info(f"Making predictions with trend model using {len(trend_feature_names)} features...")
-    
-    try:
-        if isinstance(trend_model, xgb.Booster):
-            # For XGBoost models - avoid feature name validation
-            logging.info("Creating DMatrix without feature names to avoid mismatch")
-            dmatrix = xgb.DMatrix(X_trend)
-            
-            # Temporarily clear feature names if they exist
-            orig_feature_names = None
-            if hasattr(trend_model, 'feature_names'):
-                orig_feature_names = trend_model.feature_names
-                trend_model.feature_names = None
-            
-            trend_predictions = trend_model.predict(dmatrix)
-            
-            # Restore original feature names
-            if orig_feature_names is not None:
-                trend_model.feature_names = orig_feature_names
+        # Check if we have all necessary features
+        missing_peak_features = [f for f in peak_feature_names if f not in df.columns]
+        if missing_peak_features:
+            logging.warning(f"Missing {len(missing_peak_features)} peak model features. Adding placeholders.")
+            # Add dummy features
+            for feature in missing_peak_features:
+                df[feature] = 0
+        
+        # Extract and scale features
+        X_peak = df[peak_feature_names].values
+        X_peak_scaled = peak_feature_scaler.transform(X_peak)
+        
+        # Create sequences for peak model - UPDATED to use 168 window
+        from utils import create_sequences
+        
+        # Define the window size for peak model (1 week = 168 hours)
+        PEAK_WINDOW_SIZE = 168
+        
+        # Check if we have enough data
+        if len(X_peak_scaled) <= PEAK_WINDOW_SIZE:
+            logging.warning(f"Not enough data for peak sequences. Need > {PEAK_WINDOW_SIZE} samples.")
+            # Skip peak prediction
         else:
-            # For other model types
-            trend_predictions = trend_model.predict(X_trend)
+            logging.info(f"Creating peak sequences with window size {PEAK_WINDOW_SIZE}")
+            X_peak_seq, _ = create_sequences(
+                X_peak_scaled,
+                PEAK_WINDOW_SIZE,  # Updated from 24 to 168
+                1,
+                list(range(X_peak_scaled.shape[1])),
+                None
+            )
             
-        logging.info(f"Successfully generated trend predictions with shape {trend_predictions.shape}")
+            # Make predictions
+            try:
+                logging.info(f"Making peak predictions with input shape {X_peak_seq.shape}")
+                peak_probabilities = peak_model.predict(X_peak_seq)
+                
+                # Flatten if needed
+                if len(peak_probabilities.shape) > 1:
+                    peak_probabilities = peak_probabilities.flatten()
+                
+                # Apply threshold
+                peak_predictions = (peak_probabilities >= peak_threshold).astype(int)
+                
+                # Align with timestamps (accounting for sequence window)
+                result_timestamps = result_df.index[PEAK_WINDOW_SIZE:PEAK_WINDOW_SIZE+len(peak_probabilities)]
+                
+                # Add to result dataframe - create a temporary df with the right index
+                peak_df = pd.DataFrame(index=result_timestamps)
+                peak_df['peak_probability'] = peak_probabilities
+                peak_df['is_predicted_peak'] = peak_predictions
+                
+                # Join with result_df (some rows will remain NaN)
+                result_df = result_df.join(peak_df, how='left')
+                
+                logging.info(f"Added peak predictions for {len(peak_probabilities)} samples")
+            except Exception as e:
+                logging.error(f"Error making peak predictions: {e}")
+                logging.error("Peak model predictions failed, continuing without peak detection")
+    
+    # Make valley predictions if valley model was provided
+    valley_probabilities = None
+    valley_predictions = None
+    if valley_artifacts:
+        valley_model = valley_artifacts.get('model')
+        valley_feature_names = valley_artifacts.get('feature_names', [])
+        valley_feature_scaler = valley_artifacts.get('feature_scaler')
         
-        # Apply smoothing to trend predictions if needed
-        smoothing_params = trend_artifacts.get('smoothing_params', {})
-        smoothing_level = smoothing_params.get('smoothing_level', 'light')
-        trend_predictions = adaptive_trend_smoothing(trend_predictions, result_df.index, smoothing_level)
-    except Exception as e:
-        logging.error(f"Error making trend predictions: {e}")
-        # Create fallback trend predictions (just use the price itself)
-        logging.warning("Using actual prices as fallback for trend predictions")
-        trend_predictions = result_df[TARGET_VARIABLE].values
+        # Check if we have all necessary features
+        missing_valley_features = [f for f in valley_feature_names if f not in df.columns]
+        if missing_valley_features:
+            logging.warning(f"Missing {len(missing_valley_features)} valley model features. Adding placeholders.")
+            # Add dummy features
+            for feature in missing_valley_features:
+                df[feature] = 0
+        
+        # Extract and scale features
+        X_valley = df[valley_feature_names].values
+        X_valley_scaled = valley_feature_scaler.transform(X_valley)
+        
+        # Create sequences for valley model
+        from utils import create_sequences
+        VALLEY_WINDOW_SIZE = 24  # Valley model uses 24-hour window
+        
+        # Check if we have enough data
+        if len(X_valley_scaled) <= VALLEY_WINDOW_SIZE:
+            logging.warning(f"Not enough data for valley sequences. Need > {VALLEY_WINDOW_SIZE} samples.")
+            # Skip valley prediction
+        else:
+            X_valley_seq, _ = create_sequences(
+                X_valley_scaled,
+                VALLEY_WINDOW_SIZE,
+                1,
+                list(range(X_valley_scaled.shape[1])),
+                None
+            )
+            
+            # Make predictions
+            try:
+                valley_probabilities = valley_model.predict(X_valley_seq)
+                
+                # Flatten if needed
+                if len(valley_probabilities.shape) > 1:
+                    valley_probabilities = valley_probabilities.flatten()
+                
+                # Apply threshold
+                valley_predictions = (valley_probabilities >= valley_threshold).astype(int)
+                
+                # Align with timestamps (accounting for sequence window)
+                result_timestamps = result_df.index[VALLEY_WINDOW_SIZE:VALLEY_WINDOW_SIZE+len(valley_probabilities)]
+                
+                # Add to result dataframe - create a temporary df with the right index
+                valley_df = pd.DataFrame(index=result_timestamps)
+                valley_df['valley_probability'] = valley_probabilities
+                valley_df['is_predicted_valley'] = valley_predictions
+                
+                # Join with result_df (some rows will remain NaN)
+                result_df = result_df.join(valley_df, how='left')
+                
+                logging.info(f"Added valley predictions for {len(valley_probabilities)} samples")
+            except Exception as e:
+                logging.error(f"Error making valley predictions: {e}")
+                logging.error("Valley model predictions failed, continuing without valley detection")
     
-    # Make valley predictions
-    valley_model = valley_artifacts.get('model')
-    valley_feature_scaler = valley_artifacts.get('feature_scaler')
-    valley_feature_names = valley_artifacts.get('feature_names', [])
+    # Extract actual peaks and valleys for evaluation
+    actual_peaks = None
+    actual_valleys = None
     
-    logging.info(f"Making valley predictions with threshold {valley_threshold}...")
+    if 'is_price_peak' in result_df.columns:
+        actual_peaks = result_df['is_price_peak'].values
     
-    # Check if all valley features are present
-    missing_valley_features = [f for f in valley_feature_names if f not in result_df.columns]
-    if missing_valley_features:
-        logging.warning(f"Missing {len(missing_valley_features)} valley features: {missing_valley_features[:5]}...")
-        for feature in missing_valley_features:
-            result_df[feature] = 0
+    if 'is_price_valley' in result_df.columns:
+        actual_valleys = result_df['is_price_valley'].values
     
-    # Prepare data for valley detection
-    X_valley = result_df[valley_feature_names].values
-    if valley_feature_scaler:
-        X_valley = valley_feature_scaler.transform(X_valley)
+    # Generate plots
+    output_dir = EVALUATION_DIR / "merged"
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create sequences for TCN valley model
-    X_val_seq, _ = create_sequences(
-        X_valley,
-        LOOKBACK_WINDOW, 
-        PREDICTION_HORIZON, 
-        list(range(X_valley.shape[1])),
-        None
+    # Generate weekly plots
+    plot_dir = generate_merged_plots(
+        result_df.index, 
+        result_df[TARGET_VARIABLE].values, 
+        result_df['trend_prediction_smooth'].values,
+        peak_predictions, 
+        result_df.get('peak_probability', None) if 'peak_probability' in result_df.columns else None,
+        actual_peaks,
+        valley_predictions, 
+        result_df.get('valley_probability', None) if 'valley_probability' in result_df.columns else None,
+        actual_valleys,
+        output_dir=output_dir,
+        eval_name=subset_name
     )
     
-    # Get actual prices and timestamps
-    timestamps = result_df.index[LOOKBACK_WINDOW:]
-    actual_prices = result_df[TARGET_VARIABLE].values[LOOKBACK_WINDOW:]
-    
-    # Make predictions with valley model
-    valley_probabilities = valley_model.predict(X_val_seq, verbose=0).flatten()
-    valley_predictions = (valley_probabilities >= valley_threshold).astype(int)
-    
-    # Get actual valleys for evaluation (if available)
-    actual_valleys = result_df['is_price_valley'].values[LOOKBACK_WINDOW:] if 'is_price_valley' in result_df.columns else np.zeros_like(valley_predictions)
-    
-    # Make sure trend_predictions and valley predictions have the same length
-    if len(trend_predictions) > len(valley_predictions):
-        logging.info(f"Truncating trend predictions to match valley predictions: {len(trend_predictions)} -> {len(valley_predictions)}")
-        trend_predictions = trend_predictions[-len(valley_predictions):]
-    
-    # Make sure actual_valleys and valley_predictions have the same length
-    if len(actual_valleys) != len(valley_predictions):
-        logging.warning(f"Length mismatch between actual_valleys ({len(actual_valleys)}) and valley_predictions ({len(valley_predictions)})")
-        min_len = min(len(actual_valleys), len(valley_predictions))
-        actual_valleys = actual_valleys[:min_len]
-        valley_predictions = valley_predictions[:min_len]
-        actual_prices = actual_prices[:min_len]
-        timestamps = timestamps[:min_len]
-        if len(trend_predictions) > min_len:
-            trend_predictions = trend_predictions[:min_len]
-        logging.info(f"Truncated arrays to common length: {min_len}")
-    
-    # Generate weekly visualizations
-    logging.info(f"Generating visualizations for {num_weeks} weeks...")
-    
-    # Split the data into weeks
-    hours_per_week = 24 * 7
-    num_samples = len(timestamps)
-    
-    # Calculate how many complete weeks we can visualize
-    if num_samples < hours_per_week:
-        logging.warning(f"Not enough data for weekly visualizations (need at least 168 hours, got {num_samples})")
-        weeks = 0
-    else:
-        weeks = min(num_weeks, num_samples // hours_per_week)
-    
-    # Set up results
+    # Calculate evaluation metrics
     results = {
         'model_type': 'merged',
-        'timestamps': timestamps,
-        'trend_predictions': trend_predictions,
-        'valley_predictions': valley_predictions,
-        'valley_probabilities': valley_probabilities,
-        'actual_valleys': actual_valleys,
-        'actual_prices': actual_prices,
-        'valley_threshold': valley_threshold,
-        'num_weeks': weeks,
-        'eval_name': subset_name
+        'eval_set': subset_name,
+        'plot_dir': str(plot_dir)
     }
     
-    # Evaluation metrics for valley detection
-    results['accuracy'] = accuracy_score(actual_valleys, valley_predictions)
-    results['precision'] = precision_score(actual_valleys, valley_predictions, zero_division=0)
-    results['recall'] = recall_score(actual_valleys, valley_predictions, zero_division=0)
-    results['f1_score'] = f1_score(actual_valleys, valley_predictions, zero_division=0)
-    
     # Calculate trend metrics
-    results['trend_mae'] = np.mean(np.abs(actual_prices - trend_predictions))
-    results['trend_rmse'] = np.sqrt(np.mean((actual_prices - trend_predictions) ** 2))
+    if trend_predictions is not None and TARGET_VARIABLE in result_df.columns:
+        actual_prices = result_df[TARGET_VARIABLE].values
+        smooth_predictions = result_df['trend_prediction_smooth'].values
+        
+        # Calculate error metrics
+        from sklearn.metrics import mean_absolute_error, mean_squared_error
+        mae = mean_absolute_error(actual_prices, smooth_predictions)
+        rmse = np.sqrt(mean_squared_error(actual_prices, smooth_predictions))
+        
+        # Calculate direction accuracy (up/down)
+        actual_direction = np.diff(actual_prices) > 0
+        pred_direction = np.diff(smooth_predictions) > 0
+        direction_accuracy = np.mean(actual_direction == pred_direction)
+        
+        # Add metrics to results
+        results.update({
+            'trend_mae': float(mae),
+            'trend_rmse': float(rmse),
+            'trend_direction_accuracy': float(direction_accuracy)
+        })
     
-    # Generate weekly visualizations
-    visualization_dir = EVALUATION_DIR / "merged" / subset_name
-    visualization_dir.mkdir(parents=True, exist_ok=True)
+    # Calculate peak metrics
+    if peak_predictions is not None and 'is_price_peak' in result_df.columns:
+        # Align actual peaks with predictions (same length)
+        peak_window = PEAK_WINDOW_SIZE  # Using the corrected peak window size (168)
+        aligned_actuals = result_df['is_price_peak'].values[peak_window:peak_window+len(peak_predictions)]
+        
+        # Calculate classification metrics
+        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+        p_accuracy = accuracy_score(aligned_actuals, peak_predictions)
+        p_precision = precision_score(aligned_actuals, peak_predictions, zero_division=0)
+        p_recall = recall_score(aligned_actuals, peak_predictions, zero_division=0)
+        p_f1 = f1_score(aligned_actuals, peak_predictions, zero_division=0)
+        
+        # Add metrics to results
+        results.update({
+            'peak_accuracy': float(p_accuracy),
+            'peak_precision': float(p_precision),
+            'peak_recall': float(p_recall),
+            'peak_f1': float(p_f1),
+            'peak_threshold': float(peak_threshold)
+        })
     
-    visualization_files = []
+    # Calculate valley metrics
+    if valley_predictions is not None and 'is_price_valley' in result_df.columns:
+        # Align actual valleys with predictions (same length)
+        valley_window = VALLEY_WINDOW_SIZE
+        aligned_actuals = result_df['is_price_valley'].values[valley_window:valley_window+len(valley_predictions)]
+        
+        # Calculate classification metrics
+        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+        v_accuracy = accuracy_score(aligned_actuals, valley_predictions)
+        v_precision = precision_score(aligned_actuals, valley_predictions, zero_division=0)
+        v_recall = recall_score(aligned_actuals, valley_predictions, zero_division=0)
+        v_f1 = f1_score(aligned_actuals, valley_predictions, zero_division=0)
+        
+        # Add metrics to results
+        results.update({
+            'valley_accuracy': float(v_accuracy),
+            'valley_precision': float(v_precision),
+            'valley_recall': float(v_recall),
+            'valley_f1': float(v_f1),
+            'valley_threshold': float(valley_threshold)
+        })
     
-    for week in range(weeks):
-        start_idx = week * hours_per_week
-        end_idx = start_idx + hours_per_week
-        
-        # Ensure we have enough data
-        if end_idx > num_samples:
-            break
-        
-        week_start = timestamps[start_idx]
-        week_timestamps = timestamps[start_idx:end_idx]
-        week_prices = actual_prices[start_idx:end_idx]
-        week_trend = trend_predictions[start_idx:end_idx]
-        week_valleys = valley_predictions[start_idx:end_idx]
-        week_probabilities = valley_probabilities[start_idx:end_idx]
-        week_actual_valleys = actual_valleys[start_idx:end_idx]
-        
-        # Create merged prediction using probability-based valley depth adjustment
-        merged_prediction = week_trend.copy()
-        
-        # Apply probability-based adjustments for all potential valley points
-        for i, probability in enumerate(week_probabilities):
-            if probability >= valley_threshold:
-                # Scale the adjustment by the confidence level
-                # Higher probability = deeper valley (stronger adjustment)
-                adjustment_factor = 0.85 - (probability - valley_threshold) * 0.8
-                # Ensure it doesn't go below some reasonable minimum (60% of trend)
-                adjustment_factor = max(adjustment_factor, 0.6)
-                # Apply the adjustment
-                merged_prediction[i] = week_trend[i] * adjustment_factor
-        
-        # Apply extra smoothing for visualization purposes
-        from scipy.signal import savgol_filter
-        
-        # Get smoothing window size (must be odd and less than data points)
-        vis_window = min(47, len(week_trend) - 1)
-        if vis_window % 2 == 0:
-            vis_window -= 1  # Make sure it's odd
-            
-        # Make a visual-only smoothed copy of trend and merged predictions
-        trend_smooth = savgol_filter(week_trend, window_length=vis_window, polyorder=2)
-        merged_smooth = merged_prediction.copy()
-        
-        # Only smooth the non-valley parts of the merged prediction to preserve the valleys
-        valley_mask = week_valleys == 0  # Where there are no valleys
-        merged_smooth_temp = savgol_filter(merged_prediction, window_length=vis_window, polyorder=2)
-        merged_smooth[valley_mask] = merged_smooth_temp[valley_mask]
-        
-        # Calculate week metrics
-        week_accuracy = accuracy_score(week_actual_valleys, week_valleys)
-        week_precision = precision_score(week_actual_valleys, week_valleys, zero_division=0)
-        week_recall = recall_score(week_actual_valleys, week_valleys, zero_division=0)
-        week_f1 = f1_score(week_actual_valleys, week_valleys, zero_division=0)
-        week_trend_mae = np.mean(np.abs(week_prices - week_trend))
-        
-        # Generate plot
-        plt.figure(figsize=(15, 10))
-        
-        # Create two subplots - top for price trend, bottom for valley markers
-        gs = plt.GridSpec(2, 1, height_ratios=[3, 1])
-        
-        # Top plot - Price and trend predictions
-        ax1 = plt.subplot(gs[0])
-        
-        # Plot actual prices
-        ax1.plot(week_timestamps, week_prices, 'b-', linewidth=2, label='Actual Price')
-        
-        # Plot trend predictions in purple (changed from red)
-        ax1.plot(week_timestamps, trend_smooth, 'purple', linewidth=2.5, label='Trend Prediction')
-        
-        # Plot the merged trend+valley prediction line in red
-        ax1.plot(week_timestamps, merged_smooth, 'r-', linewidth=2.5, label='Merged Trend+Valley')
-        
-        # Mark valley detection with vertical green bands
-        for i, is_valley in enumerate(week_valleys):
-            if is_valley:
-                # Make the valley bands wider by extending 2 hours in each direction
-                valley_start = max(0, i-2)
-                valley_end = min(len(week_timestamps)-1, i+2)
-                ax1.axvspan(week_timestamps[valley_start], week_timestamps[valley_end], 
-                          color='green', alpha=0.2)
-                
-                # Add a marker at the exact valley point
-                ax1.plot(week_timestamps[i], week_prices[i], 'gv', markersize=8)
-                
-                # Add probability value as text above the marker
-                ax1.text(week_timestamps[i], week_prices[i] * 1.05, 
-                        f"{week_probabilities[i]:.2f}", fontsize=8, 
-                        ha='center', va='bottom',
-                        bbox=dict(facecolor='white', alpha=0.7))
-        
-        # Add title and labels
-        week_start_str = week_start.strftime('%Y-%m-%d')
-        ax1.set_title(f'Week starting {week_start_str} ({subset_name.capitalize()} Data)', fontsize=14)
-        ax1.set_ylabel('Price (öre/kWh)', fontsize=12)
-        ax1.grid(True, alpha=0.3)
-        
-        # Format date axis
-        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%a %d %b'))
-        ax1.tick_params(axis='x', rotation=45)
-        
-        # Add metrics to plot
-        valley_count = week_valleys.sum()
-        actual_valley_count = week_actual_valleys.sum()
-        # metrics_text = (
-        #     f"Valleys: {actual_valley_count} actual, {valley_count} predicted | "
-        #     f"Precision: {week_precision:.2f}, Recall: {week_recall:.2f}, F1: {week_f1:.2f}\n"
-        #     f"Trend MAE: {week_trend_mae:.2f} öre/kWh"
-        # )
-        # ax1.text(0.5, 0.02, metrics_text, transform=ax1.transAxes, 
-        #         ha='center', va='bottom', fontsize=10,
-        #         bbox=dict(facecolor='white', alpha=0.8))
-        
-        # Add a dummy plot element for the valley markers in the legend
-        handles, labels = ax1.get_legend_handles_labels()
-        handles.append(Line2D([0], [0], marker='v', color='g', linestyle='None', 
-                             markersize=8, label='Valley Detection'))
-        ax1.legend(handles=handles, loc='upper right', fontsize=10)
-        
-        # Bottom plot - Valley probabilities
-        ax2 = plt.subplot(gs[1], sharex=ax1)
-        
-        # Plot probability line in green to match the valley band color
-        ax2.plot(week_timestamps, week_probabilities, 'g-', linewidth=1.5, label='Valley Probability')
-        
-        # Add horizontal line for threshold
-        ax2.axhline(y=valley_threshold, color='r', linestyle='--', 
-                  label=f'Threshold ({valley_threshold:.2f})')
-        
-        # Show binary valley predictions as triangles
-        for i, is_valley in enumerate(week_valleys):
-            if is_valley:
-                ax2.scatter(week_timestamps[i], 0.9, color='g', marker='v', s=50)
-        
-        # Add actual valleys as blue triangles
-        for i, is_valley in enumerate(week_actual_valleys):
-            if is_valley:
-                ax2.scatter(week_timestamps[i], 0.9, color='b', marker='^', s=50)
-        
-        # Add a legend to explain the markers
-        handles, labels = ax2.get_legend_handles_labels()
-        handles.append(plt.Line2D([0], [0], marker='v', color='g', linestyle='None', markersize=8, label='Predicted Valley'))
-        handles.append(plt.Line2D([0], [0], marker='^', color='b', linestyle='None', markersize=8, label='Actual Valley'))
-        ax2.legend(handles=handles, loc='upper right', fontsize=10)
-        
-        # Add labels
-        ax2.set_ylabel('Valley Probability', fontsize=12)
-        ax2.set_xlabel('Date', fontsize=12)
-        ax2.set_ylim(0, 1.1)
-        ax2.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        
-        # Save the plot
-        filename = f"merged_week_{week_start_str}.png"
-        filepath = visualization_dir / filename
-        plt.savefig(filepath, dpi=150)
-        plt.close()
-        
-        visualization_files.append(filename)
-        logging.info(f"Generated visualization for week starting {week_start_str}")
-    
-    results['visualization_files'] = visualization_files
-    results['visualization_dir'] = str(visualization_dir)
+    # Generate summary report
     
     return results
 
+def generate_merged_plots(timestamps, actual_prices, trend_predictions, 
+                         peak_predictions=None, peak_probabilities=None, actual_peaks=None,
+                         valley_predictions=None, valley_probabilities=None, actual_valleys=None,
+                         output_dir=None, eval_name="validation"):
+    """
+    Generate plots with trend, peak, and valley predictions together.
+    
+    Args:
+        timestamps: DatetimeIndex of prediction times
+        actual_prices: Actual price values
+        trend_predictions: Trend model predictions
+        peak_predictions: Binary peak predictions (optional)
+        peak_probabilities: Peak prediction probabilities (optional)
+        actual_peaks: Actual peak labels (optional)
+        valley_predictions: Binary valley predictions (optional)
+        valley_probabilities: Valley prediction probabilities (optional)
+        actual_valleys: Actual valley labels (optional)
+        output_dir: Directory to save plots
+        eval_name: Name of the evaluation set (e.g., 'validation' or 'test')
+        
+    Returns:
+        Path to the output directory with generated plots
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    import numpy as np
+    from datetime import timedelta
+    import os
+    
+    # Create output directory
+    if output_dir is None:
+        output_dir = EVALUATION_DIR / "merged" / eval_name
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Determine the number of weeks in the data
+    total_hours = len(timestamps)
+    hours_per_week = 24 * 7
+    num_weeks = max(1, total_hours // hours_per_week)
+    
+    logging.info(f"Generating {num_weeks} weekly plots for merged model visualization")
+    
+    # Create weekly plots
+    for week in range(num_weeks):
+        start_idx = week * hours_per_week
+        end_idx = min(start_idx + hours_per_week, total_hours)
+        
+        if end_idx - start_idx < 24:  # Skip if less than a day of data
+            continue
+        
+        # Extract data for this week
+        week_timestamps = timestamps[start_idx:end_idx]
+        week_actual_prices = actual_prices[start_idx:end_idx]
+        week_trend_predictions = trend_predictions[start_idx:end_idx]
+        
+        # Extract peak data if available
+        week_peak_predictions = None
+        week_peak_probabilities = None
+        week_actual_peaks = None
+        
+        if peak_predictions is not None:
+            week_peak_predictions = peak_predictions[start_idx:end_idx]
+            week_peak_probabilities = peak_probabilities[start_idx:end_idx]
+            week_actual_peaks = actual_peaks[start_idx:end_idx] if actual_peaks is not None else None
+        
+        # Extract valley data if available
+        week_valley_predictions = None
+        week_valley_probabilities = None
+        week_actual_valleys = None
+        
+        if valley_predictions is not None:
+            week_valley_predictions = valley_predictions[start_idx:end_idx]
+            week_valley_probabilities = valley_probabilities[start_idx:end_idx]
+            week_actual_valleys = actual_valleys[start_idx:end_idx] if actual_valleys is not None else None
+        
+        # Start and end dates for this week
+        start_date = week_timestamps[0]
+        end_date = week_timestamps[-1]
+        
+        # Determine subplot configuration based on which models are included
+        if peak_predictions is not None and valley_predictions is not None:
+            # All three models: trend, peak, valley
+            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(15, 12), 
+                                              gridspec_kw={'height_ratios': [3, 1, 1]})
+        elif peak_predictions is not None or valley_predictions is not None:
+            # Trend + either peak or valley
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), 
+                                         gridspec_kw={'height_ratios': [3, 1]})
+        else:
+            # Just trend model
+            fig, ax1 = plt.subplots(1, 1, figsize=(15, 8))
+        
+        # Plot 1: Price and trend predictions
+        ax1.plot(week_timestamps, week_actual_prices, 'b-', linewidth=2, label='Actual Price')
+        ax1.plot(week_timestamps, week_trend_predictions, 'g-', linewidth=2, label='Trend Prediction')
+        
+        # Add peak markers if available
+        if week_peak_predictions is not None:
+            peak_indices = np.where(week_peak_predictions == 1)[0]
+            if len(peak_indices) > 0:
+                peak_times = [week_timestamps[i] for i in peak_indices]
+                peak_prices = [week_actual_prices[i] for i in peak_indices]
+                ax1.scatter(peak_times, peak_prices, color='red', s=80, marker='^', 
+                          label='Detected Peaks')
+            
+            # Add actual peak markers if available
+            if week_actual_peaks is not None and np.sum(week_actual_peaks) > 0:
+                true_peak_indices = np.where(week_actual_peaks == 1)[0]
+                true_peak_times = [week_timestamps[i] for i in true_peak_indices]
+                true_peak_prices = [week_actual_prices[i] for i in true_peak_indices]
+                ax1.scatter(true_peak_times, true_peak_prices, color='orange', s=60, marker='o', 
+                          facecolors='none', label='Actual Peaks')
+        
+        # Add valley markers if available
+        if week_valley_predictions is not None:
+            valley_indices = np.where(week_valley_predictions == 1)[0]
+            if len(valley_indices) > 0:
+                valley_times = [week_timestamps[i] for i in valley_indices]
+                valley_prices = [week_actual_prices[i] for i in valley_indices]
+                ax1.scatter(valley_times, valley_prices, color='blue', s=80, marker='v', 
+                          label='Detected Valleys')
+            
+            # Add actual valley markers if available
+            if week_actual_valleys is not None and np.sum(week_actual_valleys) > 0:
+                true_valley_indices = np.where(week_actual_valleys == 1)[0]
+                true_valley_times = [week_timestamps[i] for i in true_valley_indices]
+                true_valley_prices = [week_actual_prices[i] for i in true_valley_indices]
+                ax1.scatter(true_valley_times, true_valley_prices, color='cyan', s=60, marker='o', 
+                          facecolors='none', label='Actual Valleys')
+        
+        # Shade weekends for context
+        for i in range(7):  # 7 days in a week
+            day = start_date + timedelta(days=i)
+            if day.weekday() >= 5:  # Saturday or Sunday
+                ax1.axvspan(day, day + timedelta(days=1), color='lightgray', alpha=0.3)
+        
+        # Add title and labels for the price plot
+        ax1.set_ylabel('Price (öre/kWh)', fontsize=12)
+        ax1.set_title(f'Combined Model Evaluation: {start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}',
+                     fontsize=14)
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(loc='upper right', fontsize=10)
+        
+        # Plot 2: Peak probabilities (if available)
+        if peak_predictions is not None:
+            if valley_predictions is not None:  # Three models total
+                ax_peak = ax2
+            else:  # Only trend + peak
+                ax_peak = ax2
+                
+            ax_peak.plot(week_timestamps, week_peak_probabilities, 'r-', linewidth=2, label='Peak Probability')
+            ax_peak.axhline(y=0.5, color='r', linestyle='--', alpha=0.7, label='Threshold (0.5)')
+            
+            if week_actual_peaks is not None:
+                ax_peak.step(week_timestamps, week_actual_peaks * 0.2, 'k-', where='mid', linewidth=1, label='Actual Peaks')
+            
+            # Shade weekends
+            for i in range(7):
+                day = start_date + timedelta(days=i)
+                if day.weekday() >= 5:  # Saturday or Sunday
+                    ax_peak.axvspan(day, day + timedelta(days=1), color='lightgray', alpha=0.3)
+            
+            ax_peak.set_ylabel('Peak Probability', fontsize=12)
+            ax_peak.set_ylim(-0.05, 1.05)
+            ax_peak.grid(True, alpha=0.3)
+            ax_peak.legend(loc='upper right', fontsize=10)
+        
+        # Plot 3: Valley probabilities (if available)
+        if valley_predictions is not None:
+            if peak_predictions is not None:  # Three models total
+                ax_valley = ax3
+            else:  # Only trend + valley
+                ax_valley = ax2
+                
+            ax_valley.plot(week_timestamps, week_valley_probabilities, 'b-', linewidth=2, label='Valley Probability')
+            ax_valley.axhline(y=0.5, color='b', linestyle='--', alpha=0.7, label='Threshold (0.5)')
+            
+            if week_actual_valleys is not None:
+                ax_valley.step(week_timestamps, week_actual_valleys * 0.2, 'k-', where='mid', linewidth=1, label='Actual Valleys')
+            
+            # Shade weekends
+            for i in range(7):
+                day = start_date + timedelta(days=i)
+                if day.weekday() >= 5:  # Saturday or Sunday
+                    ax_valley.axvspan(day, day + timedelta(days=1), color='lightgray', alpha=0.3)
+            
+            ax_valley.set_ylabel('Valley Probability', fontsize=12)
+            ax_valley.set_ylim(-0.05, 1.05)
+            ax_valley.grid(True, alpha=0.3)
+            ax_valley.legend(loc='upper right', fontsize=10)
+        
+        # Format x-axis dates on all subplots
+        for ax in fig.get_axes():
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%a %d %b'))
+            ax.xaxis.set_major_locator(mdates.DayLocator())
+            plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        
+        plt.tight_layout()
+        
+        # Save the plot with a descriptive filename
+        filename = f"merged_models_{start_date.strftime('%Y%m%d')}-{end_date.strftime('%Y%m%d')}.png"
+        file_path = os.path.join(str(output_dir), filename)
+        plt.savefig(file_path, dpi=300)
+        plt.close()
+    
+    # Also create a summary plot for the entire period
+    try:
+        create_merged_summary_plot(
+            timestamps, actual_prices, trend_predictions,
+            peak_predictions, peak_probabilities, actual_peaks,
+            valley_predictions, valley_probabilities, actual_valleys,
+            output_dir, eval_name
+        )
+    except Exception as e:
+        logging.error(f"Error creating merged summary plot: {e}")
+    
+    logging.info(f"Generated merged model plots in {output_dir}")
+    return output_dir
+
+def load_peak_model():
+    """Load the peak detection model and associated artifacts."""
+    logging.info("Loading peak detection model...")
+    
+    try:
+        # Determine the model path - first check if model exists
+        model_dir = Path(__file__).resolve().parent / "models" / "peak_model"
+        model_paths = [
+            model_dir / "best_peak_model.keras",        # Best model by validation loss
+            model_dir / "best_f1_peak_model.keras",     # Model optimized for F1 score
+            model_dir / "final_peak_model.keras",       # Final model after training
+            model_dir / "best_recall_peak_model.keras"  # Model optimized for recall
+        ]
+        
+        # Find the first valid model path
+        model_path = None
+        for path in model_paths:
+            if path.exists():
+                model_path = path
+                logging.info(f"Using model from {path.name}")
+                break
+        
+        if model_path is None:
+            raise ValueError("No peak model found in models directory")
+        
+        # Load optimal threshold from PR curve analysis if available
+        threshold_path = model_dir / "optimal_threshold.json"
+        prob_threshold = 0.5  # Default threshold
+        if threshold_path.exists():
+            try:
+                with open(threshold_path, 'r') as f:
+                    threshold_data = json.load(f)
+                    prob_threshold = threshold_data.get('threshold', 0.5)
+                logging.info(f"Loaded optimal probability threshold: {prob_threshold:.4f}")
+            except Exception as e:
+                logging.warning(f"Error loading optimal threshold: {e}")
+        
+        # Define custom objects for model loading
+        from tcn import TCN
+        
+        # Define additional custom loss functions that might have been used during training
+        def binary_focal_loss(gamma=2.0, alpha=0.25):
+            """
+            Binary form of focal loss.
+            """
+            def binary_focal_loss_fixed(y_true, y_pred):
+                # Clip the prediction value to prevent extreme cases
+                epsilon = K.epsilon()
+                y_pred = K.clip(y_pred, epsilon, 1.0 - epsilon)
+                
+                # Calculate cross entropy
+                cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
+                
+                # Calculate focal loss
+                loss = alpha * K.pow(1 - y_pred, gamma) * y_true * K.log(y_pred) - \
+                       (1 - alpha) * K.pow(y_pred, gamma) * (1 - y_true) * K.log(1 - y_pred)
+                
+                return -K.mean(loss)
+            return binary_focal_loss_fixed
+        
+        def get_recall_oriented_loss(false_neg_weight=5.0, false_pos_weight=1.0):
+            """Create a custom loss function that prioritizes recall over precision."""
+            def recall_oriented_loss(y_true, y_pred):
+                # Clip predictions for numerical stability
+                epsilon = K.epsilon()
+                y_pred = K.clip(y_pred, epsilon, 1 - epsilon)
+                
+                # Calculate binary cross entropy
+                bce = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
+                
+                # Apply weights based on error type:
+                # - False Negatives (y_true=1, y_pred=0): Heavily penalized for better recall
+                # - False Positives (y_true=0, y_pred=1): Less penalized to allow more predictions
+                weights = y_true * false_neg_weight * (1 - y_pred) + (1 - y_true) * false_pos_weight * y_pred
+                
+                # Combine weights with base loss
+                weighted_loss = weights * bce
+                
+                # Return mean loss
+                return K.mean(weighted_loss)
+            
+            # Include parameters in function name for better tracking
+            recall_oriented_loss.__name__ = f'recall_loss_fn{false_neg_weight}_fp{false_pos_weight}'
+            return recall_oriented_loss
+        
+        # Create a dictionary of custom objects
+        custom_objects = {
+            'TCN': TCN,
+            'GlobalSumPooling1D': GlobalSumPooling1D,
+            'binary_focal_loss_fixed': binary_focal_loss(),
+            'recall_loss_fn5.0_fp1.0': get_recall_oriented_loss(5.0, 1.0),
+            'recall_loss_fn8.0_fp1.0': get_recall_oriented_loss(8.0, 1.0)
+        }
+        
+        # Try different compilation options if loading fails
+        try:
+            # First try loading without compiling
+            model = load_model(model_path, custom_objects=custom_objects, compile=False)
+            logging.info(f"Loaded peak model from {model_path} without compilation")
+        except Exception as e:
+            logging.warning(f"Error loading model without compilation: {e}")
+            # Try with compilation
+            try:
+                model = load_model(model_path, custom_objects=custom_objects, compile=True)
+                logging.info(f"Loaded peak model from {model_path} with compilation")
+            except Exception as e:
+                logging.error(f"Failed to load model with compilation: {e}")
+                raise
+                
+    except Exception as e:
+        logging.error(f"Error loading peak model: {e}")
+        raise
+    
+    # Load feature list - FIXED to use PEAK model directory
+    feature_list_path = model_dir / "feature_list_peak_model.json"
+    
+    # If feature list not found in peak directory, look for alternative files
+    if not feature_list_path.exists():
+        alternative_paths = [
+            model_dir / "feature_names.json",
+            model_dir / "features.json",
+            PEAK_MODEL_DIR / "feature_list_peak_model.json",  # Try global constant path
+            VALLEY_MODEL_DIR / "feature_list_valley_model.json"  # Fallback to valley model's list as last resort
+        ]
+        
+        for alt_path in alternative_paths:
+            if alt_path.exists():
+                feature_list_path = alt_path
+                logging.warning(f"Peak feature list not found at expected location. Using alternative: {alt_path}")
+                break
+    
+    try:
+        with open(feature_list_path, 'r') as f:
+            feature_names = json.load(f)
+        logging.info(f"Loaded feature list with {len(feature_names)} features")
+    except Exception as e:
+        logging.error(f"Error loading feature list: {e}")
+        # Provide a fallback list of common features rather than failing
+        logging.warning("Using fallback feature list")
+        feature_names = [
+            'price_lag_24h', 'price_diff_1h', 'price_diff_3h', 'price_diff_6h', 
+            'price_momentum', 'price_detrended', 'price_vs_24h_avg', 'price_vs_7d_avg',
+            'hour_sin', 'hour_cos', 'dayofweek_sin', 'dayofweek_cos', 
+            'is_business_hour', 'is_morning_peak', 'is_evening_peak',
+            'price_roc_1h', 'price_roc_3h'
+        ]
+    
+    # Load feature scaler if it exists - FIXED to use PEAK model directory first
+    feature_scaler = None
+    feature_scaler_path = model_dir / "feature_scaler_peak_model.save"
+    
+    # If scaler not found in peak directory, look for alternatives
+    if not feature_scaler_path.exists():
+        alternative_paths = [
+            model_dir / "scaler.save",
+            model_dir / "feature_scaler.save",
+            PEAK_MODEL_DIR / "feature_scaler_peak_model.save",  # Try global constant path
+            VALLEY_MODEL_DIR / "feature_scaler_valley_model.save"  # Fallback to valley model's scaler as last resort
+        ]
+        
+        for alt_path in alternative_paths:
+            if alt_path.exists():
+                feature_scaler_path = alt_path
+                logging.warning(f"Peak feature scaler not found at expected location. Using alternative: {alt_path}")
+                break
+    
+    if feature_scaler_path.exists():
+        try:
+            feature_scaler = joblib.load(feature_scaler_path)
+            logging.info(f"Loaded feature scaler from {feature_scaler_path}")
+        except Exception as e:
+            logging.warning(f"Error loading feature scaler: {e}")
+            feature_scaler = StandardScaler()  # Create a new scaler as fallback
+    else:
+        logging.warning("No feature scaler found, creating a new StandardScaler")
+        feature_scaler = StandardScaler()
+    
+    return {
+        'model': model,
+        'feature_names': feature_names,
+        'feature_scaler': feature_scaler
+    }
+
+def evaluate_peak_model(df, model_artifacts, num_weeks=3, use_test_data=False, prob_threshold=None, find_optimal_threshold=False):
+    """
+    Evaluate the peak detection model on the validation or test set.
+    
+    Args:
+        df: DataFrame with full data
+        model_artifacts: Dictionary with model and preprocessing tools
+        num_weeks: Number of weeks to plot
+        use_test_data: If True, evaluate on test data instead of validation data
+        prob_threshold: Probability threshold for peak detection (if None, use default 0.5)
+        find_optimal_threshold: If True, find optimal threshold using F1 score
+        
+    Returns:
+        Dictionary with evaluation results
+    """
+    logging.info("Evaluating peak detection model...")
+    
+    # Unpack model artifacts
+    model = model_artifacts['model']
+    feature_scaler = model_artifacts['feature_scaler']
+    feature_names = model_artifacts['feature_names']
+    
+    # Use validation or test data
+    if use_test_data:
+        logging.info("Evaluating on test data...")
+        # Use last 20% of data for testing
+        test_size = int(len(df) * 0.2)
+        eval_df = df.iloc[-test_size:].copy()
+        eval_name = "test"
+    else:
+        logging.info("Evaluating on validation data...")
+        # Use data from 60% to 80% mark for validation
+        val_start = int(len(df) * 0.6)
+        val_end = int(len(df) * 0.8)
+        eval_df = df.iloc[val_start:val_end].copy()
+        eval_name = "validation"
+    
+    logging.info(f"Evaluation data: {len(eval_df)} samples from {eval_df.index[0]} to {eval_df.index[-1]}")
+    
+    # Add peak features if needed
+    eval_df = add_peak_features(eval_df)
+    
+    # Check for missing features in the feature list
+    missing_features = [f for f in feature_names if f not in eval_df.columns]
+    if missing_features:
+        logging.warning(f"Missing {len(missing_features)} features: {missing_features}")
+        # Add missing features with default values (zeros)
+        for feature in missing_features:
+            eval_df[feature] = 0
+            logging.info(f"Added missing feature '{feature}' with default values")
+    
+    # Extract inputs and targets
+    X = eval_df[feature_names].values
+    y_true = eval_df['is_price_peak'].values
+    
+    # Scale features
+    X_scaled = feature_scaler.transform(X)
+    
+    # Create sequences for TCN model - CHANGED to use 168 for peak model (7 days)
+    from utils import create_sequences
+    PEAK_LOOKBACK_WINDOW = 168  # 7 days of hourly data for peak model
+    
+    # Make sure we have enough data to create sequences
+    if len(X_scaled) <= PEAK_LOOKBACK_WINDOW:
+        logging.error(f"Not enough data for peak model evaluation. Need at least {PEAK_LOOKBACK_WINDOW+1} samples.")
+        return None
+    
+    logging.info(f"Creating sequences with lookback window of {PEAK_LOOKBACK_WINDOW}")
+    X_seq, _ = create_sequences(
+        X_scaled, 
+        PEAK_LOOKBACK_WINDOW,  # Use 168 (7 days) for peak model
+        1,   # prediction horizon
+        list(range(X_scaled.shape[1])), 
+        None
+    )
+    
+    # Get actual labels for the sequence data - adjust for the longer window
+    y_true_seq = y_true[PEAK_LOOKBACK_WINDOW:PEAK_LOOKBACK_WINDOW+len(X_seq)]
+    
+    # Get timestamps for the sequence data - adjust for the longer window
+    timestamps = eval_df.index[PEAK_LOOKBACK_WINDOW:PEAK_LOOKBACK_WINDOW+len(X_seq)]
+    
+    # Get price data for plotting - adjust for the longer window
+    prices = eval_df[TARGET_VARIABLE].values[PEAK_LOOKBACK_WINDOW:PEAK_LOOKBACK_WINDOW+len(X_seq)]
+    
+    # Make predictions
+    logging.info(f"Making predictions with model on {len(X_seq)} samples...")
+    logging.info(f"Input shape: {X_seq.shape}")
+    
+    try:
+        y_prob = model.predict(X_seq)
+    except Exception as e:
+        logging.error(f"Error making predictions: {e}")
+        # Try to get model's expected input shape
+        if hasattr(model, 'input_shape'):
+            expected_shape = model.input_shape
+            actual_shape = X_seq.shape
+            logging.error(f"Model expects input shape {expected_shape}, but got {actual_shape}")
+        # Handle the error gracefully
+        logging.error("Model prediction failed. This could be due to incompatible features or model issues.")
+        return None
+    
+    logging.info(f"Successfully made predictions with shape {y_prob.shape}")
+    
+    # Apply threshold
+    if prob_threshold is None:
+        prob_threshold = 0.5
+        logging.info(f"Using default probability threshold: {prob_threshold}")
+    else:
+        logging.info(f"Using specified probability threshold: {prob_threshold}")
+        
+    # Find optimal threshold if requested
+    if find_optimal_threshold:
+        optimal_threshold, f1_score = find_optimal_threshold(y_prob, y_true_seq)
+        logging.info(f"Optimal threshold: {optimal_threshold:.4f} with F1 score: {f1_score:.4f}")
+        prob_threshold = optimal_threshold
+    
+    y_pred = (y_prob >= prob_threshold).astype(int)
+    
+    # Calculate metrics
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+    
+    accuracy = accuracy_score(y_true_seq, y_pred)
+    precision = precision_score(y_true_seq, y_pred, zero_division=0)
+    recall = recall_score(y_true_seq, y_pred, zero_division=0)
+    f1 = f1_score(y_true_seq, y_pred, zero_division=0)
+    
+    # Calculate confusion matrix
+    tn, fp, fn, tp = confusion_matrix(y_true_seq, y_pred, labels=[0, 1]).ravel()
+    
+    # Calculate precision at different thresholds
+    thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    precision_at_thresholds = {}
+    recall_at_thresholds = {}
+    f1_at_thresholds = {}
+    
+    for threshold in thresholds:
+        y_pred_at_threshold = (y_prob >= threshold).astype(int)
+        precision_at_thresholds[threshold] = precision_score(y_true_seq, y_pred_at_threshold, zero_division=0)
+        recall_at_thresholds[threshold] = recall_score(y_true_seq, y_pred_at_threshold, zero_division=0)
+        f1_at_thresholds[threshold] = f1_score(y_true_seq, y_pred_at_threshold, zero_division=0)
+    
+    # Log metrics
+    logging.info(f"Peak model metrics:")
+    logging.info(f"  Accuracy: {accuracy:.4f}")
+    logging.info(f"  Precision: {precision:.4f}")
+    logging.info(f"  Recall: {recall:.4f}")
+    logging.info(f"  F1 Score: {f1:.4f}")
+    logging.info(f"  True Positives: {tp}, False Positives: {fp}")
+    logging.info(f"  False Negatives: {fn}, True Negatives: {tn}")
+    
+    # Generate evaluation plots
+    plots_dir = PEAK_EVAL_DIR
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate weekly plots
+    weekly_plots = generate_weekly_peak_plots(
+        timestamps, 
+        y_pred.flatten(), 
+        y_prob.flatten(), 
+        y_true_seq, 
+        prices,
+        eval_name=eval_name
+    )
+    
+    # Create a summary plot with the whole evaluation period
+    plt.figure(figsize=(16, 10))
+    
+    # Plot price data
+    plt.subplot(2, 1, 1)
+    plt.plot(timestamps, prices, 'b-', label='Price')
+    
+    # Highlight detected peaks with vertical spans
+    peak_indices = np.where(y_pred.flatten() == 1)[0]
+    for idx in peak_indices:
+        plt.axvspan(timestamps[idx] - pd.Timedelta(hours=1), 
+                  timestamps[idx] + pd.Timedelta(hours=1), 
+                  color='lightsalmon', alpha=0.3)
+    
+    # Mark actual peaks
+    actual_peak_indices = np.where(y_true_seq == 1)[0]
+    actual_peak_times = [timestamps[idx] for idx in actual_peak_indices]
+    actual_peak_prices = [prices[idx] for idx in actual_peak_indices]
+    plt.scatter(actual_peak_times, actual_peak_prices, color='red', marker='^', s=100, label='Actual Peaks')
+    
+    # Mark predicted peaks
+    pred_peak_indices = np.where(y_pred.flatten() == 1)[0]
+    pred_peak_times = [timestamps[idx] for idx in pred_peak_indices]
+    pred_peak_prices = [prices[idx] for idx in pred_peak_indices]
+    plt.scatter(pred_peak_times, pred_peak_prices, color='blue', marker='o', s=80, alpha=0.7, label='Predicted Peaks')
+    
+    plt.title(f'Peak Detection on {eval_name.capitalize()} Set')
+    plt.ylabel('Price (öre/kWh)')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Plot detection probabilities
+    plt.subplot(2, 1, 2)
+    plt.plot(timestamps, y_prob.flatten(), 'g-', label='Peak Probability')
+    plt.axhline(y=prob_threshold, color='r', linestyle='--', label=f'Threshold ({prob_threshold:.2f})')
+    
+    # Mark actual peaks
+    for peak_time in actual_peak_times:
+        plt.axvline(x=peak_time, color='red', alpha=0.2)
+    
+    plt.title('Peak Detection Probability')
+    plt.ylabel('Probability')
+    plt.xlabel('Time')
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(plots_dir / f"peak_detection_{eval_name}_summary.png")
+    plt.close()
+    
+    # Create precision-recall curve
+    plt.figure(figsize=(10, 6))
+    
+    precision_values = [precision_at_thresholds[t] for t in thresholds]
+    recall_values = [recall_at_thresholds[t] for t in thresholds]
+    
+    plt.plot(thresholds, precision_values, 'b-', label='Precision')
+    plt.plot(thresholds, recall_values, 'g-', label='Recall')
+    plt.plot(thresholds, [f1_at_thresholds[t] for t in thresholds], 'r-', label='F1 Score')
+    plt.axvline(x=prob_threshold, color='k', linestyle='--', label=f'Selected Threshold ({prob_threshold:.2f})')
+    
+    plt.title('Precision, Recall and F1 Score at Different Thresholds')
+    plt.xlabel('Threshold')
+    plt.ylabel('Score')
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig(plots_dir / f"peak_detection_{eval_name}_precision_recall.png")
+    plt.close()
+    
+    # Return evaluation results
+    results = {
+        'model_type': 'peak',
+        'accuracy': float(accuracy),
+        'precision': float(precision),
+        'recall': float(recall),
+        'f1_score': float(f1),
+        'confusion_matrix': {
+            'true_positives': int(tp),
+            'false_positives': int(fp),
+            'false_negatives': int(fn), 
+            'true_negatives': int(tn)
+        },
+        'threshold': float(prob_threshold),
+        'timestamps': timestamps,
+        'predictions': y_pred.flatten().tolist(),
+        'probabilities': y_prob.flatten().tolist(),
+        'actual_values': y_true_seq.tolist(),
+        'prices': prices.tolist(),
+        'metrics_by_threshold': {
+            'thresholds': thresholds,
+            'precision': {str(t): float(p) for t, p in precision_at_thresholds.items()},
+            'recall': {str(t): float(r) for t, r in recall_at_thresholds.items()},
+            'f1_score': {str(t): float(f) for t, f in f1_at_thresholds.items()}
+        },
+        'plots': weekly_plots,
+        'summary_plot': str(plots_dir / f"peak_detection_{eval_name}_summary.png"),
+        'precision_recall_plot': str(plots_dir / f"peak_detection_{eval_name}_precision_recall.png")
+    }
+    
+    return results
+
+def add_peak_features(df):
+    """
+    Add necessary features for peak detection model.
+    
+    Args:
+        df: DataFrame with base data
+        
+    Returns:
+        DataFrame with added peak detection features
+    """
+    # Create a copy to avoid modifying the original
+    result = df.copy()
+    
+    # Ensure required columns exist
+    if 'is_price_peak' not in result.columns:
+        # Use the Scipy method for peak detection as established
+        prices = result[TARGET_VARIABLE].values
+        price_range = np.max(prices) - np.min(prices)
+        
+        from scipy.signal import find_peaks
+        simple_peaks, _ = find_peaks(prices, 
+                                   distance=4,                  # At least 4 hours between peaks
+                                   prominence=0.03*price_range, # Minimum prominence relative to price range
+                                   width=2)                     # Minimum width of 2 hours
+        
+        result['is_price_peak'] = 0
+        result.iloc[simple_peaks, result.columns.get_loc('is_price_peak')] = 1
+    
+    # Add time-based features that help with peak detection
+    if 'hour' not in result.columns and isinstance(result.index, pd.DatetimeIndex):
+        result['hour'] = result.index.hour
+        result['dayofweek'] = result.index.dayofweek
+        result['month'] = result.index.month
+        result['is_business_hour'] = ((result['hour'] >= 8) & (result['hour'] <= 18) & 
+                                    (result['dayofweek'] < 5)).astype(int)
+        result['is_morning_peak'] = ((result['hour'] >= 7) & (result['hour'] <= 9)).astype(int)
+        result['is_evening_peak'] = ((result['hour'] >= 17) & (result['hour'] <= 20)).astype(int)
+    
+    # Add momentum/difference features (these were missing)
+    result['price_diff_1h'] = result[TARGET_VARIABLE].diff(1)
+    result['price_diff_3h'] = result[TARGET_VARIABLE].diff(3)
+    result['price_diff_6h'] = result[TARGET_VARIABLE].diff(6)
+    
+    # Calculate price momentum (acceleration of price changes)
+    result['price_momentum'] = result['price_diff_1h'] - result['price_diff_1h'].shift(1)
+    
+    # Create a detrended price series based on 24h moving average
+    result['price_detrended'] = result[TARGET_VARIABLE] - result[TARGET_VARIABLE].rolling(window=24, center=True).mean()
+    
+    # Add relative price features
+    result['price_vs_24h_avg'] = result[TARGET_VARIABLE] / result[TARGET_VARIABLE].rolling(24, center=True).mean()
+    result['price_vs_7d_avg'] = result[TARGET_VARIABLE] / result[TARGET_VARIABLE].rolling(168, center=True).mean()
+    
+    # Add rate of change features
+    result['price_roc_1h'] = result[TARGET_VARIABLE].pct_change(1)
+    result['price_roc_3h'] = result[TARGET_VARIABLE].pct_change(3)
+    
+    # Fill missing values
+    for col in result.columns:
+        if result[col].isna().any():
+            if np.issubdtype(result[col].dtype, np.number):
+                # Use fill methods that don't generate deprecation warnings
+                result[col] = result[col].ffill().bfill().fillna(0)
+    
+    return result
+
+def generate_weekly_peak_plots(timestamps, predictions, probabilities, actuals, prices, eval_name="validation"):
+    """
+    Generate weekly plots for peak detection evaluation.
+    
+    Args:
+        timestamps: DatetimeIndex of evaluation timestamps
+        predictions: Binary peak predictions (0/1)
+        probabilities: Peak detection probabilities
+        actuals: Actual peak labels (0/1)
+        prices: Price values for plotting
+        eval_name: Name of evaluation set ('validation' or 'test')
+        
+    Returns:
+        List of generated plot paths
+    """
+    # Create output directory
+    plots_dir = PEAK_MODEL_DIR / "weekly"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Convert to more efficient data structures if needed
+    if not isinstance(timestamps, pd.DatetimeIndex):
+        timestamps = pd.DatetimeIndex(timestamps)
+    
+    predictions = np.array(predictions)
+    probabilities = np.array(probabilities)
+    actuals = np.array(actuals)
+    prices = np.array(prices)
+    
+    # Calculate start dates for weekly plots
+    start_date = timestamps[0]
+    end_date = timestamps[-1]
+    
+    # Generate dates at weekly intervals
+    plot_dates = []
+    current_date = start_date
+    while current_date <= end_date:
+        plot_dates.append(current_date)
+        current_date += pd.Timedelta(days=7)
+    
+    # If we have less than 3 weeks, use different intervals
+    if len(plot_dates) < 3:
+        plot_dates = []
+        days_interval = max(1, (end_date - start_date).days // 3)
+        current_date = start_date
+        while current_date <= end_date:
+            plot_dates.append(current_date)
+            current_date += pd.Timedelta(days=days_interval)
+    
+    # Generate plots for each week
+    plot_paths = []
+    
+    for i, week_start in enumerate(plot_dates):
+        week_end = week_start + pd.Timedelta(days=7)
+        
+        # Get indices for this week
+        week_mask = (timestamps >= week_start) & (timestamps < week_end)
+        if not np.any(week_mask):
+            continue
+            
+        week_indices = np.where(week_mask)[0]
+        
+        # Get data for this week
+        week_timestamps = timestamps[week_indices]
+        week_predictions = predictions[week_indices]
+        week_probabilities = probabilities[week_indices]
+        week_actuals = actuals[week_indices]
+        week_prices = prices[week_indices]
+        
+        # Create plot
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), gridspec_kw={'height_ratios': [3, 1]})
+        
+        # Price subplot with peaks
+        ax1.plot(week_timestamps, week_prices, 'b-', linewidth=2)
+        
+        # Highlight predicted peaks
+        predicted_peak_indices = np.where(week_predictions == 1)[0]
+        for idx in predicted_peak_indices:
+            ax1.axvspan(week_timestamps[idx] - pd.Timedelta(hours=1),
+                      week_timestamps[idx] + pd.Timedelta(hours=1),
+                      color='lightsalmon', alpha=0.3)
+        
+        # Plot actual peaks
+        actual_peak_indices = np.where(week_actuals == 1)[0]
+        actual_peak_times = [week_timestamps[idx] for idx in actual_peak_indices]
+        actual_peak_prices = [week_prices[idx] for idx in actual_peak_indices]
+        
+        if actual_peak_times:
+            ax1.scatter(actual_peak_times, actual_peak_prices, color='red', marker='^', s=100, 
+                       label='Actual Peaks')
+        
+        # Plot predicted peaks
+        pred_peak_indices = np.where(week_predictions == 1)[0]
+        pred_peak_times = [week_timestamps[idx] for idx in pred_peak_indices]
+        pred_peak_prices = [week_prices[idx] for idx in pred_peak_indices]
+        
+        if pred_peak_times:
+            ax1.scatter(pred_peak_times, pred_peak_prices, color='blue', marker='o', s=80, 
+                       label='Predicted Peaks', alpha=0.7)
+        
+        # Format the plot
+        week_num = i + 1
+        ax1.set_title(f'Peak Detection {eval_name.capitalize()} - Week {week_num}')
+        ax1.set_ylabel('Price (öre/kWh)')
+        ax1.grid(True, alpha=0.3)
+        
+        # Add legend only if we have predictions/actuals
+        if len(actual_peak_indices) > 0 or len(pred_peak_indices) > 0:
+            ax1.legend()
+            
+        # Highlight weekends
+        for j in range(7):
+            day_start = week_start + pd.Timedelta(days=j)
+            if day_start.weekday() >= 5:  # Saturday or Sunday
+                ax1.axvspan(day_start, day_start + pd.Timedelta(days=1), 
+                           color='gray', alpha=0.1)
+        
+        # Probability subplot
+        ax2.plot(week_timestamps, week_probabilities, 'g-', linewidth=2)
+        ax2.axhline(y=0.5, color='r', linestyle='--', label='Threshold (0.5)')
+        
+        # Highlight actual peaks in probability plot
+        for peak_time in actual_peak_times:
+            ax2.axvline(x=peak_time, color='red', alpha=0.2)
+        
+        ax2.set_ylim(0, 1)
+        ax2.set_ylabel('Peak Probability')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        # Format x-axis to show dates nicely
+        fig.autofmt_xdate()
+        
+        # Add stats annotation
+        week_stats = f"Week {week_num} Statistics:\n"
+        
+        # Add metrics if we have actual values
+        if len(week_actuals) > 0:
+            from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+            
+            # Only calculate metrics if we have both classes present
+            if len(set(week_actuals)) > 1:
+                week_accuracy = accuracy_score(week_actuals, week_predictions)
+                week_precision = precision_score(week_actuals, week_predictions, zero_division=0)
+                week_recall = recall_score(week_actuals, week_predictions, zero_division=0)
+                week_f1 = f1_score(week_actuals, week_predictions, zero_division=0)
+                
+                week_stats += f"Accuracy: {week_accuracy:.2f}\n"
+                week_stats += f"Precision: {week_precision:.2f}\n"
+                week_stats += f"Recall: {week_recall:.2f}\n"
+                week_stats += f"F1 Score: {week_f1:.2f}\n"
+            else:
+                week_stats += "Only one class present - metrics not calculated\n"
+        
+        # Add counts
+        week_actual_count = week_actuals.sum()
+        week_predicted_count = week_predictions.sum()
+        
+        week_stats += f"Actual Peaks: {week_actual_count}\n"
+        week_stats += f"Predicted Peaks: {week_predicted_count}\n"
+        
+        ax1.text(0.02, 0.02, week_stats, transform=ax1.transAxes, 
+                bbox=dict(facecolor='white', alpha=0.8), fontsize=9)
+        
+        # Save plot
+        plot_path = plots_dir / f"peak_week_{week_num}_{eval_name}.png"
+        plt.tight_layout()
+        plt.savefig(plot_path)
+        plt.close()
+        
+        plot_paths.append(str(plot_path))
+    
+    return plot_paths
+
 def main():
-    """Main function to run the evaluation."""
-    # Parse command-line arguments
     args = parse_arguments()
     
     # Configure logging for the selected model
-    configure_logging(args.model if not args.merge else "merged")
+    configure_logging(args.model)
     
-    # Special case for merged model evaluation
-    if args.merge:
-        logging.info("Starting merged model evaluation (trend + valley)...")
+    # Load data before using it
+    data = load_data()
+    logging.info(f"Loaded data with {len(data)} samples")
+    
+    if args.model == 'trend':
+        # Load trend model
+        trend_artifacts = load_trend_model()
         
-        # Create merged evaluation directory
-        merged_eval_dir = EVALUATION_DIR / "merged"
-        merged_eval_dir.mkdir(parents=True, exist_ok=True)
-        (merged_eval_dir / "validation").mkdir(parents=True, exist_ok=True)
-        (merged_eval_dir / "test").mkdir(parents=True, exist_ok=True)
+        # Evaluate trend model
+        results = evaluate_trend_model(data, trend_artifacts, num_weeks=args.weeks)
         
-        try:
-            # Load data
-            logging.info("Loading data...")
-            data = load_data()
+        if results:
+            logging.info("Trend model evaluation complete")
             
-            # Load both models
-            logging.info("Loading trend model...")
-            trend_artifacts = load_trend_model()
+            # Generate summary report
+            generate_summary_report(results, 'trend')
             
-            logging.info("Loading valley model...")
-            valley_artifacts = load_valley_model()
+            print("\n" + "=" * 80)
+            print("TREND MODEL EVALUATION COMPLETE")
+            print("=" * 80)
+            print(f"Results saved to: {TREND_EVAL_DIR}")
             
-            # Evaluate merged models
+            # Print key metrics
+            print("\nKey performance metrics:")
+            
+            # Print trend metrics
+            print("\nTrend Model:")
+            for metric, value in results.items():
+                if metric.startswith('trend_') and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    print(f"  {metric}: {value:.4f}")
+    elif args.model == 'peak':
+        # Load peak model
+        peak_artifacts = load_peak_model()
+        
+        # Evaluate peak model
+        results = evaluate_peak_model(data, peak_artifacts, num_weeks=args.weeks)
+        
+        if results:
+            logging.info("Peak model evaluation complete")
+            
+            # Generate summary report
+            generate_summary_report(results, 'peak')
+            
+            print("\n" + "=" * 80)
+            print("PEAK MODEL EVALUATION COMPLETE")
+            print("=" * 80)
+            print(f"Results saved to: {PEAK_EVAL_DIR}")
+            
+            # Print key metrics
+            print("\nKey performance metrics:")
+            
+            # Print peak metrics
+            print("\nPeak Model:")
+            for metric, value in results.items():
+                if metric.startswith('peak_') and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    print(f"  {metric}: {value:.4f}")
+    elif args.model == 'valley':
+        # Load valley model
+        valley_artifacts = load_valley_model()
+        
+        # Evaluate valley model
+        results = evaluate_valley_model(data, valley_artifacts, num_weeks=args.weeks)
+        
+        if results:
+            logging.info("Valley model evaluation complete")
+            
+            # Generate summary report
+            generate_summary_report(results, 'valley')
+            
+            print("\n" + "=" * 80)
+            print("VALLEY MODEL EVALUATION COMPLETE")
+            print("=" * 80)
+            print(f"Results saved to: {VALLEY_EVAL_DIR}")
+            
+            # Print key metrics
+            print("\nKey performance metrics:")
+            
+            # Print valley metrics
+            print("\nValley Model:")
+            for metric, value in results.items():
+                if metric.startswith('valley_') and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    print(f"  {metric}: {value:.4f}")
+    elif args.model == 'merged':
+        # Create required directories for merged model
+        MERGED_EVAL_DIR = EVALUATION_DIR / "merged"
+        MERGED_EVAL_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Load trend, peak and valley models
+        trend_artifacts = load_trend_model()
+        peak_artifacts = load_peak_model()
+        valley_artifacts = load_valley_model()
+        
+        # Evaluate merged models with available models
+        peak_threshold = args.threshold
+        valley_threshold = args.threshold
+        
+        # Evaluate with the models that were successfully loaded
+        if trend_artifacts:
+            logging.info(f"Starting merged model evaluation with threshold={args.threshold}")
+            
             results = evaluate_merged_models(
                 data,
                 trend_artifacts,
-                valley_artifacts,
+                peak_artifacts if peak_artifacts else None,
+                valley_artifacts if valley_artifacts else None,
                 num_weeks=args.weeks,
-                use_test_data=args.test,
-                valley_threshold=args.valley_threshold
+                use_test_data=args.test_data,
+                peak_threshold=peak_threshold,
+                valley_threshold=valley_threshold
             )
             
             if results:
-                logging.info("Merged model evaluation complete.")
+                logging.info("Merged model evaluation complete")
+                
+                # Generate summary report
+                generate_summary_report(results, 'merged')
+                
                 print("\n" + "=" * 80)
                 print("MERGED MODEL EVALUATION COMPLETE")
                 print("=" * 80)
-                print(f"Results saved to: {results['visualization_dir']}")
+                print(f"Results saved to: {MERGED_EVAL_DIR}")
                 
-                print("\nValley Detection Metrics:")
-                print(f"- Accuracy: {results['accuracy']:.4f}")
-                print(f"- Precision: {results['precision']:.4f}")
-                print(f"- Recall: {results['recall']:.4f}")
-                print(f"- F1 Score: {results['f1_score']:.4f}")
-                
-                print("\nTrend Prediction Metrics:")
-                print(f"- MAE: {results['trend_mae']:.4f}")
-                print(f"- RMSE: {results['trend_rmse']:.4f}")
-                
-                print(f"\nVisualized {len(results['visualization_files'])} weeks:")
-                for file in results['visualization_files']:
-                    print(f"- {file}")
-            else:
-                logging.error("Merged model evaluation failed.")
-        
-        except Exception as e:
-            logging.error(f"Error in merged model evaluation: {e}")
-            import traceback
-            logging.error(traceback.format_exc())
-        
-        return
-    
-    logging.info(f"Starting {args.model} model evaluation with {args.weeks} weeks of visualizations...")
-    
-    try:
-        # Load data for all model types
-        logging.info("Loading data...")
-        data = load_data()
-        
-        if args.model == 'trend':
-            # Create required directories
-            TREND_EVAL_DIR.mkdir(parents=True, exist_ok=True)
-            (TREND_EVAL_DIR / "daily").mkdir(parents=True, exist_ok=True)
-            (TREND_EVAL_DIR / "weekly").mkdir(parents=True, exist_ok=True)
-            (TREND_EVAL_DIR / "monthly").mkdir(parents=True, exist_ok=True)
-            
-            # Load trend model
-            logging.info("Loading trend model...")
-            trend_artifacts = load_trend_model()
-            
-            # Evaluate trend model
-            logging.info(f"Evaluating trend model with {args.weeks} weeks of visualizations...")
-            results = evaluate_trend_model(data, trend_artifacts, num_weeks=args.weeks)
-            
-            if results:
-                # Generate summary report
-                report_path = generate_summary_report(results, 'trend')
-                
-                logging.info("Trend model evaluation complete.")
-                print("\n" + "=" * 80)
-                print("TREND MODEL EVALUATION COMPLETE")
-                print("=" * 80)
-                print(f"Results saved to: {TREND_EVAL_DIR}")
-                print(f"\nModel type: {results['model_type']}")
-                print(f"Test period: {results['metrics']['test_period']}")
-                print(f"Number of observations: {results['metrics']['num_observations']}")
-                print("\nMetrics summary:")
-                print(f"- MAE: {results['metrics']['test_mae']:.4f}")
-                print(f"- RMSE: {results['metrics']['test_rmse']:.4f}")
-                print(f"- MAPE: {results['metrics']['test_mape']:.2f}%")
-                print(f"- SMAPE: {results['metrics']['smape']:.2f}%")
-                print(f"- Direction Accuracy: {results['metrics']['direction_accuracy']:.4f}")
-                print(f"- Peak Accuracy: {results['metrics']['peak_accuracy']:.4f}")
-                
-                if report_path:
-                    print(f"\nSummary report saved to: {report_path}")
-                
-                print("\nVisualization files:")
-                for file_type in ['Overall test period', 'Weekly analyses', 'Error analysis']:
-                    print(f"- {file_type} visualizations")
-                
-            else:
-                logging.error("Trend model evaluation failed.")
-                print("\nTrend model evaluation failed. Check logs for details.")
-        
-        elif args.model == 'valley':
-            logging.info("Starting valley model evaluation...")
-            
-            # Load valley model
-            logging.info("Loading valley model...")
-            valley_artifacts = load_valley_model()
-            
-            # Evaluate valley model
-            results = evaluate_valley_model(
-                data, 
-                valley_artifacts, 
-                num_weeks=args.weeks, 
-                use_test_data=args.test,
-                prob_threshold=args.valley_threshold,
-                find_optimal_threshold=args.find_threshold
-            )
-            
-            if results:
-                # Generate summary report
-                report_path = generate_summary_report(results, 'valley')
-                
-                logging.info("Valley model evaluation complete.")
-                print("\n" + "=" * 80)
-                print("VALLEY DETECTION MODEL EVALUATION COMPLETE")
-                print("=" * 80)
-                print(f"Results saved to: {VALLEY_EVAL_DIR}")
-                print("\nMetrics summary:")
-                print(f"- Accuracy: {results.get('accuracy', 'N/A')}")
-                print(f"- Precision: {results.get('precision', 'N/A')}")
-                print(f"- Recall: {results.get('recall', 'N/A')}")
-                print(f"- F1 Score: {results.get('f1_score', 'N/A')}")
-                print(f"- ROC AUC: {results.get('roc_auc', 'N/A')}")
-                print(f"- Actual valleys rate: {results.get('actual_valley_rate', 'N/A')}")
-                print(f"- Predicted valleys rate: {results.get('predicted_valley_rate', 'N/A')}")
-                print(f"- Probability threshold: {results.get('threshold', 'N/A')}")
-                
-                if 'threshold_analysis' in results:
-                    print("\nThreshold analysis:")
-                    print(f"- Best threshold: {results['threshold_analysis']['best_threshold']:.4f}")
-                    print(f"- Best F1 score: {results['threshold_analysis']['best_f1']:.4f}")
-                    print(f"- Threshold analysis plot: {VALLEY_EVAL_DIR}/threshold_analysis.png")
-                
-                if report_path:
-                    print(f"\nSummary report saved to: {report_path}")
-                
-                # List the visualization files
-                plots_dir = results.get('plots_dir', VALLEY_EVAL_DIR)
-                plots_path = Path(plots_dir)
-                if plots_path.exists():
-                    plot_files = list(plots_path.glob("*.png"))
-                    if plot_files:
-                        print(f"\n{len(plot_files)} visualization files generated:")
-                        for file in sorted(plot_files)[:5]:  # Show only first 5
-                            print(f"- {file.name}")
-                        if len(plot_files) > 5:
-                            print(f"  ... and {len(plot_files) - 5} more")
-                else:
-                    logging.warning(f"Plot directory {plots_dir} does not exist")
-                    print("\nNo visualization files found.")
-            else:
-                logging.error("Valley model evaluation failed.")
-                print("\nValley model evaluation failed. Check logs for details.")
-        
-        elif args.model == 'peak':
-            logging.info("Peak model evaluation not yet implemented.")
-            print("\n" + "=" * 80)
-            print("PEAK DETECTION MODEL EVALUATION")
-            print("=" * 80)
-            print("\nPeak model evaluation not yet implemented.")
-            print("To implement, add the peak evaluation function.")
-    
-    except Exception as e:
-        logging.error(f"Evaluation failed: {e}")
-        print(f"\nEvaluation failed with error: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
-    
-    logging.info(f"{args.model.capitalize()} model evaluation completed successfully.")
+                # Print key metrics
+                print("\nKey performance metrics:")
+                for metric, value in results.items():
+                    if isinstance(value, (int, float)) and not isinstance(value, bool) and metric != 'threshold':
+                        print(f"  {metric}: {value:.4f}")
 
 if __name__ == "__main__":
     main() 

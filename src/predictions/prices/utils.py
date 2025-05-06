@@ -695,15 +695,147 @@ def detect_valleys_robust(df, target_col=TARGET_VARIABLE, min_prominence=0.05, m
                 result_df.iloc[idx, result_df.columns.get_loc('is_price_valley_robust')] = 1
     
     # Add depth scores for analysis and tuning
-    result_df['valley_depth_score'] = 0
+    result_df['valley_depth_score'] = 0.0  # Initialize as float
     for idx, score in zip(all_valley_indices, depth_scores):
         if idx < len(result_df):
-            # Fix dtype compatibility warning: Convert float to correct dtype
             result_df.iloc[idx, result_df.columns.get_loc('valley_depth_score')] = float(score)
     
     # Log statistics
     num_valleys = result_df['is_price_valley_robust'].sum()
     logging.info(f"Robust valley detection found {num_valleys} valleys ({num_valleys/len(result_df):.1%} of data)")
+    
+    return result_df
+
+def detect_peaks_robust(df, target_col=TARGET_VARIABLE, min_prominence=0.05, min_width=2, distance=4, 
+                        height_percentile=90, smoothing_window=3):
+    """
+    A robust peak detection system that captures all prominent price peaks.
+    
+    Args:
+        df: DataFrame with price data
+        target_col: Column name for the target price variable
+        min_prominence: Minimum relative prominence (as fraction of price range)
+        min_width: Minimum width of peak in hours
+        distance: Minimum distance between peaks
+        height_percentile: Percentile threshold for peak height comparison
+        smoothing_window: Window size for optional smoothing
+        
+    Returns:
+        DataFrame with peak detection columns added
+    """
+    import numpy as np
+    import pandas as pd
+    from scipy.signal import find_peaks, peak_prominences
+    
+    # Create a copy of the dataframe to avoid modifying the original
+    result_df = df.copy()
+    prices = result_df[target_col].values
+    
+    # Optional: Apply light smoothing to reduce noise
+    if smoothing_window > 1:
+        smoothed_prices = pd.Series(prices).rolling(window=smoothing_window, center=True).mean()
+        smoothed_prices = smoothed_prices.bfill().ffill().values
+    else:
+        smoothed_prices = prices
+    
+    # Calculate price range for relative thresholds
+    price_range = np.max(prices) - np.min(prices)
+    prominence_threshold = min_prominence * price_range
+    
+    # Method 1: Find peaks using scipy's find_peaks with prominence
+    peak_indices, properties = find_peaks(
+        smoothed_prices,  # No inversion needed for peaks
+        prominence=prominence_threshold,
+        width=min_width,
+        distance=distance
+    )
+    
+    # Get prominences for ranking
+    prominences = properties['prominences']
+    
+    # Method 2: Find local maxima using a rolling window approach
+    local_max_indices = []
+    local_max_values = []
+    
+    # Window size for local maximum detection (adaptive based on data frequency)
+    local_window = max(6, min(12, len(prices) // 100))
+    
+    for i in range(local_window, len(prices) - local_window):
+        if prices[i] == max(prices[i-local_window:i+local_window+1]):
+            local_max_indices.append(i)
+            local_max_values.append(prices[i])
+    
+    # Method 3: Derivative-based detection (looking for slope changes)
+    # First derivative (price change)
+    price_diff = np.diff(smoothed_prices)
+    # Add a zero at the beginning to maintain length
+    price_diff = np.insert(price_diff, 0, 0)
+    
+    # Second derivative (change in price change)
+    price_diff2 = np.diff(price_diff)
+    price_diff2 = np.insert(price_diff2, 0, 0)
+    
+    # Peak if: prior slope positive, subsequent slope negative, and second derivative negative
+    derivative_peaks = []
+    for i in range(local_window, len(prices) - local_window):
+        # Look back and forward a few steps to be more robust
+        back_slope = np.mean(price_diff[i-3:i])
+        forward_slope = np.mean(price_diff[i:i+3])
+        
+        if (back_slope > 0 and forward_slope < 0 and price_diff2[i] < 0):
+            derivative_peaks.append(i)
+    
+    # Combine all detected peaks (from all methods)
+    all_peak_indices = set(peak_indices) | set(local_max_indices) | set(derivative_peaks)
+    all_peak_indices = sorted(list(all_peak_indices))
+    
+    # Calculate height scores for ranking
+    height_scores = []
+    for idx in all_peak_indices:
+        # Calculate how high this peak is relative to surrounding prices
+        # Look 12 hours before and after
+        look_window = 12
+        
+        # Handle edge cases
+        start_idx = max(0, idx - look_window)
+        end_idx = min(len(prices) - 1, idx + look_window)
+        
+        # Get surrounding prices excluding the peak itself
+        surrounding = list(prices[start_idx:idx]) + list(prices[idx+1:end_idx+1])
+        
+        # Calculate mean of surrounding prices
+        if surrounding:
+            mean_surrounding = np.mean(surrounding)
+            # Height is difference between peak and mean of surroundings
+            height = prices[idx] - mean_surrounding
+            
+            # Normalize by price range
+            relative_height = height / price_range
+            height_scores.append(relative_height)
+        else:
+            height_scores.append(0)
+    
+    # Filter peaks by height score
+    height_threshold = np.percentile(height_scores, 100 - height_percentile) if height_scores else 0
+    
+    # Initialize peak flags
+    result_df['is_price_peak_robust'] = 0
+    
+    # Mark peaks that meet all criteria
+    for idx, score in zip(all_peak_indices, height_scores):
+        if score >= height_threshold:
+            if idx < len(result_df):
+                result_df.iloc[idx, result_df.columns.get_loc('is_price_peak_robust')] = 1
+    
+    # Add height scores for analysis and tuning
+    result_df['peak_height_score'] = 0.0  # Initialize as float
+    for idx, score in zip(all_peak_indices, height_scores):
+        if idx < len(result_df):
+            result_df.iloc[idx, result_df.columns.get_loc('peak_height_score')] = float(score)
+    
+    # Log statistics
+    num_peaks = result_df['is_price_peak_robust'].sum()
+    logging.info(f"Robust peak detection found {num_peaks} peaks ({num_peaks/len(result_df):.1%} of data)")
     
     return result_df
 

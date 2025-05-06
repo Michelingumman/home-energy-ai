@@ -1,0 +1,1 @@
+["SE3_price_ore", "price_24h_avg", "price_168h_avg", "price_24h_std", "price_vs_hour_avg", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "month_sin", "month_cos", "is_morning_peak", "is_evening_peak", "is_weekend", "powerConsumptionTotal", "powerProductionTotal", "nuclear", "hydro", "powerImportTotal", "temperature_2m", "Gas_Price", "CO2_Price", "Coal_Price"]

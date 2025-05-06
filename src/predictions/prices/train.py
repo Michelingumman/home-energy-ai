@@ -49,6 +49,7 @@ from xgboost.callback import TrainingCallback  # Add TrainingCallback import
 import pickle
 from tensorflow.keras import backend as K
 from tensorflow.keras.losses import BinaryCrossentropy
+from scipy.signal import find_peaks
 
 # Define custom layers that will be used in model architecture
 class GlobalSumPooling1D(tf.keras.layers.Layer):
@@ -78,7 +79,8 @@ from utils import (
     add_spike_labels, spike_weighted_loss,
     detect_price_peaks, detect_price_valleys_derivative,
     detect_valleys_robust,
-    xgb_smooth_trend_objective, xgb_trend_stability_objective
+    xgb_smooth_trend_objective, xgb_trend_stability_objective,
+    detect_peaks_robust
 )
 
 # Import config
@@ -228,7 +230,7 @@ def add_peak_valley_labels(df, target_col=TARGET_VARIABLE):
     # Use the improved relative peak detection method by default
     logging.info("Using improved relative peak detection for peak/valley identification")
     
-    # Apply relative peak detection
+    # Apply relative peak detection (just to keep it for comparison)
     df = detect_price_peaks(
         df, 
         target_col=target_col,
@@ -236,6 +238,18 @@ def add_peak_valley_labels(df, target_col=TARGET_VARIABLE):
         relative_height=0.2,  # Price must be 20% above local median
         distance=6,           # At least 6 hours between peaks
         prominence=0.15       # Peak must stand out by 15% of price range
+    )
+    
+    # Use the robust peak detection algorithm (for comparison, not for final labels)
+    logging.info("Using robust peak detection algorithm for comparison")
+    df = detect_peaks_robust(
+        df,
+        target_col=target_col,
+        min_prominence=0.05,  # Minimum prominence as fraction of price range
+        min_width=2,          # Minimum width of peak in hours
+        distance=4,           # Minimum distance between peaks
+        height_percentile=90, # Keep only peaks above this percentile threshold
+        smoothing_window=3    # Light smoothing for noise reduction
     )
     
     # Use the new robust valley detection algorithm instead of derivative-based
@@ -246,9 +260,26 @@ def add_peak_valley_labels(df, target_col=TARGET_VARIABLE):
         **ROBUST_VALLEY_DETECTION_PARAMS  # Use parameters from config
     )
     
-    # Use the robust valleys and relative peaks
-    df['is_price_peak'] = df['is_price_peak_relative']
-    df['is_price_valley'] = df['is_price_valley_robust']  # Use new robust valley detection
+    # Apply the Scipy peak detection method for peaks
+    logging.info("Using Scipy method for peak detection")
+    prices = df[target_col].values
+    price_range = np.max(prices) - np.min(prices)
+    
+    # Use find_peaks with carefully tuned parameters for better peak detection
+    simple_peaks, _ = find_peaks(prices, 
+                                distance=4,                  # At least 4 hours between peaks
+                                prominence=0.03*price_range, # Minimum prominence relative to price range
+                                width=2)                     # Minimum width of 2 hours
+    
+    # Create 'is_price_peak_scipy' column
+    df['is_price_peak_scipy'] = 0
+    df.iloc[simple_peaks, df.columns.get_loc('is_price_peak_scipy')] = 1
+    
+    # Now use the scipy-detected peaks as the main peak label
+    df['is_price_peak'] = df['is_price_peak_scipy']
+    
+    # Keep the robust valleys
+    df['is_price_valley'] = df['is_price_valley_robust']
     
     # Log statistics
     total = len(df)
@@ -269,7 +300,10 @@ def add_peak_valley_labels(df, target_col=TARGET_VARIABLE):
     thresholds = {
         "spike_threshold": float(spike_threshold),
         "valley_threshold": float(valley_threshold),
-        "method": "robust",  # Now using robust method for valleys
+        "method": "scipy",  # Changed to use scipy method for peaks
+        "peak_prominence": float(0.03*price_range),  # Save the peak prominence used
+        "peak_distance": 4,  # Save the peak distance used
+        "peak_width": 2,     # Save the peak width used
         **ROBUST_VALLEY_DETECTION_PARAMS  # Include all valley detection parameters
     }
     
@@ -289,9 +323,10 @@ def plot_valley_labels(df, output_dir=None, num_samples=3, days_per_sample=14):
     import numpy as np
     import pandas as pd
     from datetime import timedelta
+    import os
     
     if output_dir is None:
-        output_dir = PLOTS_DIR / "valley_validation"
+        output_dir = VALLEY_MODEL_DIR / "valley_validation"
         
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -312,94 +347,646 @@ def plot_valley_labels(df, output_dir=None, num_samples=3, days_per_sample=14):
         step = (total_hours - hours_per_sample) // (num_samples - 1) if num_samples > 1 else 0
         sample_starts = [i * step for i in range(num_samples)]
     
+    successful_plots = 0
     # Create plots for each sample
     for i, start_idx in enumerate(sample_starts):
-        end_idx = min(start_idx + hours_per_sample, total_hours)
-        
-        # Extract sample data
-        sample = df.iloc[start_idx:end_idx].copy()
-        
-        # Create the plot
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), gridspec_kw={'height_ratios': [3, 1]})
-        
-        # Main price plot with valleys highlighted
-        ax1.plot(sample.index, sample[TARGET_VARIABLE], 'b-', linewidth=2)
-        
-        # Highlight detected valleys
-        valley_indices = sample[sample['is_price_valley'] == 1].index
-        
-        # Mark valleys with vertical spans
-        for valley_idx in valley_indices:
-            ax1.axvspan(valley_idx - timedelta(hours=1), 
-                      valley_idx + timedelta(hours=1),
-                      color='lightgreen', alpha=0.3)
-        
-        # Add points at valley locations
-        valley_prices = sample.loc[valley_indices, TARGET_VARIABLE]
-        ax1.scatter(valley_indices, valley_prices, color='red', s=100, marker='v')
-        
-        # Find local minima for comparison (simple algorithm)
-        prices = sample[TARGET_VARIABLE].values
-        window = 12  # 12-hour window for local minimum detection
-        is_local_min = np.zeros(len(prices), dtype=bool)
-        
-        for j in range(window, len(prices) - window):
-            if prices[j] == min(prices[j-window:j+window+1]):
-                is_local_min[j] = True
-        
-        # Get local minima indices that aren't marked as valleys
-        local_min_indices = np.where(is_local_min)[0]
-        local_min_times = sample.index[local_min_indices]
-        local_min_prices = sample.iloc[local_min_indices][TARGET_VARIABLE]
-        
-        # Mark local minima that aren't detected as valleys
-        non_detected_mins = []
-        for lm_time, lm_price in zip(local_min_times, local_min_prices):
-            if lm_time not in valley_indices:
-                non_detected_mins.append((lm_time, lm_price))
-        
-        if non_detected_mins:
-            nd_times, nd_prices = zip(*non_detected_mins)
-            ax1.scatter(nd_times, nd_prices, color='blue', s=80, marker='o', alpha=0.6)
-        
-        # Add title and labels
-        start_date = sample.index[0].strftime('%Y-%m-%d')
-        end_date = sample.index[-1].strftime('%Y-%m-%d')
-        ax1.set_title(f'Valley Detection Validation ({start_date} to {end_date})')
-        ax1.set_ylabel('Price (öre/kWh)')
-        ax1.grid(True, alpha=0.3)
-        
-        # Second plot: Binary valley indicators
-        ax2.step(sample.index, sample['is_price_valley'], 'g-', where='mid', linewidth=2)
-        ax2.set_ylabel('Valley Label (0/1)')
-        ax2.set_ylim(-0.1, 1.1)
-        ax2.grid(True, alpha=0.3)
-        
-        # Format x-axis
-        plt.gcf().autofmt_xdate()
-        
-        # Highlight weekends for context
-        for j in range(len(sample) // 24):
-            day_start = sample.index[0] + timedelta(days=j)
-            if day_start.weekday() >= 5:  # Saturday or Sunday
-                ax1.axvspan(day_start, day_start + timedelta(days=1), 
-                           color='gray', alpha=0.1)
-                ax2.axvspan(day_start, day_start + timedelta(days=1), 
-                           color='gray', alpha=0.1)
-        
-        # Add descriptive statistics
-        num_valleys = sample['is_price_valley'].sum()
-        valleys_percent = (num_valleys / len(sample)) * 100
-        ax1.text(0.02, 0.95, f'Detected valleys: {num_valleys} ({valleys_percent:.1f}% of data)', 
-                transform=ax1.transAxes, bbox=dict(facecolor='white', alpha=0.7))
-        
-        plt.tight_layout()
-        
-        # Save the plot
-        plt.savefig(output_dir / f"valley_validation_sample_{i+1}.png", dpi=300)
-        plt.close()
+        try:
+            end_idx = min(start_idx + hours_per_sample, total_hours)
+            
+            # Extract sample data
+            sample = df.iloc[start_idx:end_idx].copy()
+            
+            # Create the plot
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), gridspec_kw={'height_ratios': [3, 1]})
+            
+            # Main price plot with valleys highlighted
+            ax1.plot(sample.index, sample[TARGET_VARIABLE], 'b-', linewidth=2)
+            
+            # Highlight detected valleys
+            valley_indices = sample[sample['is_price_valley'] == 1].index
+            
+            # Mark valleys with vertical spans
+            for valley_idx in valley_indices:
+                ax1.axvspan(valley_idx - timedelta(hours=1), 
+                          valley_idx + timedelta(hours=1),
+                          color='lightgreen', alpha=0.3)
+            
+            # Add points at valley locations
+            valley_prices = sample.loc[valley_indices, TARGET_VARIABLE]
+            ax1.scatter(valley_indices, valley_prices, color='red', s=100, marker='v')
+            
+            # Find local minima for comparison (simple algorithm)
+            prices = sample[TARGET_VARIABLE].values
+            window = 12  # 12-hour window for local minimum detection
+            is_local_min = np.zeros(len(prices), dtype=bool)
+            
+            for j in range(window, len(prices) - window):
+                if prices[j] == min(prices[j-window:j+window+1]):
+                    is_local_min[j] = True
+            
+            # Get local minima indices that aren't marked as valleys
+            local_min_indices = np.where(is_local_min)[0]
+            local_min_times = sample.index[local_min_indices]
+            local_min_prices = sample.iloc[local_min_indices][TARGET_VARIABLE]
+            
+            # Mark local minima that aren't detected as valleys
+            non_detected_mins = []
+            for lm_time, lm_price in zip(local_min_times, local_min_prices):
+                if lm_time not in valley_indices:
+                    non_detected_mins.append((lm_time, lm_price))
+            
+            if non_detected_mins:
+                nd_times, nd_prices = zip(*non_detected_mins)
+                ax1.scatter(nd_times, nd_prices, color='blue', s=80, marker='o', alpha=0.6)
+            
+            # Add title and labels
+            start_date = sample.index[0].strftime('%Y-%m-%d')
+            end_date = sample.index[-1].strftime('%Y-%m-%d')
+            ax1.set_title(f'Valley Detection Validation ({start_date} to {end_date})')
+            ax1.set_ylabel('Price (öre/kWh)')
+            ax1.grid(True, alpha=0.3)
+            
+            # Second plot: Binary valley indicators
+            ax2.step(sample.index, sample['is_price_valley'], 'g-', where='mid', linewidth=2)
+            ax2.set_ylabel('Valley Label (0/1)')
+            ax2.set_ylim(-0.1, 1.1)
+            ax2.grid(True, alpha=0.3)
+            
+            # Format x-axis
+            plt.gcf().autofmt_xdate()
+            
+            # Highlight weekends for context
+            for j in range(len(sample) // 24):
+                day_start = sample.index[0] + timedelta(days=j)
+                if day_start.weekday() >= 5:  # Saturday or Sunday
+                    ax1.axvspan(day_start, day_start + timedelta(days=1), 
+                               color='gray', alpha=0.1)
+                    ax2.axvspan(day_start, day_start + timedelta(days=1), 
+                               color='gray', alpha=0.1)
+            
+            # Add descriptive statistics
+            num_valleys = sample['is_price_valley'].sum()
+            valleys_percent = (num_valleys / len(sample)) * 100
+            ax1.text(0.02, 0.95, f'Detected valleys: {num_valleys} ({valleys_percent:.1f}% of data)', 
+                    transform=ax1.transAxes, bbox=dict(facecolor='white', alpha=0.7))
+            
+            plt.tight_layout()
+            
+            # Save the plot - convert path to string to avoid Windows path issues
+            file_path = os.path.join(str(output_dir), f"valley_validation_sample_{i+1}.png")
+            plt.savefig(file_path, dpi=300)
+            plt.close()
+            successful_plots += 1
+        except Exception as e:
+            logging.error(f"Error generating valley plot {i+1}: {e}")
+            plt.close()  # Make sure to close any open figure
     
-    print(f"Generated {len(sample_starts)} valley validation plots in {output_dir}")
+    print(f"Generated {successful_plots} valley validation plots in {output_dir}")
+    return output_dir
+
+def plot_valley_detection_comparison(df, output_dir=None, num_samples=3, days_per_sample=7):
+    """
+    Plot and compare different valley detection methods on the same chart.
+    
+    Args:
+        df: DataFrame with price data
+        output_dir: Directory to save comparison plots
+        num_samples: Number of time periods to sample for visualization
+        days_per_sample: Number of days per sample
+        
+    Returns:
+        Path to output directory with comparison plots
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    from datetime import timedelta
+    from scipy.signal import find_peaks
+    import os
+    
+    if output_dir is None:
+        output_dir = VALLEY_MODEL_DIR / "valley_method_comparison"
+        
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Make a copy of the dataframe to avoid modifying the original
+    df_copy = df.copy()
+    
+    # Ensure we have the target price column
+    if TARGET_VARIABLE not in df_copy.columns:
+        raise ValueError(f"DataFrame must include '{TARGET_VARIABLE}' column")
+    
+    # Apply different valley detection methods
+    logging.info("Applying different valley detection methods for comparison...")
+    
+    # Method 1: Traditional threshold (bottom X percentile)
+    valley_threshold = df_copy[TARGET_VARIABLE].quantile(VALLEY_THRESHOLD_PERCENTILE / 100)
+    df_copy['is_price_valley_threshold'] = (df_copy[TARGET_VARIABLE] <= valley_threshold).astype(int)
+    logging.info(f"Traditional threshold method: {df_copy['is_price_valley_threshold'].sum()} valleys ({df_copy['is_price_valley_threshold'].mean()*100:.1f}% of data)")
+    
+    # Method 2: Relative detection with valleys below local median
+    # We're inverting the price data and using detect_price_peaks for valleys
+    df_copy['inverted_price'] = -df_copy[TARGET_VARIABLE]  # Invert prices for valley detection
+    df_copy['is_price_valley_relative'] = 0  # Initialize the column
+    
+    # Use detect_price_peaks with the inverted price
+    temp_df = detect_price_peaks(
+        df_copy, 
+        target_col='inverted_price',
+        window=24,            # 24 hour window for local context
+        relative_height=0.2,  # Price must be 20% below local median
+        distance=6,           # At least 6 hours between valleys
+        prominence=0.15       # Valley must stand out by 15% of price range
+    )
+    # Transfer the peaks in inverted price to valleys in original price
+    df_copy['is_price_valley_relative'] = temp_df['is_price_peak_relative']
+    logging.info(f"Relative detection method: {df_copy['is_price_valley_relative'].sum()} valleys ({df_copy['is_price_valley_relative'].mean()*100:.1f}% of data)")
+    
+    # Method 3: Robust valley detection (multi-method)
+    # Define parameters for robust valley detection
+    robust_params = ROBUST_VALLEY_DETECTION_PARAMS.copy()
+    from utils import detect_valleys_robust
+    df_copy = detect_valleys_robust(df_copy, TARGET_VARIABLE, **robust_params)
+    logging.info(f"Robust detection method: {df_copy['is_price_valley_robust'].sum()} valleys ({df_copy['is_price_valley_robust'].mean()*100:.1f}% of data)")
+    
+    # Method 4: Simple scipy peak finding on inverted data with minimal parameters
+    prices = df_copy[TARGET_VARIABLE].values
+    price_range = np.max(prices) - np.min(prices)
+    inverted_prices = -prices  # Invert for valley detection
+    simple_valleys, _ = find_peaks(inverted_prices, distance=4, prominence=0.03*price_range)
+    df_copy['is_price_valley_scipy'] = 0
+    df_copy.iloc[simple_valleys, df_copy.columns.get_loc('is_price_valley_scipy')] = 1
+    logging.info(f"Simple scipy method: {df_copy['is_price_valley_scipy'].sum()} valleys ({df_copy['is_price_valley_scipy'].mean()*100:.1f}% of data)")
+    
+    # Method 5: Local minima using a rolling window
+    df_copy['is_price_valley_local_min'] = 0
+    local_window = 12  # 12-hour window for local minimum detection
+    for i in range(local_window, len(prices) - local_window):
+        if prices[i] == min(prices[i-local_window:i+local_window+1]):
+            df_copy.iloc[i, df_copy.columns.get_loc('is_price_valley_local_min')] = 1
+    logging.info(f"Local minima method: {df_copy['is_price_valley_local_min'].sum()} valleys ({df_copy['is_price_valley_local_min'].mean()*100:.1f}% of data)")
+    
+    # Get time ranges for visualization (evenly distributed through the dataset)
+    total_hours = len(df_copy)
+    hours_per_sample = 24 * days_per_sample
+    
+    if total_hours <= hours_per_sample:
+        # If dataset is smaller than sample size, use the entire dataset
+        sample_starts = [0]
+    else:
+        # Create evenly distributed sample start indices
+        step = (total_hours - hours_per_sample) // (num_samples - 1) if num_samples > 1 else 0
+        sample_starts = [i * step for i in range(num_samples)]
+    
+    successful_plots = 0
+    # Create comparison plots for each sample
+    for i, start_idx in enumerate(sample_starts):
+        try:
+            end_idx = min(start_idx + hours_per_sample, total_hours)
+            
+            # Extract sample data
+            sample = df_copy.iloc[start_idx:end_idx].copy()
+            
+            # Create the plot - two panels: 
+            # 1. Price with different valley detection methods
+            # 2. Binary valley indicators for each method
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 12), gridspec_kw={'height_ratios': [3, 2]})
+            
+            # Main price plot with valleys highlighted
+            ax1.plot(sample.index, sample[TARGET_VARIABLE], 'k-', linewidth=1.5, label='Price')
+            
+            # Plot valleys from each method with different markers
+            # Traditional threshold (bottom X percentile)
+            threshold_valley_indices = sample[sample['is_price_valley_threshold'] == 1].index
+            threshold_valley_prices = sample.loc[threshold_valley_indices, TARGET_VARIABLE]
+            ax1.scatter(threshold_valley_indices, threshold_valley_prices, color='orange', s=80, marker='o', 
+                       label='Threshold Method', alpha=0.7)
+            
+            # Relative detection
+            relative_valley_indices = sample[sample['is_price_valley_relative'] == 1].index
+            relative_valley_prices = sample.loc[relative_valley_indices, TARGET_VARIABLE]
+            ax1.scatter(relative_valley_indices, relative_valley_prices, color='green', s=80, marker='s', 
+                       label='Relative Method', alpha=0.7)
+            
+            # Robust valley detection
+            robust_valley_indices = sample[sample['is_price_valley_robust'] == 1].index
+            robust_valley_prices = sample.loc[robust_valley_indices, TARGET_VARIABLE]
+            ax1.scatter(robust_valley_indices, robust_valley_prices, color='red', s=100, marker='v', 
+                       label='Robust Method', alpha=1.0)
+            
+            # Simple scipy peak finding
+            scipy_valley_indices = sample[sample['is_price_valley_scipy'] == 1].index
+            scipy_valley_prices = sample.loc[scipy_valley_indices, TARGET_VARIABLE]
+            ax1.scatter(scipy_valley_indices, scipy_valley_prices, color='blue', s=60, marker='*', 
+                       label='Scipy Method', alpha=0.7)
+            
+            # Local minima
+            localmin_valley_indices = sample[sample['is_price_valley_local_min'] == 1].index
+            localmin_valley_prices = sample.loc[localmin_valley_indices, TARGET_VARIABLE]
+            ax1.scatter(localmin_valley_indices, localmin_valley_prices, color='purple', s=60, marker='x', 
+                       label='Local Minima', alpha=0.7)
+            
+            # Add title and labels
+            start_date = sample.index[0].strftime('%Y-%m-%d')
+            end_date = sample.index[-1].strftime('%Y-%m-%d')
+            ax1.set_title(f'Valley Detection Method Comparison ({start_date} to {end_date})', fontsize=14)
+            ax1.set_ylabel('Price (öre/kWh)', fontsize=12)
+            ax1.grid(True, alpha=0.3)
+            ax1.legend(loc='upper right', fontsize=10)
+            
+            # Second plot: Binary valley indicators for each method
+            # Offset each method slightly for better visualization
+            offset = 0.15
+            
+            ax2.step(sample.index, sample['is_price_valley_threshold'] - offset*2, 'orange', where='mid', linewidth=1.5, label='Threshold Method')
+            ax2.step(sample.index, sample['is_price_valley_relative'] - offset, 'green', where='mid', linewidth=1.5, label='Relative Method')
+            ax2.step(sample.index, sample['is_price_valley_robust'], 'red', where='mid', linewidth=2, label='Robust Method')
+            ax2.step(sample.index, sample['is_price_valley_scipy'] + offset, 'blue', where='mid', linewidth=1.5, label='Scipy Method')
+            ax2.step(sample.index, sample['is_price_valley_local_min'] + offset*2, 'purple', where='mid', linewidth=1.5, label='Local Minima')
+            
+            ax2.set_ylabel('Valley Detected (0/1)', fontsize=12)
+            ax2.set_ylim(-0.5, 1.5)
+            ax2.grid(True, alpha=0.3)
+            ax2.legend(loc='upper right', fontsize=10)
+            
+            # Format x-axis
+            plt.gcf().autofmt_xdate()
+            
+            # Highlight weekends for context
+            for j in range(len(sample) // 24):
+                day_start = sample.index[0] + timedelta(days=j)
+                if day_start.weekday() >= 5:  # Saturday or Sunday
+                    ax1.axvspan(day_start, day_start + timedelta(days=1), 
+                               color='gray', alpha=0.1)
+                    ax2.axvspan(day_start, day_start + timedelta(days=1), 
+                               color='gray', alpha=0.1)
+            
+            # Add statistics table
+            methods = ['Threshold', 'Relative', 'Robust', 'Scipy', 'LocalMin']
+            columns = ['is_price_valley_threshold', 'is_price_valley_relative', 'is_price_valley_robust', 
+                      'is_price_valley_scipy', 'is_price_valley_local_min']
+            
+            stats_text = "Detection Statistics:\n"
+            for method, col in zip(methods, columns):
+                count = sample[col].sum()
+                percent = (count / len(sample)) * 100
+                stats_text += f"{method}: {count} valleys ({percent:.1f}%)\n"
+            
+            ax1.text(0.02, 0.05, stats_text, transform=ax1.transAxes, 
+                    bbox=dict(facecolor='white', alpha=0.8), fontsize=10)
+            
+            plt.tight_layout()
+            
+            # Save the plot - convert path to string to avoid Windows path issues
+            file_path = os.path.join(str(output_dir), f"valley_method_comparison_{i+1}.png")
+            plt.savefig(file_path, dpi=300)
+            plt.close()
+            successful_plots += 1
+        except Exception as e:
+            logging.error(f"Error generating valley comparison plot {i+1}: {e}")
+            plt.close()  # Make sure to close any open figure
+    
+    print(f"Generated {successful_plots} valley detection method comparison plots in {output_dir}")
+    return output_dir
+
+def plot_peak_labels(df, output_dir=None, num_samples=3, days_per_sample=14):
+    """
+    Plot the price series with detected peaks highlighted to validate the labeling.
+    
+    Args:
+        df: DataFrame with price data and peak labels
+        output_dir: Directory to save plots (default: PEAK_MODEL_DIR/ "peak_validation")
+        num_samples: Number of time periods to sample for visualization
+        days_per_sample: Number of days per sample
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    from datetime import timedelta
+    import os
+    
+    if output_dir is None:
+        output_dir = PEAK_MODEL_DIR / "peak_validation"
+        
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Ensure we have the required columns
+    if 'is_price_peak' not in df.columns or TARGET_VARIABLE not in df.columns:
+        raise ValueError(f"DataFrame must include '{TARGET_VARIABLE}' and 'is_price_peak' columns")
+    
+    # Get time ranges for visualization (evenly distributed through the dataset)
+    total_hours = len(df)
+    hours_per_sample = 24 * days_per_sample
+    
+    if total_hours <= hours_per_sample:
+        # If dataset is smaller than sample size, use the entire dataset
+        sample_starts = [0]
+    else:
+        # Create evenly distributed sample start indices
+        step = (total_hours - hours_per_sample) // (num_samples - 1) if num_samples > 1 else 0
+        sample_starts = [i * step for i in range(num_samples)]
+    
+    successful_plots = 0
+    # Create plots for each sample
+    for i, start_idx in enumerate(sample_starts):
+        try:
+            end_idx = min(start_idx + hours_per_sample, total_hours)
+            
+            # Extract sample data
+            sample = df.iloc[start_idx:end_idx].copy()
+            
+            # Create the plot
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), gridspec_kw={'height_ratios': [3, 1]})
+            
+            # Main price plot with peaks highlighted
+            ax1.plot(sample.index, sample[TARGET_VARIABLE], 'b-', linewidth=2)
+            
+            # Highlight detected peaks
+            peak_indices = sample[sample['is_price_peak'] == 1].index
+            
+            # Mark peaks with vertical spans
+            for peak_idx in peak_indices:
+                ax1.axvspan(peak_idx - timedelta(hours=1), 
+                          peak_idx + timedelta(hours=1),
+                          color='lightsalmon', alpha=0.3)
+            
+            # Add points at peak locations
+            peak_prices = sample.loc[peak_indices, TARGET_VARIABLE]
+            ax1.scatter(peak_indices, peak_prices, color='red', s=100, marker='^')
+            
+            # Find local maxima for comparison (simple algorithm)
+            prices = sample[TARGET_VARIABLE].values
+            window = 12  # 12-hour window for local maximum detection
+            is_local_max = np.zeros(len(prices), dtype=bool)
+            
+            for j in range(window, len(prices) - window):
+                if prices[j] == max(prices[j-window:j+window+1]):
+                    is_local_max[j] = True
+            
+            # Get local maxima indices that aren't marked as peaks
+            local_max_indices = np.where(is_local_max)[0]
+            local_max_times = sample.index[local_max_indices]
+            local_max_prices = sample.iloc[local_max_indices][TARGET_VARIABLE]
+            
+            # Mark local maxima that aren't detected as peaks
+            non_detected_maxs = []
+            for lm_time, lm_price in zip(local_max_times, local_max_prices):
+                if lm_time not in peak_indices:
+                    non_detected_maxs.append((lm_time, lm_price))
+            
+            if non_detected_maxs:
+                nd_times, nd_prices = zip(*non_detected_maxs)
+                ax1.scatter(nd_times, nd_prices, color='blue', s=80, marker='o', alpha=0.6)
+            
+            # Add title and labels
+            start_date = sample.index[0].strftime('%Y-%m-%d')
+            end_date = sample.index[-1].strftime('%Y-%m-%d')
+            ax1.set_title(f'Peak Detection Validation (Scipy Method) ({start_date} to {end_date})')
+            ax1.set_ylabel('Price (öre/kWh)')
+            ax1.grid(True, alpha=0.3)
+            
+            # Second plot: Binary peak indicators
+            ax2.step(sample.index, sample['is_price_peak'], 'r-', where='mid', linewidth=2)
+            ax2.set_ylabel('Peak Label (0/1)')
+            ax2.set_ylim(-0.1, 1.1)
+            ax2.grid(True, alpha=0.3)
+            
+            # Format x-axis
+            plt.gcf().autofmt_xdate()
+            
+            # Highlight weekends for context
+            for j in range(len(sample) // 24):
+                day_start = sample.index[0] + timedelta(days=j)
+                if day_start.weekday() >= 5:  # Saturday or Sunday
+                    ax1.axvspan(day_start, day_start + timedelta(days=1), 
+                               color='gray', alpha=0.1)
+                    ax2.axvspan(day_start, day_start + timedelta(days=1), 
+                               color='gray', alpha=0.1)
+            
+            # Add descriptive statistics
+            num_peaks = sample['is_price_peak'].sum()
+            peaks_percent = (num_peaks / len(sample)) * 100
+            ax1.text(0.02, 0.95, f'Detected peaks: {num_peaks} ({peaks_percent:.1f}% of data)', 
+                    transform=ax1.transAxes, bbox=dict(facecolor='white', alpha=0.7))
+            
+            plt.tight_layout()
+            
+            # Save the plot - convert path to string to avoid Windows path issues
+            file_path = os.path.join(str(output_dir), f"peak_validation_sample_{i+1}.png")
+            plt.savefig(file_path, dpi=300)
+            plt.close()
+            successful_plots += 1
+        except Exception as e:
+            logging.error(f"Error generating peak plot {i+1}: {e}")
+            plt.close()  # Make sure to close any open figure
+    
+    print(f"Generated {successful_plots} peak validation plots in {output_dir}")
+    return output_dir
+
+def plot_peak_detection_comparison(df, output_dir=None, num_samples=3, days_per_sample=7):
+    """
+    Plot and compare different peak detection methods on the same chart.
+    
+    Args:
+        df: DataFrame with price data
+        output_dir: Directory to save comparison plots
+        num_samples: Number of time periods to sample for visualization
+        days_per_sample: Number of days per sample
+        
+    Returns:
+        Path to output directory with comparison plots
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    from datetime import timedelta
+    from scipy.signal import find_peaks
+    import os
+    
+    if output_dir is None:
+        output_dir = PEAK_MODEL_DIR / "peak_method_comparison"
+        
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Make a copy of the dataframe to avoid modifying the original
+    df_copy = df.copy()
+    
+    # Ensure we have the target price column
+    if TARGET_VARIABLE not in df_copy.columns:
+        raise ValueError(f"DataFrame must include '{TARGET_VARIABLE}' column")
+    
+    # Apply different peak detection methods
+    logging.info("Applying different peak detection methods for comparison...")
+    
+    # Method 1: Traditional threshold (top X percentile)
+    spike_threshold = df_copy[TARGET_VARIABLE].quantile(SPIKE_THRESHOLD_PERCENTILE / 100)
+    df_copy['is_price_peak_threshold'] = (df_copy[TARGET_VARIABLE] >= spike_threshold).astype(int)
+    logging.info(f"Traditional threshold method: {df_copy['is_price_peak_threshold'].sum()} peaks ({df_copy['is_price_peak_threshold'].mean()*100:.1f}% of data)")
+    
+    # Method 2: Relative detection with peaks above local median
+    df_copy = detect_price_peaks(
+        df_copy, 
+        target_col=TARGET_VARIABLE,
+        window=24,            # 24 hour window for local context
+        relative_height=0.2,  # Price must be 20% above local median
+        distance=6,           # At least 6 hours between peaks
+        prominence=0.15       # Peak must stand out by 15% of price range
+    )
+    logging.info(f"Relative detection method: {df_copy['is_price_peak_relative'].sum()} peaks ({df_copy['is_price_peak_relative'].mean()*100:.1f}% of data)")
+    
+    # Method 3: Robust peak detection (multi-method)
+    # Define parameters for robust peak detection
+    robust_params = {
+        'min_prominence': 0.05,    # Minimum prominence as fraction of price range
+        'min_width': 2,            # Minimum width of peak in hours
+        'distance': 4,             # Minimum distance between peaks
+        'height_percentile': 90,   # Keep only peaks above this percentile threshold
+        'smoothing_window': 3      # Light smoothing for noise reduction
+    }
+    from utils import detect_peaks_robust
+    df_copy = detect_peaks_robust(df_copy, TARGET_VARIABLE, **robust_params)
+    logging.info(f"Robust detection method: {df_copy['is_price_peak_robust'].sum()} peaks ({df_copy['is_price_peak_robust'].mean()*100:.1f}% of data)")
+    
+    # Method 4: Simple scipy peak finding with minimal parameters
+    prices = df_copy[TARGET_VARIABLE].values
+    price_range = np.max(prices) - np.min(prices)
+    simple_peaks, _ = find_peaks(prices, distance=1, prominence=0.005*price_range)
+    df_copy['is_price_peak_scipy'] = 0
+    df_copy.iloc[simple_peaks, df_copy.columns.get_loc('is_price_peak_scipy')] = 1
+    logging.info(f"Simple scipy method: {df_copy['is_price_peak_scipy'].sum()} peaks ({df_copy['is_price_peak_scipy'].mean()*100:.1f}% of data)")
+    
+    # Method 5: Local maxima using a rolling window
+    df_copy['is_price_peak_local_max'] = 0
+    local_window = 12  # 12-hour window for local maximum detection
+    for i in range(local_window, len(prices) - local_window):
+        if prices[i] == max(prices[i-local_window:i+local_window+1]):
+            df_copy.iloc[i, df_copy.columns.get_loc('is_price_peak_local_max')] = 1
+    logging.info(f"Local maxima method: {df_copy['is_price_peak_local_max'].sum()} peaks ({df_copy['is_price_peak_local_max'].mean()*100:.1f}% of data)")
+    
+    # Get time ranges for visualization (evenly distributed through the dataset)
+    total_hours = len(df_copy)
+    hours_per_sample = 24 * days_per_sample
+    
+    if total_hours <= hours_per_sample:
+        # If dataset is smaller than sample size, use the entire dataset
+        sample_starts = [0]
+    else:
+        # Create evenly distributed sample start indices
+        step = (total_hours - hours_per_sample) // (num_samples - 1) if num_samples > 1 else 0
+        sample_starts = [i * step for i in range(num_samples)]
+    
+    successful_plots = 0
+    # Create comparison plots for each sample
+    for i, start_idx in enumerate(sample_starts):
+        try:
+            end_idx = min(start_idx + hours_per_sample, total_hours)
+            
+            # Extract sample data
+            sample = df_copy.iloc[start_idx:end_idx].copy()
+            
+            # Create the plot - two panels: 
+            # 1. Price with different peak detection methods
+            # 2. Binary peak indicators for each method
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 12), gridspec_kw={'height_ratios': [3, 2]})
+            
+            # Main price plot with peaks highlighted
+            ax1.plot(sample.index, sample[TARGET_VARIABLE], 'k-', linewidth=1.5, label='Price')
+            
+            # Plot peaks from each method with different markers
+            # Traditional threshold (top X percentile)
+            threshold_peak_indices = sample[sample['is_price_peak_threshold'] == 1].index
+            threshold_peak_prices = sample.loc[threshold_peak_indices, TARGET_VARIABLE]
+            ax1.scatter(threshold_peak_indices, threshold_peak_prices, color='orange', s=80, marker='o', 
+                       label='Threshold Method', alpha=0.7)
+            
+            # Relative detection
+            relative_peak_indices = sample[sample['is_price_peak_relative'] == 1].index
+            relative_peak_prices = sample.loc[relative_peak_indices, TARGET_VARIABLE]
+            ax1.scatter(relative_peak_indices, relative_peak_prices, color='green', s=80, marker='s', 
+                       label='Relative Method', alpha=0.7)
+            
+            # Robust peak detection
+            robust_peak_indices = sample[sample['is_price_peak_robust'] == 1].index
+            robust_peak_prices = sample.loc[robust_peak_indices, TARGET_VARIABLE]
+            ax1.scatter(robust_peak_indices, robust_peak_prices, color='red', s=100, marker='^', 
+                       label='Robust Method', alpha=1.0)
+            
+            # Simple scipy peak finding
+            scipy_peak_indices = sample[sample['is_price_peak_scipy'] == 1].index
+            scipy_peak_prices = sample.loc[scipy_peak_indices, TARGET_VARIABLE]
+            ax1.scatter(scipy_peak_indices, scipy_peak_prices, color='blue', s=60, marker='*', 
+                       label='Scipy Method', alpha=0.7)
+            
+            # Local maxima
+            localmax_peak_indices = sample[sample['is_price_peak_local_max'] == 1].index
+            localmax_peak_prices = sample.loc[localmax_peak_indices, TARGET_VARIABLE]
+            ax1.scatter(localmax_peak_indices, localmax_peak_prices, color='purple', s=60, marker='x', 
+                       label='Local Maxima', alpha=0.7)
+            
+            # Add title and labels
+            start_date = sample.index[0].strftime('%Y-%m-%d')
+            end_date = sample.index[-1].strftime('%Y-%m-%d')
+            ax1.set_title(f'Peak Detection Method Comparison ({start_date} to {end_date})', fontsize=14)
+            ax1.set_ylabel('Price (öre/kWh)', fontsize=12)
+            ax1.grid(True, alpha=0.3)
+            ax1.legend(loc='upper right', fontsize=10)
+            
+            # Second plot: Binary peak indicators for each method
+            # Offset each method slightly for better visualization
+            offset = 0.15
+            
+            ax2.step(sample.index, sample['is_price_peak_threshold'] - offset*2, 'orange', where='mid', linewidth=1.5, label='Threshold Method')
+            ax2.step(sample.index, sample['is_price_peak_relative'] - offset, 'green', where='mid', linewidth=1.5, label='Relative Method')
+            ax2.step(sample.index, sample['is_price_peak_robust'], 'red', where='mid', linewidth=2, label='Robust Method')
+            ax2.step(sample.index, sample['is_price_peak_scipy'] + offset, 'blue', where='mid', linewidth=1.5, label='Scipy Method')
+            ax2.step(sample.index, sample['is_price_peak_local_max'] + offset*2, 'purple', where='mid', linewidth=1.5, label='Local Maxima')
+            
+            ax2.set_ylabel('Peak Detected (0/1)', fontsize=12)
+            ax2.set_ylim(-0.5, 1.5)
+            ax2.grid(True, alpha=0.3)
+            ax2.legend(loc='upper right', fontsize=10)
+            
+            # Format x-axis
+            plt.gcf().autofmt_xdate()
+            
+            # Highlight weekends for context
+            for j in range(len(sample) // 24):
+                day_start = sample.index[0] + timedelta(days=j)
+                if day_start.weekday() >= 5:  # Saturday or Sunday
+                    ax1.axvspan(day_start, day_start + timedelta(days=1), 
+                               color='gray', alpha=0.1)
+                    ax2.axvspan(day_start, day_start + timedelta(days=1), 
+                               color='gray', alpha=0.1)
+            
+            # Add statistics table
+            methods = ['Threshold', 'Relative', 'Robust', 'Scipy', 'LocalMax']
+            columns = ['is_price_peak_threshold', 'is_price_peak_relative', 'is_price_peak_robust', 
+                      'is_price_peak_scipy', 'is_price_peak_local_max']
+            
+            stats_text = "Detection Statistics:\n"
+            for method, col in zip(methods, columns):
+                count = sample[col].sum()
+                percent = (count / len(sample)) * 100
+                stats_text += f"{method}: {count} peaks ({percent:.1f}%)\n"
+            
+            ax1.text(0.02, 0.05, stats_text, transform=ax1.transAxes, 
+                    bbox=dict(facecolor='white', alpha=0.8), fontsize=10)
+            
+            plt.tight_layout()
+            
+            # Save the plot - convert path to string to avoid Windows path issues
+            file_path = os.path.join(str(output_dir), f"peak_method_comparison_{i+1}.png")
+            plt.savefig(file_path, dpi=300)
+            plt.close()
+            successful_plots += 1
+        except Exception as e:
+            logging.error(f"Error generating peak comparison plot {i+1}: {e}")
+            plt.close()  # Make sure to close any open figure
+    
+    print(f"Generated {successful_plots} peak detection method comparison plots in {output_dir}")
     return output_dir
 
 def prepare_peak_valley_data(target_col='is_price_peak', production_mode=False):
@@ -1209,7 +1796,7 @@ def train_trend_model(data, production_mode=False):
         'features': list(X_train.columns),
         'important_features': importance_df['Feature'].head(20).tolist(),
         'feature_importance': {f: float(i) for f, i in zip(importance_df['Feature'].head(20), 
-                                                         importance_df['Importance'].head(20))},
+                                                        importance_df['Importance'].head(20))},
         'smoothing': {
             'smoothing_level': smoothing_level,
             'exponential_alpha': 0.05,
@@ -1492,6 +2079,35 @@ def train_peak_valley_model(data, model_type, production_mode=False):
         epochs = PEAK_EPOCHS
         batch_size = PEAK_BATCH_SIZE
         early_stopping_patience = PEAK_EARLY_STOPPING_PATIENCE
+        
+        # Generate peak label validation plots when training peak model
+        logging.info("Generating peak label validation plots...")
+        validation_plots_dir = model_dir / "peak_validation"
+        validation_plots_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Use the same Scipy-based peak detection we're now using for training labels
+        peak_df = data['df'].copy()
+        prices = peak_df[TARGET_VARIABLE].values
+        price_range = np.max(prices) - np.min(prices)
+        
+        # Using the same parameters as in add_peak_valley_labels 
+        simple_peaks, _ = find_peaks(prices, 
+                                   distance=4,                  # At least 4 hours between peaks
+                                   prominence=0.03*price_range, # Minimum prominence relative to price range
+                                   width=2)                     # Minimum width of 2 hours
+        
+        # Create is_price_peak column with Scipy-detected peaks
+        peak_df['is_price_peak'] = 0
+        peak_df.iloc[simple_peaks, peak_df.columns.get_loc('is_price_peak')] = 1
+        
+        # Generate the validation plots with Scipy-detected peaks
+        plot_peak_labels(peak_df, output_dir=validation_plots_dir, num_samples=5, days_per_sample=14)
+        logging.info(f"Peak detection validation plots saved to {validation_plots_dir}")
+        
+        # Also generate method comparison plots
+        logging.info("Generating peak detection method comparison plots...")
+        comparison_dir = plot_peak_detection_comparison(data['df'].copy(), num_samples=3, days_per_sample=7)
+        logging.info(f"Peak detection method comparison plots saved to {comparison_dir}")
     else:  # valley
         model_dir = VALLEY_MODEL_DIR
         model_name = 'valley_model'
@@ -1501,11 +2117,14 @@ def train_peak_valley_model(data, model_type, production_mode=False):
         # Valley models ALWAYS use recall-oriented loss
         logging.info("Valley model: Using recall-oriented loss for better valley detection")
         
-        # Generate valley label validation plots when training valley model
-        logging.info("Generating valley label validation plots...")
-        validation_plots_dir = model_dir / "valley_validation"
-        validation_plots_dir.mkdir(parents=True, exist_ok=True)
-        plot_valley_labels(data['df'], output_dir=validation_plots_dir, num_samples=5, days_per_sample=14)
+        # Generate valley method comparison plots
+        logging.info("Generating valley detection method comparison plots...")
+        try:
+            comparison_dir = plot_valley_detection_comparison(data['df'].copy(), num_samples=3, days_per_sample=7)
+            logging.info(f"Valley detection method comparison plots saved to {comparison_dir}")
+        except Exception as e:
+            logging.error(f"Error generating valley comparison plots: {e}")
+            logging.error("Continuing with training despite plot generation error")
     
     # Save model artifacts early - before training begins
     feature_names = data['feature_names']
@@ -1793,7 +2412,6 @@ def create_directories():
     
     # Create subdirectories for detailed visualizations
     (TREND_EVAL_DIR / "weekly").mkdir(parents=True, exist_ok=True)
-    (TREND_EVAL_DIR / "daily").mkdir(parents=True, exist_ok=True)
     (TREND_EVAL_DIR / "monthly").mkdir(parents=True, exist_ok=True)
     
     logging.info("Created all necessary directories")

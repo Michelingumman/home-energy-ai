@@ -1199,3 +1199,345 @@ ValueError: DataFrame must include 'SE3_price_ore' and 'is_price_valley_robust' 
 2025-05-06 14:09:14,014 - INFO - In production mode, also saved model as C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\best_valley_model.keras
 2025-05-06 14:09:14,015 - INFO - Valley model training complete
 2025-05-06 14:09:14,015 - INFO - valley model training completed successfully
+2025-05-06 20:18:53,699 - INFO - Logging configured for valley model. Log file: C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\valley_model_training.log
+2025-05-06 20:18:53,702 - INFO - Created all necessary directories
+2025-05-06 20:18:53,703 - INFO - Loading data...
+2025-05-06 20:18:53,709 - INFO - Loading and merging data...
+2025-05-06 20:18:54,237 - INFO - Loaded price data: (73007, 11)
+2025-05-06 20:18:54,238 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:18:54,688 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:18:54,724 - INFO - Merged grid data: (73007, 21)
+2025-05-06 20:18:55,931 - INFO - Merged time features: (73007, 31)
+2025-05-06 20:18:58,258 - INFO - Merged holiday data: (73007, 35)
+2025-05-06 20:18:58,595 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:18:58,662 - INFO - Merged weather data: (73007, 41)
+2025-05-06 20:18:58,702 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-06 20:18:58,724 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-06 20:18:59,543 - WARNING - Top gaps in 'price_24h_std':
+2025-05-06 20:18:59,544 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-06 20:18:59,544 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-06 20:18:59,545 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-06 20:18:59,545 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-06 20:18:59,545 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-06 20:18:59,545 - WARNING -   ... and 73001 more gaps
+2025-05-06 20:18:59,555 - WARNING -   Median gap size: 0.0 hours
+2025-05-06 20:18:59,575 - WARNING -   Average gap size: 0.0 hours
+2025-05-06 20:18:59,581 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-06 20:18:59,600 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-06 20:18:59,600 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:18:59,688 - INFO - Train size: 51104, from 2017-01-01 00:00:00+00:00 to 2022-10-31 07:00:00+00:00
+2025-05-06 20:18:59,689 - INFO - Validation size: 10951, from 2022-10-31 08:00:00+00:00 to 2024-01-30 14:00:00+00:00
+2025-05-06 20:18:59,690 - INFO - Test size: 10952, from 2024-01-30 15:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:18:59,701 - INFO - === Starting valley model training (TCN) ===
+2025-05-06 20:18:59,704 - INFO - Valley model always uses SMOTE for class balancing
+2025-05-06 20:18:59,705 - INFO - Valley model always uses recall-oriented loss for better handling of class imbalance
+2025-05-06 20:18:59,705 - INFO - Preparing data for is_price_valley model training...
+2025-05-06 20:18:59,705 - INFO - Loading and merging data...
+2025-05-06 20:19:00,177 - INFO - Loaded price data: (73007, 11)
+2025-05-06 20:19:00,178 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:19:00,730 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:19:00,786 - INFO - Merged grid data: (73007, 21)
+2025-05-06 20:19:02,336 - INFO - Merged time features: (73007, 31)
+2025-05-06 20:19:04,694 - INFO - Merged holiday data: (73007, 35)
+2025-05-06 20:19:05,119 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:19:05,154 - INFO - Merged weather data: (73007, 41)
+2025-05-06 20:19:05,183 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-06 20:19:05,206 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-06 20:19:05,872 - WARNING - Top gaps in 'price_24h_std':
+2025-05-06 20:19:05,873 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-06 20:19:05,873 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-06 20:19:05,874 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-06 20:19:05,874 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-06 20:19:05,874 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-06 20:19:05,874 - WARNING -   ... and 73001 more gaps
+2025-05-06 20:19:05,901 - WARNING -   Median gap size: 0.0 hours
+2025-05-06 20:19:05,909 - WARNING -   Average gap size: 0.0 hours
+2025-05-06 20:19:05,914 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-06 20:19:05,930 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-06 20:19:05,931 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:19:05,971 - INFO - Adding lag features for trend detection...
+2025-05-06 20:19:06,104 - INFO - Added 9 lag features and 4 momentum/detrended features
+2025-05-06 20:19:06,166 - INFO - Using improved relative peak detection for peak/valley identification
+2025-05-06 20:20:27,800 - INFO - Detected 398 peaks (0.5% of data) and 519 valleys (0.7% of data)
+2025-05-06 20:20:27,801 - INFO - Using window=24h, relative_height=0.20, distance=6h, prominence=0.15
+2025-05-06 20:20:27,848 - INFO - Using robust peak detection algorithm
+2025-05-06 20:20:39,368 - INFO - Robust peak detection found 14836 peaks (20.3% of data)
+2025-05-06 20:20:39,375 - INFO - Using new robust valley detection algorithm
+2025-05-06 20:20:49,865 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-06 20:20:49,880 - INFO - Detected 14836 peaks (20.3% of data) and 14059 valleys (19.3% of data)
+2025-05-06 20:20:49,887 - INFO - For reference - traditional method would detect 7301 peaks (10.0% of data)
+2025-05-06 20:20:49,891 - INFO - Traditional thresholds - spike: 115.66, valley: 8.26
+2025-05-06 20:20:49,921 - INFO - Using valley-specific features for model training
+2025-05-06 20:20:49,925 - INFO - Valley model: Using SMOTE for class balancing
+2025-05-06 20:20:49,936 - INFO - Using 28 features for is_price_valley detection
+2025-05-06 20:20:49,980 - INFO - Data split: Train (51104, 28), Validation (10951, 28), Test (10952, 28)
+2025-05-06 20:20:49,987 - INFO - Target distribution in train: 19.28% positive samples
+2025-05-06 20:20:49,989 - INFO - Target distribution in val: 18.33% positive samples
+2025-05-06 20:20:49,990 - INFO - Target distribution in test: 20.07% positive samples
+2025-05-06 20:20:54,150 - INFO - Applying SMOTE for class balancing. Original class distribution: 19.31% positive
+2025-05-06 20:21:10,514 - INFO - After SMOTE: 51353 samples with 20.00% positive
+2025-05-06 20:21:11,182 - INFO - Sequence shapes: X_train (51353, 168, 27), y_train (51353, 1)
+2025-05-06 20:21:28,684 - INFO - Generated valley label validation plots in C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\valley_validation
+2025-05-06 20:21:28,684 - INFO - Training valley detection model...
+2025-05-06 20:21:28,684 - INFO - Valley model: Using recall-oriented loss for better valley detection
+2025-05-06 20:21:28,686 - INFO - Generating valley label validation plots...
+2025-05-06 20:21:33,503 - ERROR - Error in training process: [Errno 22] Invalid argument: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\valley_model\\valley_validation\\valley_validation_sample_2.png'
+2025-05-06 20:21:33,523 - ERROR - Traceback (most recent call last):
+  File "c:\_Projects\home-energy-ai\src\predictions\prices\train.py", line 2713, in main
+    model, history = train_peak_valley_model(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\_Projects\home-energy-ai\src\predictions\prices\train.py", line 2070, in train_peak_valley_model
+    plot_valley_labels(data['df'], output_dir=validation_plots_dir, num_samples=5, days_per_sample=14)
+  File "c:\_Projects\home-energy-ai\src\predictions\prices\train.py", line 413, in plot_valley_labels
+    plt.savefig(output_dir / f"valley_validation_sample_{i+1}.png", dpi=300)
+  File "C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\matplotlib\pyplot.py", line 1134, in savefig
+    res = fig.savefig(*args, **kwargs)  # type: ignore[func-returns-value]
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\matplotlib\figure.py", line 3390, in savefig
+    self.canvas.print_figure(fname, **kwargs)
+  File "C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\matplotlib\backend_bases.py", line 2193, in print_figure
+    result = print_method(
+             ^^^^^^^^^^^^^
+  File "C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\matplotlib\backend_bases.py", line 2043, in <lambda>
+    print_method = functools.wraps(meth)(lambda *args, **kwargs: meth(
+                                                                 ^^^^^
+  File "C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\matplotlib\backends\backend_agg.py", line 497, in print_png
+    self._print_pil(filename_or_obj, "png", pil_kwargs, metadata)
+  File "C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\matplotlib\backends\backend_agg.py", line 446, in _print_pil
+    mpl.image.imsave(
+  File "C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\matplotlib\image.py", line 1656, in imsave
+    image.save(fname, **pil_kwargs)
+  File "C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\PIL\Image.py", line 2436, in save
+    fp = builtins.open(filename, "w+b")
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 22] Invalid argument: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\valley_model\\valley_validation\\valley_validation_sample_2.png'
+
+2025-05-06 20:30:55,326 - INFO - Logging configured for valley model. Log file: C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\valley_model_training.log
+2025-05-06 20:30:55,335 - INFO - Created all necessary directories
+2025-05-06 20:30:55,340 - INFO - Loading data...
+2025-05-06 20:30:55,340 - INFO - Loading and merging data...
+2025-05-06 20:30:55,812 - INFO - Loaded price data: (73007, 11)
+2025-05-06 20:30:55,814 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:30:56,265 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:30:56,283 - INFO - Merged grid data: (73007, 21)
+2025-05-06 20:30:57,345 - INFO - Merged time features: (73007, 31)
+2025-05-06 20:30:59,272 - INFO - Merged holiday data: (73007, 35)
+2025-05-06 20:30:59,752 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:30:59,790 - INFO - Merged weather data: (73007, 41)
+2025-05-06 20:30:59,809 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-06 20:30:59,820 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-06 20:31:00,571 - WARNING - Top gaps in 'price_24h_std':
+2025-05-06 20:31:00,572 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-06 20:31:00,572 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-06 20:31:00,572 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-06 20:31:00,572 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-06 20:31:00,572 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-06 20:31:00,573 - WARNING -   ... and 73001 more gaps
+2025-05-06 20:31:00,578 - WARNING -   Median gap size: 0.0 hours
+2025-05-06 20:31:00,589 - WARNING -   Average gap size: 0.0 hours
+2025-05-06 20:31:00,591 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-06 20:31:00,596 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-06 20:31:00,599 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:31:00,649 - INFO - Train size: 51104, from 2017-01-01 00:00:00+00:00 to 2022-10-31 07:00:00+00:00
+2025-05-06 20:31:00,650 - INFO - Validation size: 10951, from 2022-10-31 08:00:00+00:00 to 2024-01-30 14:00:00+00:00
+2025-05-06 20:31:00,650 - INFO - Test size: 10952, from 2024-01-30 15:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:31:00,651 - INFO - === Starting valley model training (TCN) ===
+2025-05-06 20:31:00,651 - INFO - Valley model always uses SMOTE for class balancing
+2025-05-06 20:31:00,651 - INFO - Valley model always uses recall-oriented loss for better handling of class imbalance
+2025-05-06 20:31:00,651 - INFO - Preparing data for is_price_valley model training...
+2025-05-06 20:31:00,652 - INFO - Loading and merging data...
+2025-05-06 20:31:01,219 - INFO - Loaded price data: (73007, 11)
+2025-05-06 20:31:01,222 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:31:01,676 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:31:01,722 - INFO - Merged grid data: (73007, 21)
+2025-05-06 20:31:02,805 - INFO - Merged time features: (73007, 31)
+2025-05-06 20:31:05,021 - INFO - Merged holiday data: (73007, 35)
+2025-05-06 20:31:05,496 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:31:05,521 - INFO - Merged weather data: (73007, 41)
+2025-05-06 20:31:05,543 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-06 20:31:05,548 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-06 20:31:06,330 - WARNING - Top gaps in 'price_24h_std':
+2025-05-06 20:31:06,330 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-06 20:31:06,331 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-06 20:31:06,331 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-06 20:31:06,331 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-06 20:31:06,331 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-06 20:31:06,331 - WARNING -   ... and 73001 more gaps
+2025-05-06 20:31:06,335 - WARNING -   Median gap size: 0.0 hours
+2025-05-06 20:31:06,344 - WARNING -   Average gap size: 0.0 hours
+2025-05-06 20:31:06,345 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-06 20:31:06,350 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-06 20:31:06,353 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:31:06,377 - INFO - Adding lag features for trend detection...
+2025-05-06 20:31:06,496 - INFO - Added 9 lag features and 4 momentum/detrended features
+2025-05-06 20:31:06,609 - INFO - Using improved relative peak detection for peak/valley identification
+2025-05-06 20:32:31,223 - INFO - Detected 398 peaks (0.5% of data) and 519 valleys (0.7% of data)
+2025-05-06 20:32:31,225 - INFO - Using window=24h, relative_height=0.20, distance=6h, prominence=0.15
+2025-05-06 20:32:31,278 - INFO - Using robust peak detection algorithm
+2025-05-06 20:32:42,476 - INFO - Robust peak detection found 14836 peaks (20.3% of data)
+2025-05-06 20:32:42,489 - INFO - Using new robust valley detection algorithm
+2025-05-06 20:32:54,168 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-06 20:32:54,176 - INFO - Detected 14836 peaks (20.3% of data) and 14059 valleys (19.3% of data)
+2025-05-06 20:32:54,181 - INFO - For reference - traditional method would detect 7301 peaks (10.0% of data)
+2025-05-06 20:32:54,189 - INFO - Traditional thresholds - spike: 115.66, valley: 8.26
+2025-05-06 20:32:54,194 - INFO - Using valley-specific features for model training
+2025-05-06 20:32:54,195 - INFO - Valley model: Using SMOTE for class balancing
+2025-05-06 20:32:54,195 - INFO - Using 28 features for is_price_valley detection
+2025-05-06 20:32:54,254 - INFO - Data split: Train (51104, 28), Validation (10951, 28), Test (10952, 28)
+2025-05-06 20:32:54,259 - INFO - Target distribution in train: 19.28% positive samples
+2025-05-06 20:32:54,260 - INFO - Target distribution in val: 18.33% positive samples
+2025-05-06 20:32:54,260 - INFO - Target distribution in test: 20.07% positive samples
+2025-05-06 20:32:57,597 - INFO - Applying SMOTE for class balancing. Original class distribution: 19.31% positive
+2025-05-06 20:33:12,679 - INFO - After SMOTE: 51353 samples with 20.00% positive
+2025-05-06 20:33:13,327 - INFO - Sequence shapes: X_train (51353, 168, 27), y_train (51353, 1)
+2025-05-06 20:33:29,894 - INFO - Generated valley label validation plots in C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\valley_validation
+2025-05-06 20:33:29,894 - INFO - Training valley detection model...
+2025-05-06 20:33:29,895 - INFO - Valley model: Using recall-oriented loss for better valley detection
+2025-05-06 20:33:29,895 - INFO - Generating valley detection method comparison plots...
+2025-05-06 20:33:29,912 - INFO - Applying different valley detection methods for comparison...
+2025-05-06 20:33:29,915 - INFO - Traditional threshold method: 7301 valleys (10.0% of data)
+2025-05-06 20:34:55,092 - INFO - Detected 567 peaks (0.8% of data) and 465 valleys (0.6% of data)
+2025-05-06 20:34:55,092 - INFO - Using window=24h, relative_height=0.20, distance=6h, prominence=0.15
+2025-05-06 20:34:55,106 - INFO - Relative detection method: 567 valleys (0.8% of data)
+2025-05-06 20:35:05,136 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-06 20:35:05,139 - INFO - Robust detection method: 14059 valleys (19.3% of data)
+2025-05-06 20:35:05,151 - INFO - Simple scipy method: 1947 valleys (2.7% of data)
+2025-05-06 20:35:06,424 - INFO - Local minima method: 2783 valleys (3.8% of data)
+2025-05-06 20:35:17,504 - INFO - Valley detection method comparison plots saved to C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\valley_method_comparison
+2025-05-06 20:35:17,508 - INFO - Saved feature list with 27 features
+2025-05-06 20:35:17,510 - INFO - Saved feature scaler
+2025-05-06 20:35:17,510 - INFO - Saved thresholds: {'spike_threshold': 115.66180000000014, 'valley_threshold': 8.2626, 'method': 'robust', 'min_prominence': 0.03, 'min_width': 1, 'distance': 2, 'depth_percentile': 15, 'smoothing_window': 3}
+2025-05-06 20:35:21,061 - WARNING - From C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-05-06 20:35:21,421 - INFO - Built valley model with input shape (168, 27)
+2025-05-06 20:35:21,427 - INFO - Using aggressive class weighting for valley model: 32.00x weight for valleys
+2025-05-06 20:35:21,429 - INFO - Class weights: {0: 1, 1: 32.002336903602725}
+2025-05-06 20:35:21,430 - INFO - Added callback to save model with best recall
+2025-05-06 20:35:21,430 - INFO - Added callback to save model with best precision (proxy for F1)
+2025-05-06 20:35:21,430 - INFO - Using recall-oriented loss function to prioritize valley detection
+2025-05-06 20:35:21,539 - INFO - Training with validation data (shape: (10760, 168, 27))
+2025-05-06 20:53:51,472 - INFO - Training completed. Best validation loss 0.8688 at epoch 5
+2025-05-06 20:54:02,467 - INFO - Optimal probability threshold: 0.5139 with F1 score: 0.3132
+2025-05-06 20:54:04,537 - INFO - Generated Precision-Recall curve for threshold selection
+2025-05-06 20:54:04,869 - INFO - Saved model to C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\final_valley_model.keras
+2025-05-06 20:54:13,055 - INFO - Validation metrics - Loss: 0.8688, Accuracy: 0.2208, Precision: 0.1855, Recall: 0.9589, AUC: 0.5347
+2025-05-06 20:54:13,059 - INFO - Valley model training complete
+2025-05-06 20:54:13,060 - INFO - valley model training completed successfully
+2025-05-06 20:59:03,871 - INFO - Logging configured for valley model. Log file: C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\valley_model_training.log
+2025-05-06 20:59:03,872 - INFO - Created all necessary directories
+2025-05-06 20:59:03,873 - INFO - Loading data...
+2025-05-06 20:59:03,873 - INFO - Loading and merging data...
+2025-05-06 20:59:03,995 - INFO - Loaded price data: (73007, 11)
+2025-05-06 20:59:03,995 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:59:04,105 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:59:04,116 - INFO - Merged grid data: (73007, 21)
+2025-05-06 20:59:04,428 - INFO - Merged time features: (73007, 31)
+2025-05-06 20:59:04,946 - INFO - Merged holiday data: (73007, 35)
+2025-05-06 20:59:05,059 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:59:05,074 - INFO - Merged weather data: (73007, 41)
+2025-05-06 20:59:05,081 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-06 20:59:05,085 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-06 20:59:05,265 - WARNING - Top gaps in 'price_24h_std':
+2025-05-06 20:59:05,266 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-06 20:59:05,266 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-06 20:59:05,266 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-06 20:59:05,266 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-06 20:59:05,266 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-06 20:59:05,266 - WARNING -   ... and 73001 more gaps
+2025-05-06 20:59:05,269 - WARNING -   Median gap size: 0.0 hours
+2025-05-06 20:59:05,272 - WARNING -   Average gap size: 0.0 hours
+2025-05-06 20:59:05,273 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-06 20:59:05,276 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-06 20:59:05,276 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:59:05,298 - INFO - Train size: 51104, from 2017-01-01 00:00:00+00:00 to 2022-10-31 07:00:00+00:00
+2025-05-06 20:59:05,298 - INFO - Validation size: 10951, from 2022-10-31 08:00:00+00:00 to 2024-01-30 14:00:00+00:00
+2025-05-06 20:59:05,299 - INFO - Test size: 10952, from 2024-01-30 15:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:59:05,299 - INFO - === Starting valley model training (TCN) ===
+2025-05-06 20:59:05,299 - INFO - Valley model always uses SMOTE for class balancing
+2025-05-06 20:59:05,300 - INFO - Valley model always uses recall-oriented loss for better handling of class imbalance
+2025-05-06 20:59:05,300 - INFO - Preparing data for is_price_valley model training...
+2025-05-06 20:59:05,300 - INFO - Loading and merging data...
+2025-05-06 20:59:05,425 - INFO - Loaded price data: (73007, 11)
+2025-05-06 20:59:05,425 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:59:05,525 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:59:05,531 - INFO - Merged grid data: (73007, 21)
+2025-05-06 20:59:05,836 - INFO - Merged time features: (73007, 31)
+2025-05-06 20:59:06,355 - INFO - Merged holiday data: (73007, 35)
+2025-05-06 20:59:06,479 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:59:06,492 - INFO - Merged weather data: (73007, 41)
+2025-05-06 20:59:06,501 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-06 20:59:06,505 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-06 20:59:06,686 - WARNING - Top gaps in 'price_24h_std':
+2025-05-06 20:59:06,687 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-06 20:59:06,687 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-06 20:59:06,687 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-06 20:59:06,687 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-06 20:59:06,687 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-06 20:59:06,687 - WARNING -   ... and 73001 more gaps
+2025-05-06 20:59:06,691 - WARNING -   Median gap size: 0.0 hours
+2025-05-06 20:59:06,693 - WARNING -   Average gap size: 0.0 hours
+2025-05-06 20:59:06,695 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-06 20:59:06,698 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-06 20:59:06,699 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-06 20:59:06,706 - INFO - Adding lag features for trend detection...
+2025-05-06 20:59:06,752 - INFO - Added 9 lag features and 4 momentum/detrended features
+2025-05-06 20:59:06,776 - INFO - Using improved relative peak detection for peak/valley identification
+2025-05-06 20:59:34,774 - INFO - Detected 398 peaks (0.5% of data) and 519 valleys (0.7% of data)
+2025-05-06 20:59:34,774 - INFO - Using window=24h, relative_height=0.20, distance=6h, prominence=0.15
+2025-05-06 20:59:34,785 - INFO - Using robust peak detection algorithm for comparison
+2025-05-06 20:59:37,852 - INFO - Robust peak detection found 14836 peaks (20.3% of data)
+2025-05-06 20:59:37,854 - INFO - Using new robust valley detection algorithm
+2025-05-06 20:59:40,865 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-06 20:59:40,867 - INFO - Using Scipy method for peak detection
+2025-05-06 20:59:40,871 - INFO - Detected 1805 peaks (2.5% of data) and 14059 valleys (19.3% of data)
+2025-05-06 20:59:40,872 - INFO - For reference - traditional method would detect 7301 peaks (10.0% of data)
+2025-05-06 20:59:40,872 - INFO - Traditional thresholds - spike: 115.66, valley: 8.26
+2025-05-06 20:59:40,874 - INFO - Using valley-specific features for model training
+2025-05-06 20:59:40,874 - INFO - Valley model: Using SMOTE for class balancing
+2025-05-06 20:59:40,874 - INFO - Using 28 features for is_price_valley detection
+2025-05-06 20:59:40,889 - INFO - Data split: Train (51104, 28), Validation (10951, 28), Test (10952, 28)
+2025-05-06 20:59:40,889 - INFO - Target distribution in train: 19.28% positive samples
+2025-05-06 20:59:40,889 - INFO - Target distribution in val: 18.33% positive samples
+2025-05-06 20:59:40,890 - INFO - Target distribution in test: 20.07% positive samples
+2025-05-06 20:59:43,557 - INFO - Applying SMOTE for class balancing. Original class distribution: 19.31% positive
+2025-05-06 20:59:48,286 - INFO - After SMOTE: 51353 samples with 20.00% positive
+2025-05-06 20:59:48,480 - INFO - Sequence shapes: X_train (51353, 168, 27), y_train (51353, 1)
+2025-05-06 20:59:53,595 - INFO - Generated valley label validation plots in C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\valley_validation
+2025-05-06 20:59:53,595 - INFO - Training valley detection model...
+2025-05-06 20:59:53,596 - INFO - Valley model: Using recall-oriented loss for better valley detection
+2025-05-06 20:59:53,596 - INFO - Generating valley detection method comparison plots...
+2025-05-06 20:59:53,600 - INFO - Applying different valley detection methods for comparison...
+2025-05-06 20:59:53,602 - INFO - Traditional threshold method: 7301 valleys (10.0% of data)
+2025-05-06 21:00:21,726 - INFO - Detected 567 peaks (0.8% of data) and 465 valleys (0.6% of data)
+2025-05-06 21:00:21,726 - INFO - Using window=24h, relative_height=0.20, distance=6h, prominence=0.15
+2025-05-06 21:00:21,732 - INFO - Relative detection method: 567 valleys (0.8% of data)
+2025-05-06 21:00:24,765 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-06 21:00:24,766 - INFO - Robust detection method: 14059 valleys (19.3% of data)
+2025-05-06 21:00:24,771 - INFO - Simple scipy method: 1947 valleys (2.7% of data)
+2025-05-06 21:00:25,113 - INFO - Local minima method: 2783 valleys (3.8% of data)
+2025-05-06 21:00:28,411 - INFO - Valley detection method comparison plots saved to C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\valley_method_comparison
+2025-05-06 21:00:28,412 - INFO - Saved feature list with 27 features
+2025-05-06 21:00:28,413 - INFO - Saved feature scaler
+2025-05-06 21:00:28,413 - INFO - Saved thresholds: {'spike_threshold': 115.66180000000014, 'valley_threshold': 8.2626, 'method': 'scipy', 'peak_prominence': 27.805590000000002, 'peak_distance': 4, 'peak_width': 2, 'min_prominence': 0.03, 'min_width': 1, 'distance': 2, 'depth_percentile': 15, 'smoothing_window': 3}
+2025-05-06 21:00:29,261 - WARNING - From C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-05-06 21:00:29,333 - INFO - Built valley model with input shape (168, 27)
+2025-05-06 21:00:29,333 - INFO - Using aggressive class weighting for valley model: 32.00x weight for valleys
+2025-05-06 21:00:29,333 - INFO - Class weights: {0: 1, 1: 32.002336903602725}
+2025-05-06 21:00:29,333 - INFO - Added callback to save model with best recall
+2025-05-06 21:00:29,333 - INFO - Added callback to save model with best precision (proxy for F1)
+2025-05-06 21:00:29,333 - INFO - Using recall-oriented loss function to prioritize valley detection
+2025-05-06 21:00:29,345 - INFO - Training with validation data (shape: (10760, 168, 27))
+2025-05-06 21:34:44,907 - INFO - Training completed. Best validation loss 0.5820 at epoch 20
+2025-05-06 21:34:55,475 - INFO - Optimal probability threshold: 0.5988 with F1 score: 0.5923
+2025-05-06 21:34:56,028 - INFO - Generated Precision-Recall curve for threshold selection
+2025-05-06 21:34:56,540 - INFO - Saved model to C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\final_valley_model.keras
+2025-05-06 21:35:04,516 - INFO - Validation metrics - Loss: 0.5820, Accuracy: 0.7677, Precision: 0.4305, Recall: 0.8296, AUC: 0.8649
+2025-05-06 21:35:04,525 - INFO - Valley model training complete
+2025-05-06 21:35:04,528 - INFO - valley model training completed successfully

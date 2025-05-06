@@ -1,0 +1,22 @@
+2025-05-06 22:55:04,990 - INFO - Loaded price data with shape (73007, 11)
+2025-05-06 22:55:05,081 - INFO - Loaded grid data with shape (73147, 19)
+2025-05-06 22:55:05,358 - INFO - Loaded time features with shape (289296, 10)
+2025-05-06 22:55:05,842 - INFO - Loaded holidays data with shape (710017, 4)
+2025-05-06 22:55:05,953 - INFO - Loaded weather data with shape (73080, 6)
+2025-05-06 22:55:09,072 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-06 22:55:09,074 - INFO - Identified 14059 valleys (19.3% of data) using robust valley detection
+2025-05-06 22:55:09,075 - INFO - Final merged data shape: (73007, 65)
+2025-05-06 22:55:09,076 - INFO - Loaded data with 73007 samples
+2025-05-06 22:55:09,077 - INFO - Loading peak detection model...
+2025-05-06 22:55:09,077 - INFO - Using model from best_peak_model.keras
+2025-05-06 22:55:09,912 - WARNING - From C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-05-06 22:55:10,216 - INFO - Loaded peak model from C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\best_peak_model.keras
+2025-05-06 22:55:10,216 - INFO - Loaded feature list with 23 features
+2025-05-06 22:55:10,217 - INFO - Loaded feature scaler from C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\feature_scaler_peak_model.save
+2025-05-06 22:55:10,217 - INFO - Evaluating peak detection model...
+2025-05-06 22:55:10,217 - INFO - Evaluating on validation data...
+2025-05-06 22:55:10,221 - INFO - Evaluation data: 14601 samples from 2021-12-31 04:00:00+00:00 to 2023-08-31 13:00:00+00:00
+2025-05-06 22:55:10,263 - INFO - Making predictions with model on 14577 samples...
+2025-05-06 22:55:10,326 - ERROR - Error making predictions: Input 0 of layer "functional" is incompatible with the layer: expected shape=(None, 168, 23), found shape=(32, 24, 23)
+2025-05-06 22:55:10,326 - ERROR - Model prediction failed. This could be due to incompatible features or model issues.

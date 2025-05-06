@@ -1,9 +1,0 @@
-[
-    "SE3_price_ore",
-    "temperature_2m",
-    "wind_speed_100m",
-    "shortwave_radiation_sum",
-    "SE3_price_ore_lag24h",
-    "SE3_price_ore_lag72h",
-    "SE3_price_ore_lag168h"
-]

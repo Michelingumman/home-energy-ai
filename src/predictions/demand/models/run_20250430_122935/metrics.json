@@ -1,0 +1,26 @@
+{
+    "timestamp": "20250430_122935",
+    "test_mae": 1.026481126679617,
+    "test_rmse": 1.525260001277004,
+    "test_r2": 0.6477375048965266,
+    "test_corr": 0.8210539894695837,
+    "num_features": 16,
+    "features": [
+        "hour_sin",
+        "hour_cos",
+        "day_of_week_sin",
+        "day_of_week_cos",
+        "month_sin",
+        "month_cos",
+        "is_morning_peak",
+        "is_evening_peak",
+        "is_weekend",
+        "is_holiday",
+        "consumption_lag_1h",
+        "consumption_lag_24h",
+        "consumption_lag_168h",
+        "consumption_rolling_mean_24h",
+        "consumption_rolling_mean_168h",
+        "season"
+    ]
+}

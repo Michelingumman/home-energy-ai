@@ -1,0 +1,35 @@
+================================================================================
+TREND MODEL EVALUATION SUMMARY
+================================================================================
+Date: 2025-05-06 12:51:07
+Model type: XGBoost
+Test period: 2024-01-30 15:00:00+00:00 to 2025-04-30 23:00:00+00:00
+Number of observations: 10952
+
+METRICS
+----------------------------------------
+Mean Absolute Error (MAE): 12.1214
+Root Mean Squared Error (RMSE): 21.8160
+Mean Absolute Percentage Error (MAPE): 79.30%
+Symmetric Mean Absolute Percentage Error (SMAPE): 43.76%
+Median Absolute Error: 6.4919
+Direction Accuracy: 0.6661
+Peak Accuracy: 0.9363
+Peak Mean Absolute Error: 32.6304
+
+VISUALIZATION FILES
+----------------------------------------
+- error_distribution.png
+- error_vs_actual.png
+- overall_forecast.png
+
+DATA FILES
+----------------------------------------
+- trend_forecast_results.csv
+- trend_model_evaluation_metrics.json
+
+NOTES
+----------------------------------------
+- MAE and RMSE are in öre/kWh units
+- Direction Accuracy measures how often the model correctly predicts price movements (up/down)
+- Peak Accuracy measures how well the model identifies price peaks (>1 std deviation above mean)

@@ -1,0 +1,56 @@
+2025-05-06 11:27:34,479 - INFO - Using 5 day horizon (120 hours)
+2025-05-06 11:27:34,479 - INFO - Loading data for prediction...
+2025-05-06 11:27:34,479 - INFO - Loading and merging data...
+2025-05-06 11:27:34,590 - INFO - Loaded price data: (73134, 11)
+2025-05-06 11:27:34,591 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-05-06 06:00:00
+2025-05-06 11:27:34,738 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-05-06 03:00:00
+2025-05-06 11:27:34,747 - INFO - Merged grid data: (73132, 19)
+2025-05-06 11:27:35,192 - INFO - Merged time features: (73135, 10)
+2025-05-06 11:27:36,054 - INFO - Merged holiday data: (73135, 4)
+2025-05-06 11:27:36,178 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-05-03 21:00:00
+2025-05-06 11:27:36,183 - INFO - Merged weather data: (73078, 7)
+2025-05-06 11:27:36,211 - INFO - No missing values in merged dataframe - all data ranges properly aligned
+2025-05-06 11:27:36,212 - INFO - Final merged dataframe shape: (73134, 50)
+2025-05-06 11:27:36,212 - INFO - Date range: 2017-01-01 00:00:00 to 2025-05-06 06:00:00
+2025-05-06 11:27:36,219 - INFO - Loaded data with shape (73134, 50)
+2025-05-06 11:27:36,220 - INFO - Making trend model predictions...
+2025-05-06 11:27:36,221 - ERROR - Error in trend prediction: No trend model found at C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\trend_model.json or C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.keras
+2025-05-06 11:27:36,221 - ERROR - Error in prediction: No trend model found at C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\trend_model.json or C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.keras
+2025-05-06 11:30:39,574 - INFO - Using 5 day horizon (120 hours)
+2025-05-06 11:30:39,574 - INFO - Loading data for prediction...
+2025-05-06 11:30:39,574 - INFO - Loading and merging data...
+2025-05-06 11:30:39,667 - INFO - Loaded price data: (73134, 11)
+2025-05-06 11:30:39,667 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-05-06 06:00:00
+2025-05-06 11:30:39,762 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-05-06 03:00:00
+2025-05-06 11:30:39,769 - INFO - Merged grid data: (73132, 19)
+2025-05-06 11:30:40,080 - INFO - Merged time features: (73135, 10)
+2025-05-06 11:30:40,666 - INFO - Merged holiday data: (73135, 4)
+2025-05-06 11:30:40,779 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-05-03 21:00:00
+2025-05-06 11:30:40,782 - INFO - Merged weather data: (73078, 7)
+2025-05-06 11:30:40,806 - INFO - No missing values in merged dataframe - all data ranges properly aligned
+2025-05-06 11:30:40,807 - INFO - Final merged dataframe shape: (73134, 50)
+2025-05-06 11:30:40,807 - INFO - Date range: 2017-01-01 00:00:00 to 2025-05-06 06:00:00
+2025-05-06 11:30:40,815 - INFO - Loaded data with shape (73134, 50)
+2025-05-06 11:30:40,816 - INFO - Making trend model predictions...
+2025-05-06 11:30:40,816 - ERROR - Error in trend prediction: No trend model found at C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\trend_model.json or C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.keras
+2025-05-06 11:30:40,816 - ERROR - Error in prediction: No trend model found at C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\trend_model.json or C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.keras
+2025-05-06 11:33:06,999 - INFO - Using 5 day horizon (120 hours)
+2025-05-06 11:33:06,999 - INFO - Loading data for prediction...
+2025-05-06 11:33:07,000 - INFO - Loading and merging data...
+2025-05-06 11:33:07,094 - INFO - Loaded price data: (73134, 11)
+2025-05-06 11:33:07,094 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-05-06 06:00:00
+2025-05-06 11:33:07,198 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-05-06 03:00:00
+2025-05-06 11:33:07,206 - INFO - Merged grid data: (73132, 19)
+2025-05-06 11:33:07,548 - INFO - Merged time features: (73135, 10)
+2025-05-06 11:33:08,167 - INFO - Merged holiday data: (73135, 4)
+2025-05-06 11:33:08,286 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-05-03 21:00:00
+2025-05-06 11:33:08,289 - INFO - Merged weather data: (73078, 7)
+2025-05-06 11:33:08,318 - INFO - No missing values in merged dataframe - all data ranges properly aligned
+2025-05-06 11:33:08,318 - INFO - Final merged dataframe shape: (73134, 50)
+2025-05-06 11:33:08,318 - INFO - Date range: 2017-01-01 00:00:00 to 2025-05-06 06:00:00
+2025-05-06 11:33:08,325 - INFO - Loaded data with shape (73134, 50)
+2025-05-06 11:33:08,325 - INFO - Making trend model predictions...
+2025-05-06 11:33:10,612 - ERROR - Error loading XGBoost trend model: [11:33:10] C:\buildkite-agent\builds\buildkite-windows-cpu-autoscaling-group-i-08cbc0333d8d4aae1-1\xgboost\xgboost-ci-windows\src\learner.cc:1007: Check failed: fi->Read(&tparam_.objective): BoostLearner: wrong model format
+2025-05-06 11:33:10,613 - ERROR - Error loading feature list: [Errno 2] No such file or directory: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\trend_model\\feature_list_trend_model.json'
+2025-05-06 11:33:10,613 - ERROR - Error in trend prediction: [Errno 2] No such file or directory: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\trend_model\\feature_list_trend_model.json'
+2025-05-06 11:33:10,613 - ERROR - Error in prediction: [Errno 2] No such file or directory: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\trend_model\\feature_list_trend_model.json'

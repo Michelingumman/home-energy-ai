@@ -1,2165 +1,2164 @@
+#!/usr/bin/env python
 """
-Price Prediction Model Training Script
-=====================================
-
-This script trains an LSTM-based model to predict electricity prices for the next 24 hours.
+Training script for electricity price forecasting with 3 models.
+Trains a trend model using XGBOOST (with eXogenous variables).
+Trains a peak model using TCN.
+Trains a valley model using TCN.
 
 Usage:
-------
-python train.py [mode] [--scaler SCALER_TYPE]
-
-Parameters:
------------
-mode : {'production', 'evaluation'}
-    - production: Trains using all available data for real-world deployment
-    - evaluation: Trains using train/validation/test split for model evaluation
-
---scaler : {'robust', 'minmax', 'standard'}, default='robust'
-    Type of scaler to use for feature normalization:
-    - robust: RobustScaler (handles outliers better)
-    - minmax: MinMaxScaler (preserves feature magnitudes)
-    - standard: StandardScaler (normalizes to mean=0, std=1)
-
-Examples:
----------
-# Train a production model using all data with robust scaler (default)
-python train.py production
-
-# Train an evaluation model with validation/test split using minmax scaler
-python train.py evaluation --scaler minmax
-
-# Train a production model with standard scaler
-python train.py production --scaler standard
-
-Outputs:
---------
-The script will create the following in the models directory:
-
-For production models (models/production/):
-    - saved/price_model_production.keras - The trained model
-    - saved/price_scaler.save - Price feature scaler
-    - saved/grid_scaler.save - Grid feature scaler
-    - saved/target_info.json - Information about target column and scaling
-    - saved/feature_config.json - Feature configuration
-    - logs/ - TensorBoard logs for training visualization
-    - production_training_history.png - Plot of training metrics
-
-For evaluation models (models/evaluation/):
-    - saved/ - Same files as production
-    - test_data/ - Test data for later evaluation
-    - quick_evaluation.png - Visual performance summary on test data
-
-Notes:
-------
-- Production models use all available data with a small validation set
-- Evaluation models create a train/val/test split and save test data for later evaluation
-- Both modes use the feature configuration from FeatureConfig class
-- The window size (past hours used for prediction) is set in the feature config
+    TRAINING MODE: (trains on data split into train, val, test sets)
+    python train.py --model trend
+    python train.py --model peak
+    python train.py --model valley
+    
+    PRODUCTION MODE: (trains on all data)
+    python train.py --model trend --production
+    python train.py --model peak --production
+    python train.py --model valley --production
 """
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import tensorflow as tf
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import LSTM, Dense, Input, Dropout, Add
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Input, Dropout, Concatenate, Activation, BatchNormalization, Flatten, Reshape, Multiply, Lambda
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from tensorflow.keras import backend as K
-from tensorflow.keras import regularizers
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-import joblib
-import argparse
-from datetime import datetime, timedelta
-import json
-import os
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
+from tensorflow.keras.metrics import Precision, Recall, AUC
+from tensorflow.keras.regularizers import l1_l2
+from tcn import TCN
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
 import logging
+import os
+import json
 from pathlib import Path
+from datetime import datetime, timedelta
+import argparse
+import joblib
+from sklearn.preprocessing import StandardScaler
 import sys
+import traceback
+from scipy.signal import medfilt
+from scipy.signal import savgol_filter
+import time  # Added for progress tracking
+from tqdm import tqdm  # Added for progress bars
+import psutil  # For memory usage tracking
+import xgboost as xgb  # For Gradient Boosting model
+from xgboost.callback import TrainingCallback  # Add TrainingCallback import
+import pickle
+from tensorflow.keras import backend as K
+from tensorflow.keras.losses import BinaryCrossentropy
 
-# Configure TensorFlow to use available CPU instructions
-try:
-    tf.config.optimizer.set_jit(True)  # Enable XLA optimization
-except:
-    logging.warning("Could not enable XLA optimization")
-
-# Add the project root to the Python path
-project_root = str(Path(__file__).resolve().parents[3])
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-# Import the new FeatureConfig class
-from src.predictions.prices.feature_config import FeatureConfig
-
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Add this new FeatureWeightingLayer
-class FeatureWeightingLayer(tf.keras.layers.Layer):
-    def __init__(self, feature_weights, feature_config=None, **kwargs):
-        """
-        Custom layer to apply feature weights directly to the input
-        
-        Args:
-            feature_weights: Dictionary mapping feature groups to weight values
-                            e.g. {'price_cols': 1.0, 'cyclical_cols': 2.0, 'binary_cols': 2.0, 'grid_cols': 0.5}
-            feature_config: FeatureConfig object (optional, can be set later)
-        """
-        super(FeatureWeightingLayer, self).__init__(**kwargs)
-        self.feature_weights = feature_weights
-        self.feature_config = feature_config
-        self.weight_array = None
-        
-    def build(self, input_shape):
-        # Initialize weights for each feature
-        # Shape: [1, 1, input_shape[2]] to broadcast across all samples and timesteps
-        self.w = self.add_weight(
-            shape=(1, 1, input_shape[2]),
-            initializer=tf.keras.initializers.Ones(),
-            trainable=False,
-            name='feature_weights'
-        )
-        
-        # Set weights if feature_config is available
-        if self.feature_config is not None:
-            self._set_weights_from_feature_groups()
-            
-        super(FeatureWeightingLayer, self).build(input_shape)
-        
-    def call(self, inputs):
-        # Multiply inputs by weights
-        return inputs * self.w
-    
-    def get_config(self):
-        config = super(FeatureWeightingLayer, self).get_config()
-        config.update({
-            "feature_weights": self.feature_weights,
-            # Don't serialize the feature_config object
-        })
-        return config
-    
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-    
-    def set_feature_config(self, feature_config):
-        """Set the feature config object"""
-        self.feature_config = feature_config
-        if self.built:
-            self._set_weights_from_feature_groups()
-            
-    def _set_weights_from_feature_groups(self):
-        """
-        Set the actual weight values based on feature groups and their weights
-        """
-        if self.feature_config is None:
-            logging.warning("Cannot set weights: feature_config is None")
-            return
-            
-        all_features = self.feature_config.get_all_feature_names()
-        weight_array = np.ones(len(all_features))
-        
-        # Keep track of which features have been assigned weights
-        assigned_features = set()
-        
-        # Set weights based on feature groups
-        for group, weight in self.feature_weights.items():
-            # Skip the enable_weighting flag
-            if group == 'enable_weighting':
-                continue
-                
-            # Get the feature list for this group
-            if hasattr(self.feature_config, f"get_{group}"):
-                # Use the specific getter method if available
-                group_features = getattr(self.feature_config, f"get_{group}")()
-            elif hasattr(self.feature_config, "feature_groups") and group in self.feature_config.feature_groups:
-                # Access feature_groups dictionary directly
-                group_features = self.feature_config.feature_groups[group]
-            else:
-                logging.warning(f"Feature group '{group}' not found, skipping weighting")
-                continue
-                
-            for feature in group_features:
-                if feature in all_features:
-                    idx = all_features.index(feature)
-                    weight_array[idx] = weight
-                    assigned_features.add(feature)
-        
-        # Log unassigned features
-        unassigned = set(all_features) - assigned_features
-        if unassigned:
-            logging.warning(f"Features without assigned weights (using default 1.0): {unassigned}")
-        
-        # Set the layer weights
-        self.weight_array = weight_array
-        weights = [weight_array.reshape(1, 1, -1)]
-        self.set_weights(weights)
-        
-        # Log the applied weights for verification
-        feature_weight_map = {feature: weight_array[i] for i, feature in enumerate(all_features)}
-        logging.info(f"Applied feature weights: {feature_weight_map}")
-
-# After the FeatureWeightingLayer class definition, add our custom LastTimestepExtractor class
-
-class LastTimestepExtractor(tf.keras.layers.Layer):
-    """Custom layer to extract the last timestep from a sequence for residual connections"""
+# Define custom layers that will be used in model architecture
+class GlobalSumPooling1D(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
-        super(LastTimestepExtractor, self).__init__(**kwargs)
+        super(GlobalSumPooling1D, self).__init__(**kwargs)
         
     def call(self, inputs):
-        return inputs[:, -1, :]
+        return tf.reduce_sum(inputs, axis=1)
+        
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[2])
         
     def get_config(self):
-        config = super(LastTimestepExtractor, self).get_config()
+        config = super(GlobalSumPooling1D, self).get_config()
         return config
 
-class PriceModelTrainer:
-    def __init__(self, window_size=None, train_from_all_data=False):
-        """Initialize trainer with project paths and default settings
-        
-        Args:
-            window_size (int): Size of the input window
-            train_from_all_data (bool): If True, uses all data for training without test split
-        """
-        # Load feature configuration
-        self.feature_config = FeatureConfig()
-        
-        # Get window size from config if not provided
-        training_params = self.feature_config.get_training_params()
-        self.window_size = window_size or training_params.get("window_size", 168)
-        self.model = None
-        self.train_from_all_data = train_from_all_data
-        
-        # Setup project paths
-        self.project_root = Path(__file__).resolve().parents[3]
-        
-        # Model directory paths
-        # Models directory structure:
-        # models/
-        #   ├── production/  - Production model (trained on all data)
-        #   │   ├── saved/   - Model files and scalers
-        #   │   └── logs/    - TensorBoard logs
-        #   └── evaluation/  - Evaluation model (with test split)
-        #       ├── saved/   - Model files and scalers
-        #       ├── logs/    - TensorBoard logs
-        #       └── test_data/ - Test data for evaluation
-        self.models_dir = Path(__file__).resolve().parent / "models"
-        
-        # Set model and data dirs based on whether we're training a production or evaluation model
-        if train_from_all_data:
-            self.model_dir = self.models_dir / "production" 
-            self.model_name = "price_model_production.keras"
-        else:
-            self.model_dir = self.models_dir / "evaluation"
-            self.model_name = "price_model_evaluation.keras"
-            
-        # Create necessary directories
-        self.saved_dir = self.model_dir / "saved"
-        self.logs_dir = self.model_dir / "logs"
-        
-        if not train_from_all_data:
-            self.test_data_dir = self.model_dir / "test_data"
-            self.test_data_dir.mkdir(parents=True, exist_ok=True)
-        
-        self.saved_dir.mkdir(parents=True, exist_ok=True)
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize scalers
-        self._initialize_scalers()
-        
-        # Get feature weights from config
-        self.feature_weights = self.feature_config.get_feature_weights()
-        
-        logging.info(f"Initialized trainer with window_size={self.window_size}, train_from_all_data={train_from_all_data}")
-        logging.info(f"Using feature weights: {self.feature_weights}")
-    
-    def _initialize_scalers(self):
-        """Initialize the appropriate scalers based on config"""
-        # Try to get scaling parameters from config if available
-        scaling_config = None
-        try:
-            scaling_config = self.feature_config.get_scaling_params()
-        except (AttributeError, KeyError):
-            logging.warning("Could not load scaling parameters from config, using defaults")
-        
-        # Price scaler config
-        if scaling_config and 'price_scaler' in scaling_config:
-            price_scaler_type = scaling_config['price_scaler'].get('type', 'MinMaxScaler')
-            logging.info(f"Using price scaler from config: {price_scaler_type}")
-            
-            if price_scaler_type == 'MinMaxScaler':
-                # Get feature range from config or use default
-                feature_range = scaling_config['price_scaler'].get('feature_range', (-1, 1))
-                # Ensure feature_range is a tuple (scikit-learn requirement)
-                if isinstance(feature_range, list):
-                    feature_range = tuple(feature_range)
-                    logging.info(f"Converted feature_range from list to tuple: {feature_range}")
-                self.price_scaler = MinMaxScaler(feature_range=feature_range)
-                logging.info(f"Using MinMaxScaler with feature_range={feature_range} for prices")
-            elif price_scaler_type == 'RobustScaler':
-                # Get price scaler parameters from config
-                price_quantile_range = scaling_config['price_scaler'].get('quantile_range', (0, 100))
-                # Ensure quantile_range is a tuple
-                if isinstance(price_quantile_range, list):
-                    price_quantile_range = tuple(price_quantile_range)
-                    logging.info(f"Converted quantile_range from list to tuple: {price_quantile_range}")
-                unit_variance = scaling_config['price_scaler'].get('unit_variance', True)
-                self.price_scaler = RobustScaler(quantile_range=price_quantile_range, unit_variance=unit_variance)
-                logging.info(f"Using RobustScaler with quantile_range={price_quantile_range}, unit_variance={unit_variance} for prices")
-            elif price_scaler_type == 'StandardScaler':
-                self.price_scaler = StandardScaler()
-                logging.info("Using StandardScaler for prices")
-            else:
-                # Default to MinMaxScaler if the type is not recognized
-                self.price_scaler = MinMaxScaler(feature_range=(-1, 1))
-                logging.info(f"Unknown price scaler type '{price_scaler_type}', using MinMaxScaler with feature_range=(-1, 1)")
-        else:
-            # Default to MinMaxScaler if no config is available
-            self.price_scaler = MinMaxScaler(feature_range=(-1, 1))
-            logging.info("No price scaler config found, using MinMaxScaler with feature_range=(-1, 1)")
-            
-        # Store additional price scaler settings
-        if scaling_config and 'price_scaler' in scaling_config:
-            self.clip_negative = scaling_config['price_scaler'].get('clip_negative', False)
-            self.max_reasonable_price = scaling_config['price_scaler'].get('max_reasonable_price', 1500)
-        else:
-            self.clip_negative = False
-            self.max_reasonable_price = 1500
-            
-        # Initialize price transformation settings from config
-        self.price_transform_config = {}
-        if scaling_config and 'price_transform_config' in scaling_config:
-            self.price_transform_config = scaling_config['price_transform_config']
-            if self.price_transform_config.get('enable_log_transform', False):
-                cols_to_transform = self.price_transform_config.get('apply_to_cols', [])
-                transform_offset = self.price_transform_config.get('offset', 1.0)
-                logging.info(f"Enabling log transformation for price columns: {cols_to_transform} with offset {transform_offset}")
-        
-        # Grid scaler config
-        if scaling_config and 'grid_scaler' in scaling_config:
-            grid_scaler_type = scaling_config['grid_scaler'].get('type', 'RobustScaler')
-            logging.info(f"Using grid scaler from config: {grid_scaler_type}")
-            
-            if grid_scaler_type == 'RobustScaler':
-                # Get grid scaler parameters from config or use enhanced defaults
-                grid_quantile_range = scaling_config['grid_scaler'].get('quantile_range', (1, 99))
-                # Ensure quantile_range is a tuple
-                if isinstance(grid_quantile_range, list):
-                    grid_quantile_range = tuple(grid_quantile_range)
-                    logging.info(f"Converted grid quantile_range from list to tuple: {grid_quantile_range}")
-                unit_variance = scaling_config['grid_scaler'].get('unit_variance', False)
-                self.grid_scaler = RobustScaler(quantile_range=grid_quantile_range, unit_variance=unit_variance)
-                logging.info(f"Using RobustScaler with quantile_range={grid_quantile_range}, unit_variance={unit_variance} for grid features")
-            elif grid_scaler_type == 'MinMaxScaler':
-                feature_range = scaling_config['grid_scaler'].get('feature_range', (-1, 1))
-                # Ensure feature_range is a tuple
-                if isinstance(feature_range, list):
-                    feature_range = tuple(feature_range)
-                    logging.info(f"Converted grid feature_range from list to tuple: {feature_range}")
-                self.grid_scaler = MinMaxScaler(feature_range=feature_range)
-                logging.info(f"Using MinMaxScaler with feature_range={feature_range} for grid features")
-            elif grid_scaler_type == 'StandardScaler':
-                self.grid_scaler = StandardScaler()
-                logging.info("Using StandardScaler for grid features")
-            else:
-                # Default to RobustScaler if the type is not recognized
-                self.grid_scaler = RobustScaler(quantile_range=(1, 99), unit_variance=False)
-                logging.info(f"Unknown grid scaler type '{grid_scaler_type}', using RobustScaler with quantile_range=(1, 99), unit_variance=False")
-        else:
-            # Default to RobustScaler if no config is available
-            self.grid_scaler = RobustScaler(quantile_range=(1, 99), unit_variance=False)
-            logging.info("No grid scaler config found, using RobustScaler with quantile_range=(1, 99), unit_variance=False")
-                
-        # Store additional outlier handling parameters
-        if scaling_config and 'grid_scaler' in scaling_config:
-            try:
-                self.outlier_threshold = scaling_config['grid_scaler'].get('outlier_threshold', 8)
-                self.handle_extreme_values = scaling_config['grid_scaler'].get('handle_extreme_values', True)
-                self.max_zscore = scaling_config['grid_scaler'].get('max_zscore', 8)
-                self.import_export_cols = scaling_config['grid_scaler'].get('import_export_cols', [])
-                self.log_transform_large_values = scaling_config['grid_scaler'].get('log_transform_large_values', True)
-                self.individual_scaling = scaling_config['grid_scaler'].get('individual_scaling', True)
-                logging.info(f"Grid outlier handling: threshold={self.outlier_threshold}, enabled={self.handle_extreme_values}")
-                logging.info(f"Grid advanced settings: max_zscore={self.max_zscore}, log_transform={self.log_transform_large_values}, individual_scaling={self.individual_scaling}")
-            except Exception as e:
-                logging.warning(f"Error loading grid outlier config: {e}")
-                self.outlier_threshold = 8
-                self.handle_extreme_values = True
-                self.max_zscore = 8
-                self.import_export_cols = []
-                self.log_transform_large_values = True
-                self.individual_scaling = True
-        else:
-            self.outlier_threshold = 8
-            self.handle_extreme_values = True
-            self.max_zscore = 8
-            self.import_export_cols = []
-            self.log_transform_large_values = True
-            self.individual_scaling = True
-    
-    def get_required_features(self):
-        """List all required features for the model"""
-        return self.feature_config.get_ordered_features()
-    
-    def find_matching_features(self, df, required_features):
-        """
-        Find available features that match the required features.
-        If an exact match doesn't exist, try to find one with the same prefix.
-        
-        Args:
-            df: DataFrame with actual columns
-            required_features: List of feature names from config
-            
-        Returns:
-            Dict mapping required feature names to actual column names
-        """
-        feature_map = {}
-        df_columns = df.columns.tolist()
-        
-        for feature in required_features:
-            if feature in df_columns:
-                # Exact match
-                feature_map[feature] = feature
-            else:
-                # Try to find close matches
-                # 1. Check for prefix match
-                prefix_matches = [col for col in df_columns if col.startswith(feature.split('_')[0])]
-                # 2. Check for semantic match (e.g., price -> SE3_price_ore)
-                semantic_matches = [col for col in df_columns if feature.split('_')[0].lower() in col.lower()]
-                
-                if prefix_matches:
-                    logging.info(f"Using {prefix_matches[0]} as substitute for {feature}")
-                    feature_map[feature] = prefix_matches[0]
-                elif semantic_matches:
-                    logging.info(f"Using {semantic_matches[0]} as substitute for {feature}")
-                    feature_map[feature] = semantic_matches[0]
-                else:
-                    # No match found - this will be handled by the caller
-                    feature_map[feature] = None
-        
-        return feature_map
-    
-    def load_data(self):
-        """Load and prepare the processed data"""
-        logging.info("Loading datasets...")
-        
-        # Load price data first
-        price_df = pd.read_csv(
-            self.project_root / "data/processed/SE3prices.csv", 
-            index_col=0
-        )
-        price_df.index = pd.to_datetime(price_df.index)
-        
-        # Load time features
-        time_df = pd.read_csv(
-            self.project_root / "data/processed/time_features.csv",
-            index_col=0
-        )
-        time_df.index = pd.to_datetime(time_df.index)
-        
-        # Load holiday data
-        holiday_df = pd.read_csv(
-            self.project_root / "data/processed/holidays.csv",
-            index_col=0
-        )
-        holiday_df.index = pd.to_datetime(holiday_df.index)
-        
-        # Load grid features
-        grid_df = pd.read_csv(
-            self.project_root / "data/processed/SwedenGrid.csv",
-            index_col=0
-        )
-        grid_df.index = pd.to_datetime(grid_df.index)
-        
-        # Get common date range where all data is available
-        start_date = max(
-            price_df.index.min(),
-            time_df.index.min(),
-            holiday_df.index.min(),
-            grid_df.index.min()
-        )
-        
-        # For production model, use all available data up to the latest date
-        end_date = min(
-            price_df.index.max(),
-            time_df.index.max(),
-            holiday_df.index.max(),
-            grid_df.index.max()
-        )
-        
-        logging.info(f"Using data from {start_date} to {end_date}")
-        
-        # Trim all dataframes to common date range
-        price_df = price_df[
-            (price_df.index >= start_date)
-        ]
-        
-        time_df = time_df[
-            (time_df.index >= start_date)
-        ]
-        
-        holiday_df = holiday_df[
-            (holiday_df.index >= start_date)
-        ]
-        
-        grid_df = grid_df[
-            (grid_df.index >= start_date)
-        ]
-        
-        # Merge all features
-        df = price_df.join(time_df, how='left')
-        df = df.join(holiday_df, how='left')
-        df = df.join(grid_df, how='left')
-        
-        # Handle any missing values
-        df = df.ffill().bfill()
-        
-        logging.info(f"Final dataset shape: {df.shape}")
-        logging.info(f"Available columns: {sorted(df.columns.tolist())}")
-        
-        return df
+# Add the directory of this file to the Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
 
-    def create_sequences(self, data):
-        """Convert dataframe of features to sequences for LSTM training"""
-        X, y = [], []
-        values = data.values
-        for i in range(len(values) - self.window_size - 24):  # Need 24 more steps for targets
-            X.append(values[i:(i + self.window_size)])
-            # Get next 24 hours of prices as target
-            y.append(values[i + self.window_size:i + self.window_size + 24, 0])  # First column is price
-        return np.array(X), np.array(y)
-    
-    def prepare_data(self, df):
-        """
-        Prepare the data for training by scaling features and target.
-        
-        Args:
-            df: DataFrame with features and target
-        
-        Returns:
-            X: Scaled feature matrix
-            y: Target values
-        """
-        # Check for missing columns and available price columns
-        target_name = self.feature_config.get_target_name()
-        if target_name not in df.columns:
-            logging.warning(f"Target column '{target_name}' not found in dataframe")
-            # Try to find a suitable price column
-            price_cols = [col for col in df.columns if 'price' in col.lower()]
-            if price_cols:
-                new_target = price_cols[0]
-                logging.info(f"Using '{new_target}' as target column instead")
-                # Update feature_config
-                self.feature_config.metadata['target_feature'] = new_target
-                target_name = new_target
-            else:
-                raise ValueError(f"No suitable price column found in dataframe. Available columns: {sorted(df.columns.tolist())}")
-        
-        # Add specialized features for morning and evening peak hours
-        logging.info("Adding specialized features for better spike prediction")
-        
-        # Create dataframe copy to avoid modifying the original
-        df_enhanced = df.copy()
-        
-        # Add hour-of-day indicator to improve temporal patterns
-        df_enhanced['hour'] = df_enhanced.index.hour
-        
-        # Add peak hour multipliers to better capture morning and evening price spikes
-        # Morning peak (7-9am)
-        df_enhanced['morning_peak'] = df_enhanced.index.hour.isin([7, 8, 9]).astype(float)
-        
-        # Evening peak (17-20pm)
-        df_enhanced['evening_peak'] = df_enhanced.index.hour.isin([17, 18, 19, 20]).astype(float)
-        
-        # Add more detailed hour-of-day one-hot encoding for key hours with extreme prices
-        # This helps the model distinguish specific hours that often have price spikes
-        for peak_hour in [8, 9, 17, 18, 19]:
-            df_enhanced[f'is_hour_{peak_hour}'] = (df_enhanced.index.hour == peak_hour).astype(float)
-        
-        # Calculate price momentum features using robust methods that avoid division by zero
-        # For price_momentum_1h, use difference instead of percentage for stability
-        prices = df_enhanced[target_name].values
-        
-        # For 1-hour momentum, use simple difference normalized by recent average price
-        # This avoids division by zero when calculating percentages
-        diffs_1h = np.zeros_like(prices)
-        diffs_1h[1:] = prices[1:] - prices[:-1]
-        
-        # Get average prices over last week to normalize differences (avoid division by zero)
-        avg_prices = df_enhanced[target_name].rolling(168, min_periods=1).mean().bfill().values
-        # Use a minimum value to avoid division by very small numbers
-        avg_prices = np.maximum(avg_prices, 10.0)  # Minimum average price of 10 öre/kWh 
-        
-        # Normalize differences by average price
-        df_enhanced['price_momentum_1h'] = diffs_1h / avg_prices
-        
-        # For 24-hour momentum, use the same approach
-        diffs_24h = np.zeros_like(prices)
-        diffs_24h[24:] = prices[24:] - prices[:-24]
-        df_enhanced['price_momentum_24h'] = diffs_24h / avg_prices
-        
-        # Add 3-hour and 6-hour momentum for finer granularity
-        diffs_3h = np.zeros_like(prices)
-        diffs_3h[3:] = prices[3:] - prices[:-3]
-        df_enhanced['price_momentum_3h'] = diffs_3h / avg_prices
-        
-        diffs_6h = np.zeros_like(prices)
-        diffs_6h[6:] = prices[6:] - prices[:-6]
-        df_enhanced['price_momentum_6h'] = diffs_6h / avg_prices
-        
-        # Create spike indicators with multiple thresholds
-        mean_price = df_enhanced[target_name].rolling(168).mean().fillna(df_enhanced[target_name].mean())
-        std_price = df_enhanced[target_name].rolling(168).std().fillna(df_enhanced[target_name].std())
-        
-        # Recent spike indicator (1 if price was >2 std above mean in past 24h, else 0)
-        spike_threshold = mean_price + 2 * std_price
-        df_enhanced['recent_spike'] = df_enhanced[target_name].rolling(24).max().fillna(0) > spike_threshold
-        df_enhanced['recent_spike'] = df_enhanced['recent_spike'].astype(float)
-        
-        # Add extreme spike indicator (3 std above mean)
-        extreme_threshold = mean_price + 3 * std_price
-        df_enhanced['extreme_spike'] = df_enhanced[target_name].rolling(24).max().fillna(0) > extreme_threshold
-        df_enhanced['extreme_spike'] = df_enhanced['extreme_spike'].astype(float)
-        
-        # Add yesterday's price at same hour feature
-        df_enhanced['price_24h_ago'] = df_enhanced[target_name].shift(24)
-        
-        # Add indicator for rising/falling price trend
-        df_enhanced['price_rising_24h'] = (diffs_24h > 0).astype(float)
-        
-        # Add price differential to nearest extremes, using robust methods
-        # Use rolling max with fillna to prevent division by zero
-        day_high = df_enhanced[target_name].rolling(24).max().fillna(df_enhanced[target_name])
-        day_low = df_enhanced[target_name].rolling(24).min().fillna(df_enhanced[target_name])
-        
-        # Ensure minimum values for denominators
-        day_high = np.maximum(day_high.values, 10.0)  # Minimum of 10 öre/kWh
-        day_low = np.maximum(day_low.values, 10.0)    # Minimum of 10 öre/kWh
-        
-        df_enhanced['price_vs_day_high'] = prices / day_high
-        df_enhanced['price_vs_day_low'] = prices / day_low
-        
-        # Add volatility indicators
-        df_enhanced['price_volatility_24h'] = df_enhanced[target_name].rolling(24).std().fillna(0) / avg_prices
-        df_enhanced['price_volatility_168h'] = df_enhanced[target_name].rolling(168).std().fillna(0) / avg_prices
-        
-        # Replace any potential infinities or NaNs with zeros
-        price_derived_cols = [
-            'price_momentum_1h', 'price_momentum_3h', 'price_momentum_6h', 
-            'price_momentum_24h', 'price_vs_day_high', 'price_vs_day_low',
-            'price_volatility_24h', 'price_volatility_168h', 'price_24h_ago'
-        ]
-        for col in price_derived_cols:
-            df_enhanced[col] = df_enhanced[col].replace([np.inf, -np.inf, np.nan], 0)
-        
-        # Fill NaN values that might be introduced
-        df_enhanced = df_enhanced.fillna(0)
-        
-        # Make sure the enhanced dataframe has all the original columns plus the new ones
-        original_cols = list(df.columns)
-        new_cols = [
-            'hour', 'morning_peak', 'evening_peak', 
-            'is_hour_8', 'is_hour_9', 'is_hour_17', 'is_hour_18', 'is_hour_19',
-            'price_momentum_1h', 'price_momentum_3h', 'price_momentum_6h', 'price_momentum_24h', 
-            'recent_spike', 'extreme_spike', 'price_24h_ago', 'price_rising_24h',
-            'price_vs_day_high', 'price_vs_day_low',
-            'price_volatility_24h', 'price_volatility_168h'
-        ]
-        all_columns = original_cols + new_cols
-        
-        # Log the new features
-        logging.info(f"Added spike prediction features: {new_cols}")
-        
-        # Get features and target from the enhanced dataframe
-        X = df_enhanced[[col for col in all_columns if col != target_name and col in df_enhanced.columns]].copy()
-        y = df_enhanced[target_name].values.reshape(-1, 1)
-            
-        # Log pre-scaling feature statistics
-        price_cols = self.feature_config.get_price_cols()
-        price_cols = [col for col in price_cols if col in X.columns]  # Filter to only include existing columns
-        
-        if price_cols:
-            logging.info("Price feature statistics before scaling:")
-            for col in price_cols:
-                if col in X.columns:
-                    stats = X[col].describe()
-                    # Safe way to access describe stats that works with all pandas versions
-                    mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
-                    std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
-                    min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
-                    max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
-                    logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
-        
-        grid_cols = self.feature_config.get_grid_cols()
-        grid_cols = [col for col in grid_cols if col in X.columns]  # Filter to only include existing columns
-        
-        if grid_cols:
-            logging.info("Grid feature statistics before scaling:")
-            for col in grid_cols:
-                if col in X.columns:
-                    stats = X[col].describe()
-                    # Safe way to access describe stats that works with all pandas versions
-                    mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
-                    std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
-                    min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
-                    max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
-                    logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
-        
-        # Get scaling configuration
-        scaling_config = self.feature_config.get_scaling_params()
-        grid_scaling_config = scaling_config.get("grid_scaler", {}) if scaling_config else {}
-        
-        # Check if we should apply log transformation to price features
-        if hasattr(self, 'price_transform_config') and self.price_transform_config.get('enable_log_transform', False):
-            cols_to_transform = self.price_transform_config.get('apply_to_cols', [])
-            cols_to_transform = [col for col in cols_to_transform if col in X.columns]  # Filter to only include existing columns
-            transform_offset = self.price_transform_config.get('offset', 1.0)
-            
-            if cols_to_transform:
-                logging.info(f"Applying log transformation to price columns: {cols_to_transform}")
-                for col in cols_to_transform:
-                    if col in X.columns:
-                        # Save original stats for comparison
-                        stats = X[col].describe()
-                        # Safe way to access describe stats that works with all pandas versions
-                        orig_mean = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
-                        orig_std = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
-                        orig_min = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
-                        orig_max = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
-                        
-                        # Check if column has negative values
-                        has_negative = (X[col] < 0).any()
-                        
-                        if has_negative:
-                            # Apply signed log transform: sign(x) * log(|x| + offset)
-                            logging.warning(f"Column {col} has negative values (min={orig_min:.3f}). Using signed log transform.")
-                            signs = np.sign(X[col])
-                            abs_vals = np.abs(X[col])
-                            X[col] = signs * np.log1p(abs_vals + transform_offset - 1.0)  # log1p(x) = log(1+x)
-                        else:
-                            # Standard log transform: log(x + offset)
-                            X[col] = np.log1p(X[col] + transform_offset - 1.0)  # Ensure log1p operates on x + offset - 1
-                        
-                        # Log transformation results
-                        new_stats = X[col].describe()
-                        # Safe way to access describe stats that works with all pandas versions
-                        new_mean = new_stats.loc['mean'] if hasattr(new_stats, 'loc') else new_stats['mean']
-                        new_std = new_stats.loc['std'] if hasattr(new_stats, 'loc') else new_stats['std']
-                        new_min = new_stats.loc['min'] if hasattr(new_stats, 'loc') else new_stats['min']
-                        new_max = new_stats.loc['max'] if hasattr(new_stats, 'loc') else new_stats['max']
-                        logging.info(f"Log-transformed {col}: original(mean={orig_mean:.3f}, std={orig_std:.3f}, min={orig_min:.3f}, max={orig_max:.3f}) → "
-                                    f"transformed(mean={new_mean:.3f}, std={new_std:.3f}, min={new_min:.3f}, max={new_max:.3f})")
+# Import from utility file
+from utils import (
+    add_time_features, add_lag_features, add_rolling_features,
+    add_price_spike_indicators, get_scaler, create_sequences,
+    get_loss_function, plot_training_history, evaluate_model,
+    plot_test_prediction, plot_feature_importance,
+    add_spike_labels, spike_weighted_loss,
+    detect_price_peaks, detect_price_valleys_derivative,
+    detect_valleys_robust,
+    xgb_smooth_trend_objective, xgb_trend_stability_objective
+)
 
-        # Handle grid features first - identify import/export columns which need special handling
-        import_export_cols = []
-        if hasattr(self, 'import_export_cols'):
-            import_export_cols = self.import_export_cols
-        else:
-            import_export_cols = grid_scaling_config.get("import_export_cols", [])
-        
-        import_export_cols = [col for col in import_export_cols if col in X.columns]  # Filter to only include existing columns
-        
-        # Apply log transformation to import/export features if enabled
-        should_log_transform = False
-        if hasattr(self, 'log_transform_large_values'):
-            should_log_transform = self.log_transform_large_values
-        else:
-            should_log_transform = grid_scaling_config.get("log_transform_large_values", False)
-        
-        if should_log_transform and import_export_cols:
-            logging.info("Applying log transformation to high-magnitude import/export features")
-            for col in import_export_cols:
-                if col in X.columns:
-                    # Check if column has negative values
-                    has_negative = (X[col] < 0).any()
-                    min_val = X[col].min()
-                    
-                    # Save original values for logging
-                    stats = X[col].describe()
-                    # Safe way to access describe stats that works with all pandas versions
-                    orig_mean = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
-                    orig_std = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
-                    orig_max = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
-                    orig_min = min_val
-                    
-                    if has_negative:
-                        # Safe transformation for data with negative values: sign(x) * log(|x| + 1)
-                        logging.warning(f"Column {col} has negative values (min={min_val:.3f}). Using signed log transform.")
-                        signs = np.sign(X[col])
-                        abs_vals = np.abs(X[col])
-                        X[col] = signs * np.log1p(abs_vals)
-                    else:
-                        # Standard log1p for non-negative data
-                        X[col] = np.log1p(X[col])
-                    
-                    # Log the transformation effect
-                    new_stats = X[col].describe()
-                    # Safe way to access describe stats that works with all pandas versions
-                    new_mean = new_stats.loc['mean'] if hasattr(new_stats, 'loc') else new_stats['mean']
-                    new_std = new_stats.loc['std'] if hasattr(new_stats, 'loc') else new_stats['std']
-                    new_min = new_stats.loc['min'] if hasattr(new_stats, 'loc') else new_stats['min']
-                    new_max = new_stats.loc['max'] if hasattr(new_stats, 'loc') else new_stats['max']
-                    logging.info(f"Log-transformed {col}: original(mean={orig_mean:.3f}, std={orig_std:.3f}, "
-                                f"min={orig_min:.3f}, max={orig_max:.3f}) → "
-                                f"transformed(mean={new_mean:.3f}, std={new_std:.3f}, "
-                                f"min={new_min:.3f}, max={new_max:.3f})")
-        
-        # Apply clipping to negative price values if configured
-        if hasattr(self, 'clip_negative') and self.clip_negative and price_cols:
-            logging.info("Clipping negative price values to 0")
-            for col in price_cols:
-                if col in X.columns:
-                    neg_count = (X[col] < 0).sum()
-                    if neg_count > 0:
-                        logging.info(f"Clipping {neg_count} negative values in {col}")
-                        X.loc[X[col] < 0, col] = 0.0
-        
-        # Scale price features (make sure all columns exist)
-        existing_price_cols = [col for col in price_cols if col in X.columns]
-        if existing_price_cols:
-            price_features = X[existing_price_cols].copy()
-            # Fix: Convert list to tuple for RobustScaler
-            if hasattr(self.price_scaler, 'quantile_range') and isinstance(self.price_scaler.quantile_range, list):
-                self.price_scaler.quantile_range = tuple(self.price_scaler.quantile_range)
-            X.loc[:, existing_price_cols] = self.price_scaler.fit_transform(price_features)
-            
-            # Log sample of scaled price values
-            logging.info("Sample of scaled price values:")
-            sample_idx = min(5, len(X))
-            for col in existing_price_cols:
-                if col in X.columns:
-                    logging.info(f"{col} (scaled): {X[col].iloc[:sample_idx].values}")
-        
-        # Handle grid features with special care for import/export values
-        existing_grid_cols = [col for col in grid_cols if col in X.columns]
-        if existing_grid_cols:
-            grid_features = X[existing_grid_cols].copy()
-            
-            # Handle extreme outliers if enabled
-            handle_extreme = False
-            if hasattr(self, 'handle_extreme_values'):
-                handle_extreme = self.handle_extreme_values
-            else:
-                handle_extreme = grid_scaling_config.get("handle_extreme_values", False)
-                
-            if handle_extreme:
-                # Log maximum values before capping
-                extreme_values = []
-                max_zscore = self.max_zscore if hasattr(self, 'max_zscore') else grid_scaling_config.get("max_zscore", 8)
-                
-                for col in existing_grid_cols:
-                    if col in grid_features.columns:
-                        col_max = grid_features[col].max()
-                        col_mean = grid_features[col].mean()
-                        col_std = grid_features[col].std()
-                        if col_std > 0:
-                            z_score_max = (col_max - col_mean) / col_std
-                            if z_score_max > max_zscore:
-                                extreme_values.append((col, col_max, z_score_max))
-                
-                if extreme_values:
-                    logging.warning(f"Found {len(extreme_values)} grid features with extreme values:")
-                    for col, max_val, z_score in extreme_values:
-                        logging.warning(f"{col}: max={max_val:.2f}, z-score={z_score:.2f}")
-                    
-                    # Cap extreme values using winsorization
-                    for col in existing_grid_cols:
-                        if col in grid_features.columns:
-                            mean = grid_features[col].mean()
-                            std = grid_features[col].std()
-                            if std > 0:  # Avoid division by zero
-                                upper_bound = mean + max_zscore * std
-                                lower_bound = mean - max_zscore * std
-                                if grid_features[col].max() > upper_bound:
-                                    count_capped_upper = (grid_features[col] > upper_bound).sum()
-                                    if count_capped_upper > 0:
-                                        logging.info(f"Capping {count_capped_upper} high extreme values in {col} at {upper_bound:.2f}")
-                                        grid_features.loc[grid_features[col] > upper_bound, col] = upper_bound
-                                if grid_features[col].min() < lower_bound:
-                                    count_capped_lower = (grid_features[col] < lower_bound).sum()
-                                    if count_capped_lower > 0:
-                                        logging.info(f"Capping {count_capped_lower} low extreme values in {col} at {lower_bound:.2f}")
-                                        grid_features.loc[grid_features[col] < lower_bound, col] = lower_bound
-            
-            # Check if we should use individual scaling for grid columns
-            use_individual_scaling = False
-            if hasattr(self, 'individual_scaling'):
-                use_individual_scaling = self.individual_scaling
-            else:
-                use_individual_scaling = grid_scaling_config.get("individual_scaling", False)
-            
-            if use_individual_scaling:
-                logging.info("Using individual scaling for grid features")
-                for col in existing_grid_cols:
-                    if col in grid_features.columns:
-                        try:
-                            # Create a new scaler for each column
-                            quantile_range = tuple(grid_scaling_config.get("quantile_range", (0, 100)))
-                            unit_variance = grid_scaling_config.get("unit_variance", True)
-                            col_scaler = RobustScaler(quantile_range=quantile_range, unit_variance=unit_variance)
-                            X.loc[:, col] = col_scaler.fit_transform(grid_features[col].values.reshape(-1, 1))
-                            logging.info(f"Individual scaling applied to {col}")
-                        except Exception as col_err:
-                            logging.error(f"Could not scale column {col}: {col_err}")
-                            # Last resort: standardize manually
-                            mean = grid_features[col].mean()
-                            std = grid_features[col].std() or 1.0  # Avoid division by zero
-                            X.loc[:, col] = (grid_features[col] - mean) / std
-                            logging.warning(f"Manual standardization applied to {col}")
-            else:
-                try:
-                    # Fix: Convert list to tuple for RobustScaler
-                    if hasattr(self.grid_scaler, 'quantile_range') and isinstance(self.grid_scaler.quantile_range, list):
-                        self.grid_scaler.quantile_range = tuple(self.grid_scaler.quantile_range)
-                    
-                    # Try to scale grid features together
-                    scaled_grid = self.grid_scaler.fit_transform(grid_features)
-                    X.loc[:, existing_grid_cols] = scaled_grid
-                    
-                    # Log post-scaling grid feature statistics
-                    logging.info("Grid feature statistics after scaling:")
-                    for i, col in enumerate(existing_grid_cols):
-                        if col in X.columns:
-                            stats = X[col].describe()
-                            # Safe way to access describe stats that works with all pandas versions
-                            mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
-                            std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
-                            min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
-                            max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
-                            logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
-                    
-                except (ValueError, RuntimeError) as e:
-                    logging.error(f"Error scaling grid features: {e}")
-                    logging.warning("Falling back to individual column scaling for grid features")
-                    
-                    # Fallback: scale each column individually
-                    for col in existing_grid_cols:
-                        if col in grid_features.columns:
-                            try:
-                                # Create a new scaler for each column
-                                quantile_range = tuple(grid_scaling_config.get("quantile_range", (0, 100)))
-                                unit_variance = grid_scaling_config.get("unit_variance", True)
-                                col_scaler = RobustScaler(quantile_range=quantile_range, unit_variance=unit_variance)
-                                X.loc[:, col] = col_scaler.fit_transform(grid_features[col].values.reshape(-1, 1))
-                                logging.info(f"Individual scaling applied to {col}")
-                            except Exception as col_err:
-                                logging.error(f"Could not scale column {col}: {col_err}")
-                                # Last resort: standardize manually
-                                mean = grid_features[col].mean()
-                                std = grid_features[col].std() or 1.0  # Avoid division by zero
-                                X.loc[:, col] = (grid_features[col] - mean) / std
-                                logging.warning(f"Manual standardization applied to {col}")
-        
-        # Scale new features added for spike prediction
-        # Handle the momentum features directly with MinMaxScaler, which is more robust to outliers
-        # than RobustScaler for these specific features
-        momentum_features = ['price_momentum_1h', 'price_momentum_24h']
-        momentum_present = [col for col in momentum_features if col in X.columns]
-        
-        if momentum_present:
-            logging.info("Scaling momentum features")
-            try:
-                # Use a simple MinMaxScaler instead of RobustScaler for more stability with momentum features
-                momentum_scaler = MinMaxScaler(feature_range=(-1, 1))
-                X.loc[:, momentum_present] = momentum_scaler.fit_transform(X[momentum_present])
-                logging.info("Successfully scaled momentum features")
-            except Exception as e:
-                logging.warning(f"Error scaling momentum features: {e}")
-                # Fallback to manual scaling
-                for col in momentum_present:
-                    values = X[col].values
-                    abs_max = max(abs(np.nanmin(values)), abs(np.nanmax(values))) or 1.0
-                    X[col] = X[col] / abs_max
-                    logging.info(f"Applied manual scaling to {col}")
-        
-        # Other spike features need less processing
-        spike_features = [
-            'morning_peak', 'evening_peak', 
-            'recent_spike', 'price_vs_day_high', 'price_vs_day_low'
-        ]
-        
-        spike_features_present = [col for col in spike_features if col in X.columns]
-        if spike_features_present:
-            # These binary/ratio features are already in good ranges
-            logging.info("Spike feature statistics after preparation:")
-            for col in spike_features_present:
-                stats = X[col].describe()
-                # Safe way to access describe stats that works with all pandas versions
-                mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
-                std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
-                min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
-                max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
-                logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
-        
-        # Log overall statistics after scaling
-        logging.info("Feature statistics after all scaling:")
-        for col in X.columns:
-            try:
-                stats = X[col].describe()
-                # Safe way to access describe stats that works with all pandas versions
-                mean_val = stats.loc['mean'] if hasattr(stats, 'loc') else stats['mean']
-                std_val = stats.loc['std'] if hasattr(stats, 'loc') else stats['std']
-                min_val = stats.loc['min'] if hasattr(stats, 'loc') else stats['min']
-                max_val = stats.loc['max'] if hasattr(stats, 'loc') else stats['max']
-                logging.info(f"{col}: mean={mean_val:.3f}, std={std_val:.3f}, min={min_val:.3f}, max={max_val:.3f}")
-            except Exception as e:
-                logging.warning(f"Unable to log statistics for {col}: {e}")
-                logging.info(f"{col}: Sample values = {X[col].iloc[:5].values}")
-        
-        # Further validation - check for NaNs or infinities in numeric columns only
-        # Get numeric columns to avoid TypeError with string columns
-        numeric_cols = X.select_dtypes(include=np.number).columns.tolist()
-        
-        # Check for NaNs
-        nan_cols = X[numeric_cols].columns[X[numeric_cols].isna().any()].tolist()
-        if nan_cols:
-            logging.error(f"Found NaN values in columns after scaling: {nan_cols}")
-            # Try to fix NaNs with fillna
-            X = X.fillna(0)
-            logging.warning("NaNs have been replaced with zeros")
-            
-        # Check for inf values - only on numeric columns
-        numeric_X = X[numeric_cols]
-        inf_mask = np.isinf(numeric_X)
-        inf_cols = numeric_X.columns[inf_mask.any()].tolist()
-        
-        if inf_cols:
-            logging.error(f"Found infinite values in columns after scaling: {inf_cols}")
-            # Try to replace infinities with large but finite values
-            X.loc[:, inf_cols] = X.loc[:, inf_cols].replace([np.inf, -np.inf], [1e6, -1e6])
-            logging.warning("Infinite values have been replaced with +/-1e6")
-        
-        return X, y
+# Import config
+from config import (
+    MODELS_DIR, DATA_DIR, PLOTS_DIR, LOGS_DIR,
+    TARGET_VARIABLE, LOOKBACK_WINDOW, PREDICTION_HORIZON,
+    VALIDATION_SPLIT, TEST_SPLIT,
+    DROPOUT_RATE, L1_REG, L2_REG,
+    CORE_FEATURES, EXTENDED_FEATURES,
+    SE3_PRICES_FILE, SWEDEN_GRID_FILE, TIME_FEATURES_FILE, 
+    HOLIDAYS_FILE, WEATHER_DATA_FILE,
+    PRICE_FEATURES, GRID_FEATURES, TIME_FEATURES,
+    HOLIDAY_FEATURES, WEATHER_FEATURES, MARKET_FEATURES,
+    LOSS_FUNCTION, WEIGHTED_LOSS_PARAMS,
     
-    def build_model(self, input_shape):
-        """Build the LSTM model architecture
-        
-        Args:
-            input_shape: Shape of input data (samples, timesteps, features)
-            
-        Returns:
-            Compiled Keras model
-        """
-        # Load model configuration
-        with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
-            config = json.load(f)
-        
-        model_config = config["model_config"]
-        architecture = model_config["architecture"]
-        training = model_config["training"]
-        
-        logging.info(f"Building model with input shape {input_shape}")
-        
-        # Use Functional API from the beginning, which is more suitable for residual connections
-        use_residual = architecture.get("use_residual_connections", False)
-        
-        # Create input layer
-        inputs = Input(shape=(input_shape[0], input_shape[1]))
-        x = inputs
-        
-        # Add feature weighting layer if enabled
-        if model_config["feature_weights"].get("enable_weighting", False):
-            logging.info("Adding feature weighting layer")
-            feature_weighting = FeatureWeightingLayer(
-                feature_weights=model_config["feature_weights"],
-                feature_config=self.feature_config
-            )
-            x = feature_weighting(x)
-        
-        # Store previous outputs for potential residual connections
-        previous_outputs = []
-        
-        # Add LSTM layers
-        for i, lstm_config in enumerate(architecture["lstm_layers"]):
-            lstm_units = lstm_config.get("units", 64)
-            return_sequences = lstm_config.get("return_sequences", False)
-            dropout = lstm_config.get("dropout", 0.0)
-            
-            # Get regularization parameters if they exist
-            l1_reg = lstm_config.get("regularizer", {}).get("l1", 0.0)
-            l2_reg = lstm_config.get("regularizer", {}).get("l2", 0.0)
-            recurrent_l1 = lstm_config.get("regularizer", {}).get("recurrent_l1", 0.0)
-            recurrent_l2 = lstm_config.get("regularizer", {}).get("recurrent_l2", 0.0)
-            
-            logging.info(f"Adding LSTM layer {i+1}: units={lstm_units}, return_sequences={return_sequences}, dropout={dropout}, l1={l1_reg}, l2={l2_reg}, recurrent_l1={recurrent_l1}, recurrent_l2={recurrent_l2}")
-            
-            # Create LSTM layer with regularization
-            kernel_regularizer = None
-            recurrent_regularizer = None
-            
-            if l1_reg > 0 or l2_reg > 0:
-                kernel_regularizer = regularizers.l1_l2(l1=l1_reg, l2=l2_reg)
-            
-            if recurrent_l1 > 0 or recurrent_l2 > 0:
-                recurrent_regularizer = regularizers.l1_l2(l1=recurrent_l1, l2=recurrent_l2)
-            
-            x = LSTM(
-                units=lstm_units, 
-                return_sequences=return_sequences, 
-                dropout=dropout,
-                kernel_regularizer=kernel_regularizer,
-                recurrent_regularizer=recurrent_regularizer
-            )(x)
-            
-            # Add residual connection if applicable - but with special handling for sequence/non-sequence mismatch
-            if use_residual and i > 0 and len(previous_outputs) > 0:
-                prev_output = previous_outputs[-1]
-                
-                # Check if shapes match directly
-                if K.int_shape(prev_output)[1:] == K.int_shape(x)[1:]:
-                    logging.info(f"Adding residual connection to LSTM layer {i+1}")
-                    x = Add()([prev_output, x])
-                # Special case: if previous output is sequence and current is not (common LSTM pattern)
-                elif len(K.int_shape(prev_output)) > 2 and len(K.int_shape(x)) > 1:
-                    prev_seq = K.int_shape(prev_output)[1]  # sequence length
-                    feature_dim = K.int_shape(prev_output)[2]  # feature dimension
-                    if feature_dim == K.int_shape(x)[1] and not return_sequences:
-                        # Use our custom layer to extract last timestep instead of Lambda
-                        logging.info(f"Adding adapted residual connection from sequence to non-sequence for LSTM layer {i+1}")
-                        last_timestep = LastTimestepExtractor()(prev_output)
-                        x = Add()([last_timestep, x])
-                    else:
-                        logging.warning(f"Shapes don't match for residual connection to LSTM layer {i+1}: "
-                                      f"{K.int_shape(prev_output)[1:]} vs {K.int_shape(x)[1:]}")
-                else:
-                    logging.warning(f"Shapes don't match for residual connection to LSTM layer {i+1}: "
-                                  f"{K.int_shape(prev_output)[1:]} vs {K.int_shape(x)[1:]}")
-            
-            previous_outputs.append(x)
-        
-        # Add Dense layers
-        dense_outputs = []
-        for i, dense_config in enumerate(architecture["dense_layers"]):
-            dense_units = dense_config.get("units", 32)
-            activation = dense_config.get("activation", "relu")
-            
-            # Get regularization parameters if they exist
-            l1_reg = dense_config.get("regularizer", {}).get("l1", 0.0)
-            l2_reg = dense_config.get("regularizer", {}).get("l2", 0.0)
-            
-            logging.info(f"Adding Dense layer {i+1}: units={dense_units}, activation={activation}, l1={l1_reg}, l2={l2_reg}")
-            
-            # Create Dense layer with regularization
-            kernel_regularizer = None
-            if l1_reg > 0 or l2_reg > 0:
-                kernel_regularizer = regularizers.l1_l2(l1=l1_reg, l2=l2_reg)
-            
-            # Add Dense layer
-            x = Dense(
-                units=dense_units, 
-                activation=activation,
-                kernel_regularizer=kernel_regularizer
-            )(x)
-            
-            # Add residual connection if applicable
-            if use_residual and i > 0 and len(dense_outputs) > 0:
-                prev_output = dense_outputs[-1]
-                
-                # Check if shapes match
-                if K.int_shape(prev_output)[1:] == K.int_shape(x)[1:]:
-                    logging.info(f"Adding residual connection to Dense layer {i+1}")
-                    x = Add()([prev_output, x])
-                else:
-                    logging.warning(f"Shapes don't match for residual connection to Dense layer {i+1}: "
-                                  f"{K.int_shape(prev_output)[1:]} vs {K.int_shape(x)[1:]}")
-            
-            dense_outputs.append(x)
-        
-        # Add output layer
-        output_units = architecture.get("output_units", 24)
-        if output_units > 0:
-            # Check for output layer regularization
-            output_reg = architecture.get("output_regularizer", {})
-            l1_reg = output_reg.get("l1", 0.0)
-            l2_reg = output_reg.get("l2", 0.0)
-            
-            kernel_regularizer = None
-            if l1_reg > 0 or l2_reg > 0:
-                kernel_regularizer = regularizers.l1_l2(l1=l1_reg, l2=l2_reg)
-                logging.info(f"Adding output layer with {output_units} units and regularization (l1={l1_reg}, l2={l2_reg})")
-            else:
-                logging.info(f"Adding output layer with {output_units} units")
-            
-            outputs = Dense(output_units, kernel_regularizer=kernel_regularizer)(x)
-        else:
-            outputs = x
-        
-        # Create and compile model
-        model = Model(inputs=inputs, outputs=outputs)
-        
-        # Set up optimizer
-        optimizer_name = training.get("optimizer", "adam") 
-        learning_rate = training.get("learning_rate", 0.001)
-        
-        if optimizer_name.lower() == "adam":
-            optimizer = Adam(learning_rate=learning_rate)
-        else:
-            optimizer = optimizer_name
-        
-        # Set up loss function
-        loss = training.get("loss", "mse")
-        if training.get("use_asymmetric_loss", False):
-            asymmetry_factor = training.get("asymmetry_factor", 2.0)
-            logging.info(f"Using asymmetric loss with factor: {asymmetry_factor}")
-            loss = self._create_asymmetric_huber_loss(asymmetry_factor)
-        
-        # Get metrics from config
-        metrics = training.get("metrics", ["mae"])
-        
-        model.compile(
-            optimizer=optimizer,
-            loss=loss,
-            metrics=metrics
-        )
-        
-        logging.info("Model architecture built from configuration:")
-        logging.info(f"LSTM layers: {architecture['lstm_layers']}")
-        logging.info(f"Dense layers: {architecture['dense_layers']}")
-        logging.info(f"Residual connections: {use_residual}")
-        logging.info(f"Optimizer: {optimizer_name}")
-        logging.info(f"Learning rate: {learning_rate}")
-        logging.info(f"Loss function: {loss.__name__ if hasattr(loss, '__name__') else loss}")
-        logging.info(f"Metrics: {metrics}")
-        
-        # Print model summary
-        model.summary(print_fn=logging.info)
-        
-        return model
+    TREND_MODEL_DIR, PEAK_MODEL_DIR, VALLEY_MODEL_DIR, EVAL_DIR, TREND_EVAL_DIR,
+    SPIKE_THRESHOLD_PERCENTILE, VALLEY_THRESHOLD_PERCENTILE,
+    PEAK_CORE_FEATURES, VALLEY_CORE_FEATURES, SPIKE_CORE_FEATURES, SCALING_METHOD,
     
-    def train(self, epochs=None, batch_size=None):
-        """Train the model using config parameters"""
-        logging.info("Preparing data...")
-        (X_train, y_train, X_val, y_val, X_test, y_test), timestamps = self.prepare_data()
-        
-        # Load training parameters from config
-        with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
-            config = json.load(f)
-        
-        training_params = config["model_config"]["training"]
-        callback_params = config["model_config"]["callbacks"]
-        
-        # Get training parameters from config with fallbacks to feature_config
-        epochs = epochs or training_params.get("max_epochs", 100)
-        batch_size = batch_size or training_params.get("batch_size", 32)
-        
-        logging.info(f"Training with epochs={epochs}, batch_size={batch_size}")
-        
-        # Save scalers
-        joblib.dump(self.price_scaler, self.saved_dir / 'price_scaler.save')
-        joblib.dump(self.grid_scaler, self.saved_dir / 'grid_scaler.save')
-        
-        if not self.train_from_all_data:
-            # Save test data for evaluation
-            train_split = int(len(timestamps) * self.feature_config.data_split["train_ratio"])
-            val_split = int(len(timestamps) * (
-                self.feature_config.data_split["train_ratio"] + 
-                self.feature_config.data_split["val_ratio"]
-            ))
-            
-            np.save(self.test_data_dir / 'X_test.npy', X_test)
-            np.save(self.test_data_dir / 'y_test.npy', y_test)
-            np.save(self.test_data_dir / 'test_timestamps.npy', timestamps[val_split:])
-            
-            # Save validation data for quick evaluation later
-            np.save(self.test_data_dir / 'X_val.npy', X_val)
-            np.save(self.test_data_dir / 'y_val.npy', y_val)
-            np.save(self.test_data_dir / 'val_timestamps.npy', timestamps[train_split:val_split])
-        
-        logging.info("Building model...")
-        self.model = self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
-        
-        # Configure callbacks
-        model_checkpoint_path = self.saved_dir / self.model_name
-        log_dir = self.logs_dir / datetime.now().strftime("%Y%m%d-%H%M%S")
-        
-        # Get callback parameters from config
-        early_stopping_params = callback_params.get("early_stopping", {})
-        reduce_lr_params = callback_params.get("reduce_lr", {})
-        
-        callbacks = [
-            EarlyStopping(
-                monitor=early_stopping_params.get("monitor", "val_loss"),
-                patience=early_stopping_params.get("patience", 10),
-                restore_best_weights=early_stopping_params.get("restore_best_weights", True),
-                mode='min'
-            ),
-            ModelCheckpoint(
-                model_checkpoint_path,
-                monitor=early_stopping_params.get("monitor", "val_loss"),
-                save_best_only=True,
-                mode='min'
-            ),
-            ReduceLROnPlateau(
-                monitor=reduce_lr_params.get("monitor", "val_loss"),
-                factor=reduce_lr_params.get("factor", 0.5),
-                patience=reduce_lr_params.get("patience", 5),
-                min_lr=reduce_lr_params.get("min_lr", 1e-6),
-                mode='min'
-            ),
-            tf.keras.callbacks.TensorBoard(
-                log_dir=log_dir,
-                histogram_freq=1,
-                write_graph=True
-            )
-        ]
-        
-        model_type = 'production' if self.train_from_all_data else 'evaluation'
-        logging.info(f"Training {model_type} model...")
-        logging.info(f"Model will be saved to: {model_checkpoint_path}")
-        logging.info(f"TensorBoard logs: {log_dir}")
-        
-        history = self.model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
-            epochs=epochs,
-            batch_size=batch_size,
-            callbacks=callbacks,
-            verbose=1
-        )
-        
-        # Plot training history
-        self.plot_training_history(history, model_type)
-        
-        # Save the history for later reference
-        history_df = pd.DataFrame(history.history)
-        history_df.to_csv(self.saved_dir / f'training_history.csv')
-        
-        # If it's an evaluation model, run a quick evaluation
-        if not self.train_from_all_data and X_test is not None:
-            self.quick_evaluation(X_test, y_test)
-        
-        return history
     
-    def quick_evaluation(self, X_test, y_test):
-        """Run a quick evaluation on test data and save results"""
-        logging.info("\nRunning quick evaluation on test data...")
-        
-        # Predict on test data
-        y_pred = self.model.predict(X_test)
-        
-        # Calculate metrics
-        test_loss = self.model.evaluate(X_test, y_test, verbose=0)
-        test_mae = test_loss[1] if len(test_loss) > 1 else None
-        
-        # Set consistent style for plots
-        plt.style.use('seaborn-v0_8-whitegrid')
-        
-        # Create a 2x2 dashboard with key evaluation insights
-        fig = plt.figure(figsize=(16, 14), dpi=100)
-        
-        # Define a consistent color scheme
-        colors = {
-            'actual': '#1F77B4',    # Blue
-            'predicted': '#FF7F0E', # Orange
-            'error': '#D62728',     # Red
-            'grid': '#BDBDBD'       # Light gray
-        }
-        
-        # 1. Top left: Representative sample with prediction
-        ax1 = plt.subplot2grid((2, 2), (0, 0))
-        
-        # Get a representative sample from middle of test set
-        sample_idx = len(y_test) // 2  # Middle sample is often more representative
-        true_vals = y_test[sample_idx]
-        pred_vals = y_pred[sample_idx]
-        
-        # Inverse transform the values for realistic prices
-        true_dummy = np.zeros((len(true_vals), len(self.price_scaler.scale_)))
-        true_dummy[:, 0] = true_vals
-        pred_dummy = np.zeros((len(pred_vals), len(self.price_scaler.scale_)))
-        pred_dummy[:, 0] = pred_vals
-        
-        true_inv = self.price_scaler.inverse_transform(true_dummy)[:, 0]
-        pred_inv = self.price_scaler.inverse_transform(pred_dummy)[:, 0]
-        
-        # Calculate error for this sample
-        error = np.abs(true_inv - pred_inv)
-        
-        # Plot sample with error band
-        hours = range(len(true_vals))
-        ax1.plot(hours, true_inv, '-', color=colors['actual'], label='Actual', linewidth=2.5)
-        ax1.plot(hours, pred_inv, '--', color=colors['predicted'], label='Predicted', linewidth=2.5)
-        
-        # Add error shading
-        ax1.fill_between(hours, pred_inv - error/2, pred_inv + error/2, color=colors['predicted'], alpha=0.2)
-        
-        # Format plot
-        ax1.set_title('Representative 24-Hour Prediction Sample', fontsize=14, fontweight='bold')
-        ax1.set_xlabel('Hour of Day', fontsize=12)
-        ax1.set_ylabel('Price (öre/kWh)', fontsize=12)
-        ax1.grid(True, linestyle='--', alpha=0.7, color=colors['grid'])
-        ax1.legend(fontsize=10)
-        
-        # Add metrics annotation for this sample
-        sample_mae = np.mean(error)
-        sample_mape = np.mean(np.abs(error / (true_inv + 1e-8))) * 100
-        metrics_text = f"Sample MAE: {sample_mae:.2f} öre/kWh\nSample MAPE: {sample_mape:.2f}%"
-        ax1.annotate(metrics_text, xy=(0.05, 0.95), xycoords='axes fraction', 
-                    verticalalignment='top', fontsize=10,
-                    bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8))
-        
-        # 2. Top right: Error distribution histogram
-        ax2 = plt.subplot2grid((2, 2), (0, 1))
-        
-        # Calculate all errors across test set
-        all_errors = []
-        for i in range(min(len(y_test), 100)):  # Use up to 100 samples for efficiency
-            true_sample = y_test[i]
-            pred_sample = y_pred[i]
-            
-            # Inverse transform
-            true_dummy = np.zeros((len(true_sample), len(self.price_scaler.scale_)))
-            true_dummy[:, 0] = true_sample
-            pred_dummy = np.zeros((len(pred_sample), len(self.price_scaler.scale_)))
-            pred_dummy[:, 0] = pred_sample
-            
-            true_inv = self.price_scaler.inverse_transform(true_dummy)[:, 0]
-            pred_inv = self.price_scaler.inverse_transform(pred_dummy)[:, 0]
-            
-            # Add errors to list
-            all_errors.extend(np.abs(true_inv - pred_inv))
-        
-        # Plot error distribution
-        ax2.hist(all_errors, bins=30, color=colors['error'], alpha=0.7)
-        ax2.set_title('Error Distribution', fontsize=14, fontweight='bold')
-        ax2.set_xlabel('Absolute Error (öre/kWh)', fontsize=12)
-        ax2.set_ylabel('Frequency', fontsize=12)
-        ax2.grid(True, linestyle='--', alpha=0.7, color=colors['grid'])
-        
-        # Add distribution statistics
-        mean_error = np.mean(all_errors)
-        median_error = np.median(all_errors)
-        p90_error = np.percentile(all_errors, 90)
-        stats_text = f"Mean Error: {mean_error:.2f}\nMedian Error: {median_error:.2f}\n90th Percentile: {p90_error:.2f}"
-        ax2.annotate(stats_text, xy=(0.95, 0.95), xycoords='axes fraction', 
-                    ha='right', va='top', fontsize=10,
-                    bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8))
-        
-        # 3. Bottom left: Hourly pattern analysis
-        ax3 = plt.subplot2grid((2, 2), (1, 0))
-        
-        # Analyze error patterns by hour of day
-        hourly_errors = [[] for _ in range(24)]
-        for i in range(min(len(y_test), 100)):  # Use up to 100 samples
-            true_sample = y_test[i]
-            pred_sample = y_pred[i]
-            
-            # Inverse transform
-            true_dummy = np.zeros((len(true_sample), len(self.price_scaler.scale_)))
-            true_dummy[:, 0] = true_sample
-            pred_dummy = np.zeros((len(pred_sample), len(self.price_scaler.scale_)))
-            pred_dummy[:, 0] = pred_sample
-            
-            true_inv = self.price_scaler.inverse_transform(true_dummy)[:, 0]
-            pred_inv = self.price_scaler.inverse_transform(pred_dummy)[:, 0]
-            
-            # Group errors by hour
-            for h in range(min(24, len(true_inv))):
-                hourly_errors[h].append(abs(true_inv[h] - pred_inv[h]))
-        
-        # Calculate mean and std for each hour
-        hourly_means = [np.mean(errors) for errors in hourly_errors if errors]
-        hourly_stds = [np.std(errors) for errors in hourly_errors if errors]
-        hours = range(len(hourly_means))
-        
-        # Plot hourly patterns
-        ax3.bar(hours, hourly_means, yerr=hourly_stds, color=colors['error'], alpha=0.7, 
-               error_kw=dict(ecolor='black', lw=1, capsize=5, capthick=1))
-        
-        # Highlight peak hours (typically morning and evening)
-        peak_hours = [7, 8, 9, 17, 18, 19, 20]
-        for hour in peak_hours:
-            if hour < len(hourly_means):
-                ax3.axvspan(hour-0.4, hour+0.4, color='yellow', alpha=0.2)
-        
-        ax3.set_title('Error by Hour of Day', fontsize=14, fontweight='bold')
-        ax3.set_xlabel('Hour', fontsize=12)
-        ax3.set_ylabel('Mean Absolute Error (öre/kWh)', fontsize=12)
-        ax3.set_xticks(hours)
-        ax3.grid(True, linestyle='--', alpha=0.7, color=colors['grid'])
-        
-        # Annotate peak hours
-        ax3.annotate('Morning Peak', xy=(8, ax3.get_ylim()[1]*0.95), 
-                    ha='center', fontsize=9, 
-                    bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.2))
-        ax3.annotate('Evening Peak', xy=(18.5, ax3.get_ylim()[1]*0.95), 
-                    ha='center', fontsize=9,
-                    bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.2))
-        
-        # 4. Bottom right: Overall metrics summary
-        ax4 = plt.subplot2grid((2, 2), (1, 1))
-        ax4.axis('off')
-        
-        # Calculate additional metrics
-        mean_abs_error = np.mean(all_errors)
-        median_abs_error = np.median(all_errors)
-        p90_error = np.percentile(all_errors, 90)
-        max_error = np.max(all_errors)
-        
-        # Create metrics summary
-        metrics_summary = [
-            f"Test Dataset Metrics:",
-            f"",
-            f"Mean Absolute Error: {mean_abs_error:.2f} öre/kWh",
-            f"Median Absolute Error: {median_abs_error:.2f} öre/kWh",
-            f"90th Percentile Error: {p90_error:.2f} öre/kWh",
-            f"Maximum Error: {max_error:.2f} öre/kWh",
-            f"",
-            f"Model Loss: {test_loss[0]:.6f}",
-        ]
-        
-        if test_mae is not None:
-            metrics_summary.append(f"Model MAE (scaled): {test_mae:.6f}")
-        
-        # Add error pattern insights
-        highest_error_hour = np.argmax(hourly_means)
-        lowest_error_hour = np.argmin(hourly_means)
-        
-        insights = [
-            f"",
-            f"Key Insights:",
-            f"",
-            f"• Hardest to predict: Hour {highest_error_hour}:00 (MAE: {hourly_means[highest_error_hour]:.2f})",
-            f"• Most accurate: Hour {lowest_error_hour}:00 (MAE: {hourly_means[lowest_error_hour]:.2f})",
-        ]
-        
-        # Determine if morning or evening peaks have higher errors
-        morning_peak_error = np.mean([hourly_means[h] for h in [7, 8, 9] if h < len(hourly_means)])
-        evening_peak_error = np.mean([hourly_means[h] for h in [17, 18, 19, 20] if h < len(hourly_means)])
-        
-        if morning_peak_error > evening_peak_error:
-            insights.append(f"• Morning peak hours are more challenging to predict")
-        else:
-            insights.append(f"• Evening peak hours are more challenging to predict")
-        
-        # Create a text box with all metrics
-        ax4.text(0.5, 0.5, '\n'.join(metrics_summary + insights), 
-                ha='center', va='center', fontsize=12,
-                bbox=dict(boxstyle='round,pad=1', facecolor='#f0f0f0', edgecolor='gray', alpha=0.9),
-                transform=ax4.transAxes)
-        
-        # Add overall title
-        plt.suptitle('Model Quick Evaluation Dashboard', fontsize=18, fontweight='bold', y=0.98)
-        
-        # Adjust layout
-        plt.tight_layout(rect=[0, 0, 1, 0.97])
-        
-        # Save figure
-        plt.savefig(self.saved_dir / 'quick_evaluation.png', dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        # Save metrics to file
-        metrics = {
-            'test_loss': test_loss[0],
-            'test_mae': test_mae,
-            'mean_abs_error': mean_abs_error,
-            'median_abs_error': median_abs_error,
-            'p90_error': p90_error,
-            'max_error': max_error
-        }
-        
-        # Save metrics to file
-        with open(self.saved_dir / 'test_metrics.txt', 'w') as f:
-            for key, value in metrics.items():
-                f.write(f"{key}: {value}\n")
-        
-        logging.info(f"Quick evaluation complete. Saved to quick_evaluation.png")
-        logging.info(f"Test Loss: {test_loss[0]:.4f}")
-        if test_mae is not None:
-            logging.info(f"Test MAE: {test_mae:.4f}")
-        logging.info(f"Mean Absolute Error: {mean_abs_error:.2f} öre/kWh")
+    PEAK_TCN_FILTERS, PEAK_TCN_KERNEL_SIZE, PEAK_TCN_DILATIONS,
+    PEAK_TCN_NB_STACKS, PEAK_LEARNING_RATE, PEAK_EARLY_STOPPING_PATIENCE,
+    PEAK_EPOCHS, PEAK_BATCH_SIZE,
+    
+    
+    VALLEY_TCN_FILTERS, VALLEY_TCN_KERNEL_SIZE, VALLEY_TCN_DILATIONS,
+    VALLEY_TCN_NB_STACKS, VALLEY_LEARNING_RATE, VALLEY_EARLY_STOPPING_PATIENCE,
+    VALLEY_EPOCHS, VALLEY_BATCH_SIZE,
+    
+    
+    TREND_EXOG_FEATURES,
+    VALLEY_DETECTION_PARAMS,
+    ROBUST_VALLEY_DETECTION_PARAMS,
+    VALLEY_CLASS_WEIGHT_MULTIPLIER,
+    FALSE_NEG_WEIGHT, FALSE_POS_WEIGHT,
+    PRICE_LAG_HOURS
+)
 
-    def plot_training_history(self, history, model_type=''):
-        """Plot and save training history with improved styling"""
-        # Create a larger figure with better resolution
-        plt.figure(figsize=(16, 6), dpi=100)
+def configure_logging():
+    """Configure logging for the model training."""
+    # Create all necessary directories
+    TREND_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    PEAK_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    VALLEY_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Get command line arguments to determine which model we're training
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--model', type=str, default='trend')
+    known_args, _ = parser.parse_known_args()
+    model_type = known_args.model
+
+    # Choose the appropriate log file based on model type
+    if model_type == 'trend':
+        log_file = TREND_MODEL_DIR / "trend_model_training.log"
+    elif model_type == 'peak':
+        log_file = PEAK_MODEL_DIR / "peak_model_training.log"
+    elif model_type == 'valley':
+        log_file = VALLEY_MODEL_DIR / "valley_model_training.log"
+    else:
+        # Default to a general log file
+        log_file = LOGS_DIR / "model_training.log"
         
-        # Set a consistent style for better readability
-        plt.style.use('seaborn-v0_8-whitegrid')
+    # Make sure the file exists
+    if not log_file.exists():
+        log_file.touch()
         
-        # Plot loss with improved styling
-        plt.subplot(1, 2, 1)
-        plt.plot(history.history['loss'], linewidth=2.5, label='Training Loss', color='#2471A3')
-        plt.plot(history.history['val_loss'], linewidth=2.5, label='Validation Loss', color='#E67E22', linestyle='--')
-        plt.title(f'{model_type.capitalize()} Model - Loss', fontsize=16, fontweight='bold', pad=15)
-        plt.xlabel('Epoch', fontsize=12, fontweight='bold')
-        plt.ylabel('Loss', fontsize=12, fontweight='bold')
-        plt.legend(fontsize=10, frameon=True, facecolor='white', edgecolor='gray')
-        plt.grid(True, linestyle='--', alpha=0.7)
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            logging.StreamHandler()
+        ],
+        force=True
+    )
+    
+    logging.info(f"Logging configured for {model_type} model. Log file: {log_file}")
+
+def prepare_trend_data(use_extended_features=True):
+    """Load and prepare data specifically for the SARIMAX trend model."""
+    logging.info("Preparing data for SARIMAX trend model training...")
+    
+    # Load and merge the data
+    df = load_and_merge_data()
+    
+    # Add lag features
+    df = add_lag_features(df, TARGET_VARIABLE)
+    
+    # Add rolling window features
+    df = add_rolling_features(df, TARGET_VARIABLE)
+    
+    # Add price spike indicators
+    df = add_price_spike_indicators(df, TARGET_VARIABLE)
+    
+    # Ensure index is datetime
+    if not isinstance(df.index, pd.DatetimeIndex):
+        # Try to find timestamp column
+        timestamp_col = None
+        for col in ['timestamp', 'date', 'datetime']:
+            if col in df.columns:
+                timestamp_col = col
+                break
+        
+        if timestamp_col:
+            df = df.set_index(timestamp_col)
+        else:
+            # If no timestamp column found, use the current index but convert to datetime
+            df.index = pd.to_datetime(df.index)
+    
+    # Make sure the data is sorted by index
+    df = df.sort_index()
+    
+    # Create a copy for statsmodels
+    model_df = df.copy()
+    
+    # Split the data into train, validation, and test sets
+    train_size = int(len(model_df) * (1 - VALIDATION_SPLIT - TEST_SPLIT))
+    val_size = int(len(model_df) * VALIDATION_SPLIT)
+    
+    train_df = model_df.iloc[:train_size].copy()
+    val_df = model_df.iloc[train_size:train_size+val_size].copy()
+    test_df = model_df.iloc[train_size+val_size:].copy()
+    
+    logging.info(f"Data split: Train {train_df.shape}, Validation {val_df.shape}, Test {test_df.shape}")
+    
+    # Extract target variable for training
+    train_target = train_df[TARGET_VARIABLE]
+    
+    # Handle missing values in target
+    if train_target.isnull().any():
+        train_target = train_target.fillna(method='ffill')
+    
+    # Create data dictionary
+    data = {
+        'train_target': train_target,
+        'val_df': val_df,
+        'test_df': test_df,
+        'full_df': model_df
+    }
+    
+    return data
+
+def add_peak_valley_labels(df, target_col=TARGET_VARIABLE):
+    """Add binary labels for price spikes/peaks and valleys."""
+    # Use the improved relative peak detection method by default
+    logging.info("Using improved relative peak detection for peak/valley identification")
+    
+    # Apply relative peak detection
+    df = detect_price_peaks(
+        df, 
+        target_col=target_col,
+        window=24,            # 24 hour window for local context
+        relative_height=0.2,  # Price must be 20% above local median
+        distance=6,           # At least 6 hours between peaks
+        prominence=0.15       # Peak must stand out by 15% of price range
+    )
+    
+    # Use the new robust valley detection algorithm instead of derivative-based
+    logging.info("Using new robust valley detection algorithm")
+    df = detect_valleys_robust(
+        df,
+        target_col=target_col,
+        **ROBUST_VALLEY_DETECTION_PARAMS  # Use parameters from config
+    )
+    
+    # Use the robust valleys and relative peaks
+    df['is_price_peak'] = df['is_price_peak_relative']
+    df['is_price_valley'] = df['is_price_valley_robust']  # Use new robust valley detection
+    
+    # Log statistics
+    total = len(df)
+    num_peaks = df['is_price_peak'].sum()
+    num_valleys = df['is_price_valley'].sum()
+    
+    logging.info(f"Detected {num_peaks} peaks ({num_peaks/total:.1%} of data) and {num_valleys} valleys ({num_valleys/total:.1%} of data)")
+    
+    # Traditional method just for reference in logs
+    spike_threshold = df[target_col].quantile(SPIKE_THRESHOLD_PERCENTILE / 100)
+    valley_threshold = df[target_col].quantile(VALLEY_THRESHOLD_PERCENTILE / 100)
+    std_peaks = (df[target_col] >= spike_threshold).sum()
+    
+    logging.info(f"For reference - traditional method would detect {std_peaks} peaks ({std_peaks/total:.1%} of data)")
+    logging.info(f"Traditional thresholds - spike: {spike_threshold:.2f}, valley: {valley_threshold:.2f}")
+    
+    # Save thresholds for later use in prediction
+    thresholds = {
+        "spike_threshold": float(spike_threshold),
+        "valley_threshold": float(valley_threshold),
+        "method": "robust",  # Now using robust method for valleys
+        **ROBUST_VALLEY_DETECTION_PARAMS  # Include all valley detection parameters
+    }
+    
+    return df, thresholds
+
+def plot_valley_labels(df, output_dir=None, num_samples=3, days_per_sample=14):
+    """
+    Plot the price series with detected valleys highlighted to validate the labeling.
+    
+    Args:
+        df: DataFrame with price data and valley labels
+        output_dir: Directory to save plots (default: PLOTS_DIR / "valley_validation")
+        num_samples: Number of time periods to sample for visualization
+        days_per_sample: Number of days per sample
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    from datetime import timedelta
+    
+    if output_dir is None:
+        output_dir = PLOTS_DIR / "valley_validation"
+        
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Ensure we have the required columns
+    if 'is_price_valley' not in df.columns or TARGET_VARIABLE not in df.columns:
+        raise ValueError(f"DataFrame must include '{TARGET_VARIABLE}' and 'is_price_valley' columns")
+    
+    # Get time ranges for visualization (evenly distributed through the dataset)
+    total_hours = len(df)
+    hours_per_sample = 24 * days_per_sample
+    
+    if total_hours <= hours_per_sample:
+        # If dataset is smaller than sample size, use the entire dataset
+        sample_starts = [0]
+    else:
+        # Create evenly distributed sample start indices
+        step = (total_hours - hours_per_sample) // (num_samples - 1) if num_samples > 1 else 0
+        sample_starts = [i * step for i in range(num_samples)]
+    
+    # Create plots for each sample
+    for i, start_idx in enumerate(sample_starts):
+        end_idx = min(start_idx + hours_per_sample, total_hours)
+        
+        # Extract sample data
+        sample = df.iloc[start_idx:end_idx].copy()
+        
+        # Create the plot
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), gridspec_kw={'height_ratios': [3, 1]})
+        
+        # Main price plot with valleys highlighted
+        ax1.plot(sample.index, sample[TARGET_VARIABLE], 'b-', linewidth=2)
+        
+        # Highlight detected valleys
+        valley_indices = sample[sample['is_price_valley'] == 1].index
+        
+        # Mark valleys with vertical spans
+        for valley_idx in valley_indices:
+            ax1.axvspan(valley_idx - timedelta(hours=1), 
+                      valley_idx + timedelta(hours=1),
+                      color='green', alpha=0.3)
+        
+        # Add points at valley locations
+        valley_prices = sample.loc[valley_indices, TARGET_VARIABLE]
+        ax1.scatter(valley_indices, valley_prices, color='red', s=100, marker='v')
+        
+        # Find local minima for comparison (simple algorithm)
+        prices = sample[TARGET_VARIABLE].values
+        window = 12  # 12-hour window for local minimum detection
+        is_local_min = np.zeros(len(prices), dtype=bool)
+        
+        for j in range(window, len(prices) - window):
+            if prices[j] == min(prices[j-window:j+window+1]):
+                is_local_min[j] = True
+        
+        # Get local minima indices that aren't marked as valleys
+        local_min_indices = np.where(is_local_min)[0]
+        local_min_times = sample.index[local_min_indices]
+        local_min_prices = sample.iloc[local_min_indices][TARGET_VARIABLE]
+        
+        # Mark local minima that aren't detected as valleys
+        non_detected_mins = []
+        for lm_time, lm_price in zip(local_min_times, local_min_prices):
+            if lm_time not in valley_indices:
+                non_detected_mins.append((lm_time, lm_price))
+        
+        if non_detected_mins:
+            nd_times, nd_prices = zip(*non_detected_mins)
+            ax1.scatter(nd_times, nd_prices, color='blue', s=80, marker='o', alpha=0.6)
+        
+        # Add title and labels
+        start_date = sample.index[0].strftime('%Y-%m-%d')
+        end_date = sample.index[-1].strftime('%Y-%m-%d')
+        ax1.set_title(f'Valley Detection Validation ({start_date} to {end_date})')
+        ax1.set_ylabel('Price (öre/kWh)')
+        ax1.grid(True, alpha=0.3)
+        
+        # Second plot: Binary valley indicators
+        ax2.step(sample.index, sample['is_price_valley'], 'g-', where='mid', linewidth=2)
+        ax2.set_ylabel('Valley Label (0/1)')
+        ax2.set_ylim(-0.1, 1.1)
+        ax2.grid(True, alpha=0.3)
+        
+        # Format x-axis
+        plt.gcf().autofmt_xdate()
+        
+        # Highlight weekends for context
+        for j in range(len(sample) // 24):
+            day_start = sample.index[0] + timedelta(days=j)
+            if day_start.weekday() >= 5:  # Saturday or Sunday
+                ax1.axvspan(day_start, day_start + timedelta(days=1), 
+                           color='gray', alpha=0.1)
+                ax2.axvspan(day_start, day_start + timedelta(days=1), 
+                           color='gray', alpha=0.1)
+        
+        # Add descriptive statistics
+        num_valleys = sample['is_price_valley'].sum()
+        valleys_percent = (num_valleys / len(sample)) * 100
+        ax1.text(0.02, 0.95, f'Detected valleys: {num_valleys} ({valleys_percent:.1f}% of data)', 
+                transform=ax1.transAxes, bbox=dict(facecolor='white', alpha=0.7))
+        
         plt.tight_layout()
         
-        # Add minor gridlines for better readability
-        plt.minorticks_on()
-        plt.grid(True, which='minor', linestyle=':', alpha=0.4)
-        
-        # Plot MAE if available with consistent styling
-        if 'mae' in history.history:
-            plt.subplot(1, 2, 2)
-            plt.plot(history.history['mae'], linewidth=2.5, label='Training MAE', color='#2471A3')
-            plt.plot(history.history['val_mae'], linewidth=2.5, label='Validation MAE', color='#E67E22', linestyle='--')
-            plt.title(f'{model_type.capitalize()} Model - MAE', fontsize=16, fontweight='bold', pad=15)
-            plt.xlabel('Epoch', fontsize=12, fontweight='bold')
-            plt.ylabel('MAE', fontsize=12, fontweight='bold')
-            plt.legend(fontsize=10, frameon=True, facecolor='white', edgecolor='gray')
-            plt.grid(True, linestyle='--', alpha=0.7)
-            
-            # Add minor gridlines for better readability
-            plt.minorticks_on()
-            plt.grid(True, which='minor', linestyle=':', alpha=0.4)
-        
-        # Add a dataset text to show data splits
-        if not self.train_from_all_data:
-            train_ratio = self.feature_config.data_split["train_ratio"]
-            val_ratio = self.feature_config.data_split["val_ratio"]
-            test_ratio = self.feature_config.data_split["test_ratio"]
-            plt.figtext(0.5, 0.01, 
-                       f"Data split: Training {train_ratio*100:.1f}% | Validation {val_ratio*100:.1f}% | Test {test_ratio*100:.1f}%",
-                       ha="center", fontsize=10, bbox={"facecolor":"white", "alpha":0.8, "pad":5, "edgecolor":"gray"})
-        else:
-            plt.figtext(0.5, 0.01, 
-                       "Production model: Trained on all available data with small validation sample",
-                       ha="center", fontsize=10, bbox={"facecolor":"white", "alpha":0.8, "pad":5, "edgecolor":"gray"})
-        
-        # Adjust layout and save with higher quality
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Make room for the text at the bottom
-        plt.savefig(self.saved_dir / f'{model_type}_training_history.png', dpi=300, bbox_inches='tight')
-        
-        # Additional informative plot: Learning rate if available
-        if 'lr' in history.history:
-            plt.figure(figsize=(10, 4))
-            plt.plot(history.history['lr'], 'o-', color='#16A085', linewidth=2)
-            plt.title('Learning Rate Schedule', fontsize=14, fontweight='bold')
-            plt.xlabel('Epoch', fontsize=12)
-            plt.ylabel('Learning Rate', fontsize=12)
-            plt.grid(True, linestyle='--', alpha=0.7)
-            plt.yscale('log')  # Log scale makes it easier to see learning rate decay
-            plt.savefig(self.saved_dir / f'{model_type}_learning_rate.png', dpi=300, bbox_inches='tight')
-            
-        # Don't show plots during automated training
-        plt.close('all')
+        # Save the plot
+        plt.savefig(output_dir / f"valley_validation_sample_{i+1}.png", dpi=300)
+        plt.close()
+    
+    print(f"Generated {len(sample_starts)} valley validation plots in {output_dir}")
+    return output_dir
 
-    def run_training(self):
-        """Run the training process"""
-        # Load and prepare data
-        df = self.load_data()
+def prepare_peak_valley_data(target_col='is_price_peak', production_mode=False):
+    """Load and prepare data specifically for peak/valley detection model."""
+    logging.info(f"Preparing data for {target_col} model training...")
+    
+    # Load and merge the data
+    df = load_and_merge_data()
+    
+    # Add lag features
+    df = add_lag_features(df, TARGET_VARIABLE)
+    
+    # Add rolling window features
+    df = add_rolling_features(df, TARGET_VARIABLE)
+    
+    # Add binary labels for price spikes and valleys
+    df, thresholds = add_peak_valley_labels(df, TARGET_VARIABLE)
+    
+    # Select features based on whether we're detecting peaks or valleys
+    if target_col == 'is_price_peak':
+        logging.info("Using peak-specific features for model training")
+        features = PEAK_CORE_FEATURES.copy()
+        # Peak models don't use SMOTE
+        apply_smote = False
+    else:  # valley detection
+        logging.info("Using valley-specific features for model training")
+        features = VALLEY_CORE_FEATURES.copy()
+        # Valley models ALWAYS use SMOTE
+        apply_smote = True
+        logging.info("Valley model: Using SMOTE for class balancing")
+    
+    # Filter the DataFrame to include only selected features and the target
+    selected_columns = features.copy()
+    if target_col not in selected_columns:
+        selected_columns.append(target_col)
+    
+    # Check if all selected features are available in the dataframe
+    missing_features = [col for col in selected_columns if col not in df.columns]
+    if missing_features:
+        logging.warning(f"Missing features: {missing_features}")
+        # Remove missing features from selection
+        selected_columns = [col for col in selected_columns if col in df.columns]
+    
+    logging.info(f"Using {len(selected_columns)} features for {target_col} detection")
+    
+    df = df[selected_columns].copy()
+    
+    # Handle missing values
+    for col in df.columns:
+        if df[col].isnull().any():
+            if df[col].dtype.kind in 'iuf':  # integer, unsigned int, or float
+                df[col] = df[col].fillna(df[col].median())
+            else:
+                df[col] = df[col].fillna(df[col].mode()[0])
+    
+    # Creating result dictionary to store data
+    result = {}
+    
+    # In production mode, use all data for training
+    if production_mode:
+        logging.info("PRODUCTION MODE: Using ALL available data for training")
+        combined_df = df.copy()  # Use all data
+        logging.info(f"Combined data shape: {combined_df.shape}")
+        logging.info(f"Target distribution in combined data: {combined_df[target_col].mean()*100:.2f}% positive samples")
         
-        # Verify all required features exist
-        missing_cols = self.feature_config.missing_columns(df)
-        if missing_cols:
-            logging.error("Missing features:")
-            for col in missing_cols:
-                logging.error(f"  - {col}")
-            logging.error(f"Available columns: {sorted(df.columns.tolist())}")
-            raise ValueError(f"Missing required features: {missing_cols}")
-            
-        # Prepare data for training (scaling)
-        X_scaled, y_scaled = self.prepare_data(df)
+        # Save full dataframe
+        result['df'] = df
+        result['train_df'] = combined_df
         
-        # Create sequences with ordered features
-        feature_cols = self.feature_config.get_all_feature_names()
-        df_scaled = pd.DataFrame(X_scaled, columns=feature_cols)
-        df_scaled[self.feature_config.get_target_name()] = y_scaled
+        # Scale the features (no scaling for target as it's binary)
+        feature_scaler = get_scaler('standard')
+        
+        # Get feature columns
+        feature_cols = [col for col in df.columns if col != target_col]
+        
+        # Fit scaler on all data
+        train_features = combined_df[feature_cols].values
+        feature_scaler.fit(train_features)
+        train_features_scaled = feature_scaler.transform(train_features)
+        train_target = combined_df[target_col].values
         
         # Create sequences
-        X, y = self.create_sequences(df_scaled)
+        X_train, _ = create_sequences(
+            train_features_scaled,
+            LOOKBACK_WINDOW, 
+            PREDICTION_HORIZON, 
+            list(range(train_features_scaled.shape[1])),
+            None
+        )
         
-        # Load data split configuration from config.json
-        with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
-            config = json.load(f)
+        y_train = train_target[LOOKBACK_WINDOW:LOOKBACK_WINDOW+len(X_train)].reshape(-1, 1)
         
-        data_split = config["model_config"]["data_split"]
+        # Apply SMOTE to balance the classes for valley models
+        if apply_smote and target_col == 'is_price_valley':
+            try:
+                from imblearn.over_sampling import SMOTE
+                # Reshape sequences for SMOTE (flatten the time dimension)
+                n_samples, n_timesteps, n_features = X_train.shape
+                X_reshaped = X_train.reshape(n_samples, n_timesteps * n_features)
+                
+                logging.info(f"Applying SMOTE for class balancing. Original class distribution: {np.mean(y_train)*100:.2f}% positive")
+                
+                # Apply SMOTE - aiming for approximately 1:3 ratio (25% positive samples)
+                sampling_strategy = min(0.25, 3 * np.mean(y_train))
+                smote = SMOTE(sampling_strategy=sampling_strategy, random_state=42)
+                X_resampled, y_resampled = smote.fit_resample(X_reshaped, y_train.ravel())
+                
+                # Reshape back to sequences
+                X_train = X_resampled.reshape(X_resampled.shape[0], n_timesteps, n_features)
+                y_train = y_resampled.reshape(-1, 1)
+                
+                logging.info(f"After SMOTE: {X_train.shape[0]} samples with {np.mean(y_train)*100:.2f}% positive")
+            except ImportError:
+                logging.warning("imblearn not installed. SMOTE oversampling skipped.")
+                logging.warning("Install with: pip install imbalanced-learn")
+            except Exception as e:
+                logging.error(f"Error applying SMOTE: {e}")
+                logging.warning("Proceeding with original imbalanced data")
         
-        if self.train_from_all_data:
-            logging.info("\nUsing all data for production model training")
-            # Use all data for training, keeping a small validation set for monitoring
-            val_ratio = min(0.05, data_split.get("val_ratio", 0.1))  # Use 5% or config value, whichever is smaller
-            val_size = int(len(X) * val_ratio)
+        # Store in result
+        result['X_train'] = X_train
+        result['y_train'] = y_train
+        result['feature_scaler'] = feature_scaler
+        result['feature_names'] = feature_cols
+        result['thresholds'] = thresholds
+        
+        # Don't add dummy validation/test sets in production mode
+        # The training function will handle this appropriately
+        
+        logging.info(f"Prepared training data: X_train shape {X_train.shape}, y_train shape {y_train.shape}")
+        return result
+    
+    # If not in production mode, proceed with regular train/val/test split
+    # Split the data into train, validation, and test sets
+    train_size = int(len(df) * (1 - VALIDATION_SPLIT - TEST_SPLIT))
+    val_size = int(len(df) * VALIDATION_SPLIT)
+    
+    train_df = df.iloc[:train_size]
+    val_df = df.iloc[train_size:train_size+val_size]
+    test_df = df.iloc[train_size+val_size:]
+    
+    logging.info(f"Data split: Train {train_df.shape}, Validation {val_df.shape}, Test {test_df.shape}")
+    logging.info(f"Target distribution in train: {train_df[target_col].mean()*100:.2f}% positive samples")
+    logging.info(f"Target distribution in val: {val_df[target_col].mean()*100:.2f}% positive samples")
+    logging.info(f"Target distribution in test: {test_df[target_col].mean()*100:.2f}% positive samples")
+    
+    # Scale the features (no scaling for target as it's binary)
+    feature_scaler = get_scaler('standard')
+    
+    # Fit and transform the feature data
+    feature_cols = [col for col in df.columns if col != target_col]
+    train_features = train_df[feature_cols].values
+    
+    feature_scaler.fit(train_features)
+    
+    train_features_scaled = feature_scaler.transform(train_features)
+    val_features_scaled = feature_scaler.transform(val_df[feature_cols].values)
+    test_features_scaled = feature_scaler.transform(test_df[feature_cols].values)
+    
+    # Get target values
+    train_target = train_df[target_col].values
+    val_target = val_df[target_col].values
+    test_target = test_df[target_col].values
+    
+    # Create sequences for TCN model
+    X_train, y_train = create_sequences(
+        train_features_scaled,
+        LOOKBACK_WINDOW, 
+        PREDICTION_HORIZON, 
+        list(range(train_features_scaled.shape[1])),
+        None
+    )
+    
+    y_train = train_target[LOOKBACK_WINDOW:LOOKBACK_WINDOW+len(X_train)].reshape(-1, 1)
+    
+    # Apply SMOTE to balance the classes for valley models
+    if apply_smote and target_col == 'is_price_valley':
+        try:
+            from imblearn.over_sampling import SMOTE
+            # Reshape sequences for SMOTE (flatten the time dimension)
+            n_samples, n_timesteps, n_features = X_train.shape
+            X_reshaped = X_train.reshape(n_samples, n_timesteps * n_features)
             
-            # Take the validation set from the middle of the dataset to avoid recent data
-            mid_point = len(X) // 2
-            val_start = mid_point - val_size // 2
-            val_end = val_start + val_size
+            logging.info(f"Applying SMOTE for class balancing. Original class distribution: {np.mean(y_train)*100:.2f}% positive")
             
-            # Create validation set from middle
-            X_val = X[val_start:val_end]
-            y_val = y[val_start:val_end]
+            # Apply SMOTE - aiming for approximately 1:3 ratio (25% positive samples)
+            sampling_strategy = min(0.25, 3 * np.mean(y_train))
+            smote = SMOTE(sampling_strategy=sampling_strategy, random_state=42)
+            X_resampled, y_resampled = smote.fit_resample(X_reshaped, y_train.ravel())
             
-            # Create training set from remaining data
-            X_train = np.concatenate([X[:val_start], X[val_end:]], axis=0)
-            y_train = np.concatenate([y[:val_start], y[val_end:]], axis=0)
+            # Reshape back to sequences
+            X_train = X_resampled.reshape(X_resampled.shape[0], n_timesteps, n_features)
+            y_train = y_resampled.reshape(-1, 1)
             
-            logging.info(f"Total samples: {len(X)}")
-            logging.info(f"Training samples: {len(X_train)} ({len(X_train)/len(X)*100:.1f}%)")
-            logging.info(f"Validation samples: {len(X_val)} ({len(X_val)/len(X)*100:.1f}%)")
+            logging.info(f"After SMOTE: {X_train.shape[0]} samples with {np.mean(y_train)*100:.2f}% positive")
+        except ImportError:
+            logging.warning("imblearn not installed. SMOTE oversampling skipped.")
+            logging.warning("Install with: pip install imbalanced-learn")
+        except Exception as e:
+            logging.error(f"Error applying SMOTE: {e}")
+            logging.warning("Proceeding with original imbalanced data")
+    
+    X_val, y_val = create_sequences(
+        val_features_scaled,
+        LOOKBACK_WINDOW, 
+        PREDICTION_HORIZON, 
+        list(range(val_features_scaled.shape[1])),
+        None
+    )
+    
+    y_val = val_target[LOOKBACK_WINDOW:LOOKBACK_WINDOW+len(X_val)].reshape(-1, 1)
+    
+    X_test, y_test = create_sequences(
+        test_features_scaled,
+        LOOKBACK_WINDOW, 
+        PREDICTION_HORIZON, 
+        list(range(test_features_scaled.shape[1])),
+        None
+    )
+    
+    y_test = test_target[LOOKBACK_WINDOW:LOOKBACK_WINDOW+len(X_test)].reshape(-1, 1)
+    
+    logging.info(f"Sequence shapes: X_train {X_train.shape}, y_train {y_train.shape}")
+    
+    # Store all data in result dictionary
+    result = {
+        'X_train': X_train,
+        'y_train': y_train,
+        'X_val': X_val,
+        'y_val': y_val,
+        'X_test': X_test,
+        'y_test': y_test,
+        'feature_scaler': feature_scaler,
+        'feature_names': feature_cols,
+        'df': df,
+        'train_df': train_df,
+        'val_df': val_df,
+        'test_df': test_df,
+        'thresholds': thresholds
+    }
+    
+    return result
+
+def moving_average_filter(data, window=12):
+    """
+    Apply a simple moving average filter to smooth out high-frequency variations.
+    """
+    return pd.Series(data).rolling(window=window, center=True).mean().fillna(method='bfill').fillna(method='ffill').values
+
+def exponential_smooth(predictions, alpha=0.3):
+    """
+    Apply exponential smoothing to predictions to reduce volatility.
+    
+    Args:
+        predictions: Array of predictions to smooth
+        alpha: Smoothing factor (0-1), lower values mean more smoothing
+        
+    Returns:
+        Smoothed predictions array
+    """
+    smoothed = [predictions[0]]
+    for i in range(1, len(predictions)):
+        smoothed.append(alpha * predictions[i] + (1-alpha) * smoothed[i-1])
+    return np.array(smoothed)
+
+def median_filter(data, window=5):
+    """
+    Apply a median filter to remove outliers.
+    """
+    return medfilt(data, kernel_size=window)
+
+def savitzky_golay_filter(data, window=11, polyorder=2):
+    """
+    Apply Savitzky-Golay filter for smoothing while preserving trends.
+    """
+    # Ensure window is odd
+    if window % 2 == 0:
+        window += 1
+        
+    # Ensure window is less than data length
+    if window >= len(data):
+        window = min(11, len(data) - 1)
+        if window % 2 == 0:
+            window -= 1
             
-            # Build and train model
-            model = self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
-            history = self.train_model(model, X_train, y_train, X_val, y_val)
-            
-            # Save the model and scalers
-            self.save_model_and_scalers(model)
-            
-            return model, history, df.index[self.window_size + 24:]
+    return savgol_filter(data, window, polyorder)
+
+def daily_averaging(data, timestamps):
+    """
+    Perform daily averaging on the forecast data for aggressive smoothing.
+    Each hour of the day gets the average value for that day.
+    
+    Args:
+        data: Array of predictions to smooth
+        timestamps: DatetimeIndex corresponding to the data points
+        
+    Returns:
+        Daily averaged predictions array
+    """
+    # Convert to pandas Series with timestamps
+    temp_df = pd.DataFrame({'value': data}, index=timestamps)
+    
+    # Group by date and calculate daily average
+    daily_means = temp_df.groupby(temp_df.index.date)['value'].mean()
+    
+    # Map each timestamp to its corresponding daily average
+    smoothed = np.array([daily_means[ts.date()] for ts in timestamps])
+    
+    return smoothed
+
+def weekly_averaging(data, timestamps):
+    """
+    Perform weekly averaging of the forecast data for very aggressive smoothing.
+    Each hour gets the average value for its day of week and hour of day across
+    all weeks in the dataset.
+    
+    Args:
+        data: Array of predictions to smooth
+        timestamps: DatetimeIndex corresponding to the data points
+        
+    Returns:
+        Weekly pattern averaged predictions array
+    """
+    # Convert to pandas Series with timestamps
+    temp_df = pd.DataFrame({'value': data}, index=timestamps)
+    
+    # Group by day of week and hour of day
+    temp_df['dayofweek'] = temp_df.index.dayofweek
+    temp_df['hour'] = temp_df.index.hour
+    
+    # Calculate average for each hour-day combination
+    pattern_means = temp_df.groupby(['dayofweek', 'hour'])['value'].mean()
+    
+    # Map each timestamp to its corresponding pattern average
+    smoothed = np.array([pattern_means[(ts.dayofweek, ts.hour)] for ts in timestamps])
+    
+    return smoothed
+
+def adaptive_trend_smoothing(data, timestamps, smoothing_level='medium'):
+    """
+    Apply adaptive smoothing based on the desired smoothing level.
+    
+    Args:
+        data: Array of predictions to smooth
+        timestamps: DatetimeIndex corresponding to the data points
+        smoothing_level: Level of smoothing ('light', 'medium', 'heavy', 'daily', 'weekly')
+        
+    Returns:
+        Smoothed predictions array
+    """
+    if smoothing_level == 'light':
+        # Light smoothing with exponential filter
+        return exponential_smooth(data, alpha=0.3)
+    
+    elif smoothing_level == 'medium':
+        # Medium smoothing with combined filters
+        smoothed = exponential_smooth(data, alpha=0.1)
+        smoothed = median_filter(smoothed, window=5)
+        return savitzky_golay_filter(smoothed, window=11, polyorder=2)
+    
+    elif smoothing_level == 'heavy':
+        # Heavy smoothing with larger windows
+        smoothed = exponential_smooth(data, alpha=0.05)
+        smoothed = median_filter(smoothed, window=7)
+        return savitzky_golay_filter(smoothed, window=23, polyorder=2)
+    
+    elif smoothing_level == 'daily':
+        # Daily average - very aggressive
+        return daily_averaging(data, timestamps)
+    
+    elif smoothing_level == 'weekly':
+        # Weekly pattern average - extremely aggressive
+        return weekly_averaging(data, timestamps)
+    
+    else:
+        # Default to medium smoothing
+        smoothed = exponential_smooth(data, alpha=0.1)
+        smoothed = median_filter(smoothed, window=5)
+        return savitzky_golay_filter(smoothed, window=11, polyorder=2)
+
+def train_trend_model(data, production_mode=False):
+    """
+    Train a time series model for price trend prediction using Gradient Boosting.
+    
+    Args:
+        data: Dictionary with training data
+        production_mode: If True, use all available data for training
+        
+    Returns:
+        Trained model and evaluation metrics
+    """
+    logging.info("Starting Gradient Boosting trend model training...")
+    
+    # Get the data
+    train_target = data['train_target']
+    val_df = data['val_df']
+    test_df = data['test_df'] 
+    full_df = data['full_df']
+    
+    # In production mode, use combined dataset including train+val+test
+    if production_mode:
+        combined_target = data['combined_target']
+        logging.info(f"Production mode: Using ALL available data: {len(combined_target)} samples from {combined_target.index[0]} to {combined_target.index[-1]}")
+        # Calculate actual years of data
+        years_of_data = (combined_target.index[-1] - combined_target.index[0]).days / 365.25
+        logging.info(f"Total data span: {years_of_data:.1f} years")
+    
+
+    
+    # Setup specific logging for debugging
+    log_file = TREND_MODEL_DIR / "trend_model_training_debug.log"
+    # make file if it doesn't exist
+    if not log_file.exists():
+        log_file.touch()
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+    logging.getLogger().addHandler(file_handler)
+    
+    # Step 1: Data preparation and inspection
+    logging.info("=== STEP 1: DATA PREPARATION ===")
+    logging.info(f"Target variable: {TARGET_VARIABLE}")
+    
+    if production_mode:
+        logging.info(f"Training data shape: {combined_target.shape}")
+        # Use all data in production mode
+        train_target_trimmed = combined_target
+    else:
+        logging.info(f"Training data shape: {train_target.shape}")
+        # Take a reasonable training window - gradient boosting can handle more data efficiently
+        max_train_size = 3*365*24  # 3 years of hourly data by default
+        if len(train_target) > max_train_size:
+            logging.info(f"Limiting training data to last {max_train_size/365/24:.1f} years for balanced training")
+            train_target_trimmed = train_target.iloc[-max_train_size:]
         else:
-            # Get data split ratios from config for evaluation model
-            train_ratio = data_split.get("train_ratio", 0.8)
-            val_ratio = data_split.get("val_ratio", 0.1)
-            test_ratio = data_split.get("test_ratio", 0.1)
-            
-            # Calculate split indices
-            total_samples = len(X)
-            train_split = int(total_samples * train_ratio)
-            val_split = int(total_samples * (train_ratio + val_ratio))
-            
-            # Log split information
-            logging.info("\nData Split Information for Evaluation Model:")
-            logging.info(f"Total samples: {total_samples}")
-            logging.info(f"Training samples: {train_split} ({train_ratio*100:.1f}%)")
-            logging.info(f"Validation samples: {val_split - train_split} ({val_ratio*100:.1f}%)")
-            logging.info(f"Test samples: {total_samples - val_split} ({test_ratio*100:.1f}%)")
-            
-            # Split the data
-            X_train = X[:train_split]
-            y_train = y[:train_split]
-            X_val = X[train_split:val_split]
-            y_val = y[train_split:val_split]
-            X_test = X[val_split:]
-            y_test = y[val_split:]
-            
-            # Save test data for later evaluation
-            self.test_data_dir.mkdir(parents=True, exist_ok=True)
-            logging.info(f"Saving test data to {self.test_data_dir}")
-            
-            # Save test features and targets
-            np.save(self.test_data_dir / "X_test.npy", X_test)
-            np.save(self.test_data_dir / "y_test.npy", y_test)
-            
-            # Save validation data too (needed for the evaluation script)
-            np.save(self.test_data_dir / "X_val.npy", X_val)
-            np.save(self.test_data_dir / "y_val.npy", y_val)
-            
-            # Save timestamps for the test and validation data
-            test_timestamps = df.index[self.window_size + 24:][val_split:]
-            val_timestamps = df.index[self.window_size + 24:][train_split:val_split]
-            
-            np.save(self.test_data_dir / "test_timestamps.npy", test_timestamps)
-            np.save(self.test_data_dir / "val_timestamps.npy", val_timestamps)
-            
-            logging.info(f"Saved test data: {len(X_test)} samples")
-            logging.info(f"Saved validation data: {len(X_val)} samples")
-            
-            # Build and train model
-            model = self.build_model(input_shape=(X_train.shape[1], X_train.shape[2]))
-            history = self.train_model(model, X_train, y_train, X_val, y_val)
-            
-            # Save the model and scalers
-            self.save_model_and_scalers(model)
-            
-            return model, history, df.index[self.window_size + 24:]
+            train_target_trimmed = train_target
+        
+    logging.info(f"Training data length: {len(train_target_trimmed)}")
 
-    def train_model(self, model, X_train, y_train, X_val, y_val):
-        """Train the model with the provided data"""
-        # Load training parameters from config
-        with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
-            config = json.load(f)
-        
-        training_params = config["model_config"]["training"]
-        callback_params = config["model_config"]["callbacks"]
-        
-        # Get training parameters
-        batch_size = training_params.get("batch_size", 32)
-        max_epochs = training_params.get("max_epochs", 100)
-        
-        # Early stopping callback
-        early_stopping_params = callback_params.get("early_stopping", {})
-        early_stopping = EarlyStopping(
-            monitor=early_stopping_params.get("monitor", "val_loss"),
-            patience=early_stopping_params.get("patience", 10),
-            min_delta=early_stopping_params.get("min_delta", 0.001),
-            restore_best_weights=early_stopping_params.get("restore_best_weights", True),
-            verbose=1
-        )
-        
-        # Reduce learning rate callback
-        reduce_lr_params = callback_params.get("reduce_lr", {})
-        reduce_lr = ReduceLROnPlateau(
-            monitor=reduce_lr_params.get("monitor", "val_loss"),
-            factor=reduce_lr_params.get("factor", 0.5),
-            patience=reduce_lr_params.get("patience", 5),
-            min_delta=reduce_lr_params.get("min_delta", 0.001),
-            min_lr=reduce_lr_params.get("min_lr", 0.00001),
-            verbose=1
-        )
-        
-        # Model checkpoint callback
-        model_checkpoint_path = self.saved_dir / self.model_name
-        checkpoint = ModelCheckpoint(
-            model_checkpoint_path,
-            monitor=early_stopping_params.get("monitor", "val_loss"),
-            save_best_only=True,
-            mode='min',
-            verbose=1
-        )
-        
-        # TensorBoard callback
-        log_dir = self.logs_dir / datetime.now().strftime("%Y%m%d-%H%M%S")
-        tensorboard = tf.keras.callbacks.TensorBoard(
-            log_dir=log_dir,
-            histogram_freq=1,
-            write_graph=True
-        )
-        
-        # Train the model
-        logging.info(f"Training model with batch_size={batch_size}, max_epochs={max_epochs}")
-        logging.info(f"Model will be saved to: {model_checkpoint_path}")
-        logging.info(f"TensorBoard logs: {log_dir}")
-        
-        history = model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
-            epochs=max_epochs,
-            batch_size=batch_size,
-            callbacks=[early_stopping, reduce_lr, checkpoint, tensorboard],
-            verbose=1
-        )
-        
-        return history
-
-    def save_model_and_scalers(self, model):
-        """Save model and scalers to disk"""
-        # Create timestamp for model version
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Determine save directory based on training mode
-        save_dir = self.saved_dir
-        save_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save model
-        model_path = save_dir / self.model_name
-        model.save(model_path)
-        logging.info(f"Model saved to {model_path}")
-        
-        # Verify scalers before saving
-        # Test the price scaler with a sample value to ensure it works correctly
-        try:
-            target_name = self.feature_config.get_target_name()
-            target_index = 0  # Default to first column
-            price_cols = self.feature_config.get_price_cols()
-            if target_name in price_cols:
-                target_index = price_cols.index(target_name)
-            
-            # Test the scaler with sample values
-            test_val = np.array([100.0]).reshape(-1, 1)  # A typical price value
-            dummy = np.zeros((1, len(self.price_scaler.scale_)))
-            dummy[:, target_index] = test_val
-            
-            scaled = self.price_scaler.transform(dummy)
-            unscaled = self.price_scaler.inverse_transform(scaled)
-            
-            # Check if the transformation is reversible
-            original_val = unscaled[:, target_index]
-            logging.info(f"Scaler test: original={test_val[0][0]}, scaled={scaled[0][target_index]}, unscaled={original_val[0]}")
-            
-            if not np.isclose(test_val[0][0], original_val[0], rtol=1e-5):
-                logging.warning(f"Price scaler verification issue - output {original_val[0]} doesn't match input {test_val[0][0]}")
-        except Exception as e:
-            logging.error(f"Error verifying price scaler: {e}")
-        
-        # Save scalers
-        joblib.dump(self.price_scaler, save_dir / "price_scaler.save")
-        joblib.dump(self.grid_scaler, save_dir / "grid_scaler.save")
-        logging.info(f"Scalers saved to {save_dir}")
-        
-        # Save target column information
-        target_info = {
-            "target_feature": self.feature_config.get_target_name(),
-            "target_index": target_index,
-            "price_cols": self.feature_config.get_price_cols(),
-            "price_scaler_type": type(self.price_scaler).__name__,
-            "price_scaler_params": self.price_scaler.get_params() if hasattr(self.price_scaler, 'get_params') else {},
-            "timestamp": timestamp
-        }
-        
-        with open(save_dir / "target_info.json", 'w') as f:
-            json.dump(target_info, f, indent=4)
-        logging.info(f"Target information saved to {save_dir / 'target_info.json'}")
-        
-        # Save feature configuration
-        config_path = save_dir / "feature_config.json"
-        try:
-            with open(config_path, 'w') as f:
-                json.dump({
-                    "feature_groups": self.feature_config.feature_groups,
-                    "feature_metadata": self.feature_config.metadata,
-                    "model_config": self.feature_config.model_config
-                }, f, indent=4)
-            logging.info(f"Feature configuration saved to {config_path}")
-        except Exception as e:
-            logging.error(f"Error saving feature configuration: {e}")
-        
-        # Save the config used for this model
-        try:
-            with open(self.project_root / "src/predictions/prices/config.json", "r") as f:
-                config = json.load(f)
-            
-            # Save to the model directory
-            with open(save_dir / "model_config.json", 'w') as f:
-                json.dump(config, f, indent=4)
-            
-            logging.info(f"Model configuration saved to {save_dir / 'model_config.json'}")
-        except Exception as e:
-            logging.error(f"Error saving model configuration: {e}")
-            
-        logging.info("Model, scalers, and configuration saved successfully")
-
-    def evaluate_model(self, model, X_test, y_test):
-        """
-        Evaluate the model on test data and generate performance metrics and plots
-        
-        Args:
-            model: Trained model
-            X_test: Test features
-            y_test: Test targets
-        """
-        logging.info("\nEvaluating model on test data...")
-        
-        # Make predictions
-        y_pred = model.predict(X_test)
-        
-        # Calculate metrics
-        mae = np.mean(np.abs(y_pred - y_test), axis=0)  # MAE per hour
-        mape = np.mean(np.abs((y_pred - y_test) / (y_test + 1e-5)) * 100, axis=0)  # MAPE per hour
-        rmse = np.sqrt(np.mean(np.square(y_pred - y_test), axis=0))  # RMSE per hour
-        
-        # Calculate overall metrics
-        overall_mae = np.mean(mae)
-        overall_mape = np.mean(mape)
-        overall_rmse = np.mean(rmse)
-        
-        # Log metrics
-        logging.info(f"Test MAE: {overall_mae:.2f} öre/kWh")
-        logging.info(f"Test MAPE: {overall_mape:.2f}%")
-        logging.info(f"Test RMSE: {overall_rmse:.2f} öre/kWh")
-        
-        # Log hourly metrics
-        logging.info("\nHourly metrics:")
-        for h in range(24):
-            logging.info(f"Hour {h}: MAE={mae[h]:.2f}, MAPE={mape[h]:.2f}%, RMSE={rmse[h]:.2f}")
-        
-        # Create evaluation directory if it doesn't exist
-        eval_dir = self.model_dir / "evaluation"
-        eval_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create plots
-        self._create_evaluation_plots(y_test, y_pred, eval_dir)
-        
-        # Save numerical results
-        self._save_evaluation_results(y_test, y_pred, mae, mape, rmse, eval_dir)
-        
-        return {
-            "mae": overall_mae,
-            "mape": overall_mape,
-            "rmse": overall_rmse,
-            "hourly_mae": mae.tolist(),
-            "hourly_mape": mape.tolist(),
-            "hourly_rmse": rmse.tolist()
-        }
+    # Step 2: Check for exogenous features
+    logging.info("=== STEP 2: FEATURE INSPECTION ===")
+    exog_features = TREND_EXOG_FEATURES
+    logging.info(f"Potential features: {exog_features}")
     
-    def _create_evaluation_plots(self, y_true, y_pred, save_dir):
-        """
-        Create evaluation plots
+    # Check which features are available
+    available_features = [col for col in exog_features if col in full_df.columns]
+    missing_features = [col for col in exog_features if col not in full_df.columns]
+    
+    if missing_features:
+        logging.warning(f"Missing {len(missing_features)} features: {missing_features}")
+    logging.info(f"Available features: {available_features}")
+    
+    # Step 3: Prepare aligned training data
+    logging.info("=== STEP 3: ALIGNED DATA PREPARATION ===")
+    
+    # Get data for the training timestamps
+    train_indices = train_target_trimmed.index
+    
+    if production_mode:
+        # In production mode, use the entire dataset
+        train_df = full_df.copy()
+    else:
+        # Otherwise, use only the training portion
+        train_df = full_df.loc[full_df.index.isin(train_indices)].copy()
         
-        Args:
-            y_true: True values
-            y_pred: Predicted values
-            save_dir: Directory to save plots
-        """
-        # Plot 1: Scatter plot of predicted vs actual
-        plt.figure(figsize=(10, 8))
-        plt.scatter(y_true.flatten(), y_pred.flatten(), alpha=0.3)
-        plt.plot([0, np.max(y_true)], [0, np.max(y_true)], 'r--')
-        plt.xlabel('Actual Price (öre/kWh)')
-        plt.ylabel('Predicted Price (öre/kWh)')
-        plt.title('Predicted vs Actual Electricity Prices')
-        plt.grid(True, alpha=0.3)
-        scatter_path = save_dir / "pred_vs_actual_scatter.png"
-        plt.savefig(scatter_path)
-        plt.close()
-        logging.info(f"Scatter plot saved to {scatter_path}")
+    logging.info(f"Extracted training data shape: {train_df.shape}")
+    
+    # Prepare feature matrix
+    X_train = train_df[available_features].copy()
+    y_train = train_df[TARGET_VARIABLE].copy()
+    
+    # Fill missing values
+    for col in X_train.columns:
+        if X_train[col].isnull().any():
+            if X_train[col].dtype.kind in 'iuf':  # integer, unsigned int, or float
+                X_train[col] = X_train[col].fillna(X_train[col].median())
+            else:
+                X_train[col] = X_train[col].fillna(X_train[col].mode()[0])
+    
+    logging.info(f"Prepared training data: X_train {X_train.shape}, y_train {y_train.shape}")
+    
+    # Step 4: Add time-based features optimal for Gradient Boosting
+    logging.info("=== STEP 4: TIME FEATURE ENGINEERING ===")
+    
+    # Function to add additional time features to the feature matrix
+    def add_gb_time_features(df):
+        """Add time features specifically useful for Gradient Boosting models."""
+        # Copy the dataframe to avoid modifying the original
+        result = df.copy()
         
-        # Plot 2: Distribution of errors
-        errors = y_pred.flatten() - y_true.flatten()
-        plt.figure(figsize=(10, 6))
-        plt.hist(errors, bins=50, alpha=0.75)
-        plt.axvline(x=0, color='r', linestyle='--')
-        plt.xlabel('Prediction Error (öre/kWh)')
-        plt.ylabel('Frequency')
-        plt.title('Distribution of Prediction Errors')
-        plt.grid(True, alpha=0.3)
-        hist_path = save_dir / "error_distribution.png"
-        plt.savefig(hist_path)
-        plt.close()
-        logging.info(f"Error distribution plot saved to {hist_path}")
+        # Extract datetime components
+        if hasattr(result, 'index') and isinstance(result.index, pd.DatetimeIndex):
+            idx = result.index
+        else:
+            # If not a DatetimeIndex, try to create one
+            if 'datetime' in result.columns:
+                idx = pd.DatetimeIndex(result['datetime'])
+            else:
+                raise ValueError("DataFrame must have DatetimeIndex or datetime column")
         
-        # Plot 3: Hourly MAE
-        mae = np.mean(np.abs(y_pred - y_true), axis=0)
-        plt.figure(figsize=(12, 6))
-        plt.bar(range(24), mae)
-        plt.xlabel('Hour of Day')
-        plt.ylabel('Mean Absolute Error (öre/kWh)')
-        plt.title('Prediction Error by Hour of Day')
-        plt.xticks(range(24))
-        plt.grid(True, alpha=0.3)
-        hourly_path = save_dir / "hourly_mae.png"
-        plt.savefig(hourly_path)
-        plt.close()
-        logging.info(f"Hourly MAE plot saved to {hourly_path}")
+        # Basic time components
+        result['hour'] = idx.hour
+        result['day'] = idx.day
+        result['month'] = idx.month
+        result['dayofweek'] = idx.dayofweek
+        result['quarter'] = idx.quarter
         
-        # Plot 4: Sample of predictions vs actual
-        sample_idx = np.random.choice(len(y_true), min(5, len(y_true)), replace=False)
-        plt.figure(figsize=(15, 10))
+        # Cyclical encoding of time features (helps GB models detect periodic patterns)
+        result['hour_sin'] = np.sin(2 * np.pi * result['hour']/24)
+        result['hour_cos'] = np.cos(2 * np.pi * result['hour']/24)
+        result['day_sin'] = np.sin(2 * np.pi * result['day']/31)
+        result['day_cos'] = np.cos(2 * np.pi * result['day']/31)
+        result['month_sin'] = np.sin(2 * np.pi * result['month']/12)
+        result['month_cos'] = np.cos(2 * np.pi * result['month']/12)
+        result['dayofweek_sin'] = np.sin(2 * np.pi * result['dayofweek']/7)
+        result['dayofweek_cos'] = np.cos(2 * np.pi * result['dayofweek']/7)
         
-        for i, idx in enumerate(sample_idx):
-            plt.subplot(len(sample_idx), 1, i+1)
-            plt.plot(range(24), y_true[idx], 'b-', label='Actual')
-            plt.plot(range(24), y_pred[idx], 'r-', label='Predicted')
-            plt.xlabel('Hour of Day')
-            plt.ylabel('Price (öre/kWh)')
-            plt.title(f'Sample {i+1}: Price Prediction vs Actual')
-            plt.xticks(range(0, 24, 2))
-            plt.grid(True, alpha=0.3)
-            plt.legend()
+        # Special time flags
+        result['is_weekend'] = (result['dayofweek'] >= 5).astype(int)
+        result['is_business_hour'] = ((result['hour'] >= 8) & (result['hour'] <= 18) & 
+                                    (result['dayofweek'] < 5)).astype(int)
+        result['is_morning_peak'] = ((result['hour'] >= 7) & (result['hour'] <= 9)).astype(int)
+        result['is_evening_peak'] = ((result['hour'] >= 17) & (result['hour'] <= 20)).astype(int)
         
+        # Drop original components that aren't needed anymore
+        result.drop(['hour', 'day', 'month', 'dayofweek', 'quarter'], axis=1, inplace=True, errors='ignore')
+        
+        return result
+    
+    # Add time features to training data
+    X_train = add_gb_time_features(X_train)
+    logging.info(f"Added time features, new X_train shape: {X_train.shape}")
+    
+    # Step 5: Feature weighting/importance
+    logging.info("=== STEP 5: FEATURE IMPORTANCE WEIGHTING ===")
+    
+    # Calculate correlation with target for feature importance logging
+    feature_correlations = {}
+    for col in X_train.columns:
+        corr = np.corrcoef(X_train[col], y_train)[0, 1]
+        feature_correlations[col] = corr
+    
+    # Group features by type for better analysis
+    feature_groups = {
+        "core_price": ["price_168h_avg", "hour_avg_price", "price_24h_avg"],
+        "consumption": ["powerConsumptionTotal", "temperature_2m"],
+        "production": ["powerProductionTotal", "hydro", "nuclear", "wind"],
+        "trade": ["powerImportTotal", "powerExportTotal"],
+        "market": ["Gas_Price"],
+        "weather": ["wind_speed_100m", "cloud_cover"],
+        "time": [col for col in X_train.columns if any(x in col for x in ['hour', 'day', 'month', 'weekend', 'peak'])]
+    }
+    
+    # Log correlations by group for better analysis
+    for group, features in feature_groups.items():
+        available_group_features = [f for f in features if f in X_train.columns]
+        if available_group_features:
+            logging.info(f"Feature group '{group}' correlations:")
+            for feature in available_group_features:
+                if feature in feature_correlations:
+                    corr = feature_correlations.get(feature, 0)
+                    logging.info(f"  {feature}: {corr:.3f}")
+    
+    # Sort features by absolute correlation for logging
+    sorted_corrs = sorted(feature_correlations.items(), key=lambda x: abs(x[1]), reverse=True)
+    logging.info("Features sorted by correlation with target price:")
+    for feature, corr in sorted_corrs:
+        logging.info(f"  {feature}: {corr:.3f}")
+    
+    # Step 6: Train Gradient Boosting model
+    logging.info("=== STEP 6: GRADIENT BOOSTING MODEL TRAINING ===")
+    
+    # Start timing
+    start_time = time.time()
+    
+    # Prepare validation data
+    X_val = val_df[available_features].copy()
+    y_val = val_df[TARGET_VARIABLE].copy()
+    
+    # Fill missing values in validation data
+    for col in X_val.columns:
+        if X_val[col].isnull().any():
+            if X_val[col].dtype.kind in 'iuf':
+                X_val[col] = X_val[col].fillna(X_val[col].median())
+            else:
+                X_val[col] = X_val[col].fillna(X_val[col].mode()[0])
+    
+    # Add time features to validation data
+    X_val = add_gb_time_features(X_val)
+    
+    # Ensure X_train and X_val have the same columns
+    common_columns = list(set(X_train.columns) & set(X_val.columns))
+    X_train = X_train[common_columns]
+    X_val = X_val[common_columns]
+    
+    logging.info(f"Training with {X_train.shape[1]} features and {len(y_train)} samples")
+    logging.info(f"Validation data: {X_val.shape}")
+    
+    # Define model hyperparameters - tuned for smooth trend prediction
+    """
+    params = {
+        'objective': 'reg:pseudohubererror',  # Huber loss is less sensitive to outliers
+        'learning_rate': 0.05,                # Lower learning rate for smoother convergence
+        'max_depth': 8,                       # Reduce max depth to prevent overfitting to extreme values
+        'min_child_weight': 5,                # Higher values prevent specializing on outliers
+        'gamma': 0.2,                         # Increase pruning to reduce complexity
+        'subsample': 0.7,                     # Reduce overfitting on specific price patterns
+        'colsample_bytree': 0.7,              # Sample fewer features for more stable results
+        'reg_alpha': 2.0,                     # Stronger L1 regularization for feature selection
+        'reg_lambda': 10.0,                   # Much stronger L2 regularization for smoother predictions
+        'huber_slope': 0.9,                   # For pseudohuber: control outlier sensitivity (high = less sensitive)
+        'random_state': 42,
+        'n_jobs': -1                          # Use all available cores
+    }
+    """
+
+    # Uncomment to use our custom objective function that penalizes extreme values
+    # Note: When using custom objective, we set objective to None and pass the function directly
+    # Custom objective for smoother predictions with penalty for extremes
+    params = {
+        'objective': None,  # Will use custom objective
+        'learning_rate': 0.05,
+        'max_depth': 20,
+        'min_child_weight': 5,
+        'gamma': 0.2,
+        'subsample': 0.7,
+        'colsample_bytree': 0.7,
+        'reg_alpha': 3.0,
+        'reg_lambda': 10.0,
+        'random_state': 42,
+        'n_jobs': -1
+    }
+    custom_obj = xgb_smooth_trend_objective  # Reference our custom objective
+    
+    logging.info(f"XGBoost parameters: {params}")
+    print(f"\nTraining XGBoost model with {len(y_train)} samples and {X_train.shape[1]} features")
+    
+    # Create DMatrix for XGBoost (faster training)
+    dtrain = xgb.DMatrix(X_train, label=y_train)
+    dval = xgb.DMatrix(X_val, label=y_val)
+    
+    # Define evaluation list
+    eval_list = [(dtrain, 'train'), (dval, 'validation')]
+    
+    # Train model with early stopping
+    num_boost_round = 1000
+    early_stopping_rounds = 50
+    
+    # Initialize progress bar
+    print(f"Training for up to {num_boost_round} boosting rounds with early stopping...")
+    pbar = tqdm(total=num_boost_round, desc="XGBoost Training", unit="rounds")
+    
+    # Create a proper callback class for progress tracking
+    class TQDMProgressCallback(TrainingCallback):
+        """Custom callback for updating tqdm progress bar during XGBoost training."""
+        def __init__(self, progress_bar):
+            self.progress_bar = progress_bar
+            
+        def after_iteration(self, model, epoch, evals_log):
+            """Update progress bar after each iteration."""
+            self.progress_bar.update(1)
+            return False
+    
+    # Check if we're using a custom objective
+    if 'objective' in params and params['objective'] is None and 'custom_obj' in locals():
+        # Train with custom objective
+        model = xgb.train(
+            params, 
+            dtrain, 
+            num_boost_round=num_boost_round,
+            evals=eval_list,
+            early_stopping_rounds=early_stopping_rounds,
+            obj=custom_obj,  # Pass the custom objective function
+            callbacks=[TQDMProgressCallback(pbar)],
+            verbose_eval=False
+        )
+        logging.info("Trained model with custom objective function")
+    else:
+        # Train with standard objective
+        model = xgb.train(
+            params, 
+            dtrain, 
+            num_boost_round=num_boost_round,
+            evals=eval_list,
+            early_stopping_rounds=early_stopping_rounds,
+            callbacks=[TQDMProgressCallback(pbar)],
+            verbose_eval=False
+        )
+    
+    # Close progress bar
+    pbar.close()
+    
+    # Calculate training time
+    elapsed_time = time.time() - start_time
+    logging.info(f"Training completed in {timedelta(seconds=int(elapsed_time))}")
+    logging.info(f"Best iteration: {model.best_iteration}")
+    logging.info(f"Best score: {model.best_score}")
+    
+    print(f"\nXGBoost training completed in {timedelta(seconds=int(elapsed_time))}")
+    print(f"Best iteration: {model.best_iteration}, Best score: {model.best_score:.4f}")
+    
+    # Step 7: Feature importance analysis
+    logging.info("=== STEP 7: FEATURE IMPORTANCE ANALYSIS ===")
+    
+    # Get feature importance
+    importance_scores = model.get_score(importance_type='gain')
+    importance_df = pd.DataFrame({
+        'Feature': list(importance_scores.keys()),
+        'Importance': list(importance_scores.values())
+    })
+    importance_df = importance_df.sort_values('Importance', ascending=False)
+    
+    # Log top 20 features
+    logging.info("Top 20 important features:")
+    for i, (feature, importance) in enumerate(zip(importance_df['Feature'].head(20), 
+                                                importance_df['Importance'].head(20))):
+        logging.info(f"{i+1}. {feature}: {importance:.2f}")
+    
+    # Step 8: Validation predictions with smoothing
+    logging.info("=== STEP 8: VALIDATION PREDICTIONS WITH SMOOTHING ===")
+    
+    # Make predictions on validation set
+    val_dmatrix = xgb.DMatrix(X_val)
+    val_pred_raw = model.predict(val_dmatrix)
+    
+    # Apply smoothing pipeline
+    logging.info("Applying smoothing pipeline to predictions")
+    
+    # Use the heavy smoothing level rather than daily averaging
+    # Choose from: 'light', 'medium', 'heavy', 'daily', 'weekly'
+    smoothing_level = 'heavy'  # Changed from 'daily' to 'heavy' since the model itself should be smoother
+    logging.info(f"Using {smoothing_level} smoothing level")
+    
+    val_pred_values = adaptive_trend_smoothing(val_pred_raw, X_val.index, smoothing_level=smoothing_level)
+    
+    # Store the smoothing parameters for later use in evaluation
+    smoothing_params = {
+        'smoothing_level': smoothing_level,
+        'exponential_alpha': 0.05,
+        'median_window': 11,
+        'savgol_window': 31,  # Increased from 11 to 23 for smoother trend
+        'savgol_polyorder': 2
+    }
+    
+    # Calculate validation metrics
+    val_actual = y_val.values
+    val_mae = np.mean(np.abs(val_actual - val_pred_values))
+    val_rmse = np.sqrt(np.mean((val_actual - val_pred_values) ** 2))
+    
+    # Calculate direction accuracy
+    val_actual_diff = np.diff(val_actual)
+    val_pred_diff = np.diff(val_pred_values)
+    val_direction_accuracy = np.mean((val_actual_diff > 0) == (val_pred_diff > 0))
+    
+    val_metrics = {
+        'val_mae': float(val_mae),
+        'val_rmse': float(val_rmse),
+        'val_direction_accuracy': float(val_direction_accuracy)
+    }
+    
+    logging.info(f"Validation metrics: MAE={val_mae:.2f}, RMSE={val_rmse:.2f}, Direction Accuracy={val_direction_accuracy:.2f}")
+    
+    # Step 9: Save model and metadata
+    logging.info("=== STEP 9: MODEL SAVING ===")
+    
+    # Create directory if it doesn't exist
+    os.makedirs(TREND_MODEL_DIR, exist_ok=True)
+    
+    # Save model
+    import pickle
+    model_path = TREND_MODEL_DIR / "best_trend_model.pkl"
+    try:
+        # First ensure parent directory exists
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save the model using pickle
+        with open(model_path, 'wb') as f:
+            pickle.dump(model, f)
+        
+        # Verify the file was actually created
+        if model_path.exists():
+            logging.info(f"Successfully saved model to {model_path} ({os.path.getsize(str(model_path))} bytes)")
+        else:
+            logging.error(f"Failed to save model: File {model_path} was not created")
+    except Exception as e:
+        logging.error(f"Error saving model to {model_path}: {e}")
+        raise
+    
+    # Save feature names and their exact order
+    feature_names_path = TREND_MODEL_DIR / "feature_names.json"
+    try:
+        with open(feature_names_path, 'w') as f:
+            json.dump(list(X_train.columns), f)
+        logging.info(f"Saved feature names to {feature_names_path}")
+    except Exception as e:
+        logging.error(f"Error saving feature names to {feature_names_path}: {e}")
+    
+    # Save model parameters and metadata
+    model_params = {
+        'model_type': 'XGBoost',
+        'xgb_params': params,
+        'best_iteration': model.best_iteration,
+        'best_score': float(model.best_score),
+        'feature_count': X_train.shape[1],
+        'training_samples': len(y_train),
+        'features': list(X_train.columns),
+        'important_features': importance_df['Feature'].head(20).tolist(),
+        'feature_importance': {f: float(i) for f, i in zip(importance_df['Feature'].head(20), 
+                                                         importance_df['Importance'].head(20))},
+        'smoothing': {
+            'smoothing_level': smoothing_level,
+            'exponential_alpha': 0.05,
+            'median_window': 11,
+            'savgol_window': 23,
+            'savgol_polyorder': 2
+        },
+        'validation_metrics': val_metrics,
+        'training_time_seconds': int(elapsed_time),
+        'datetime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'fitted_on': str(X_train.index[0]) + " to " + str(X_train.index[-1])
+    }
+    
+    params_path = TREND_MODEL_DIR / "trend_model_params.json"
+    try:
+        with open(params_path, 'w') as f:
+            json.dump(model_params, f, indent=4)
+        logging.info(f"Saved model parameters to {params_path}")
+    except Exception as e:
+        logging.error(f"Error saving model parameters to {params_path}: {e}")
+    
+    # Save feature importance plot
+    try:
+        # Ensure plots directory exists
+        plots_dir = PLOTS_DIR / "evaluation" / "trend"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+        
+        plt.figure(figsize=(12, 8))
+        importance_plot = importance_df.head(20).plot(kind='barh', x='Feature', y='Importance', legend=False)
+        plt.title('Feature Importance (Top 20)')
         plt.tight_layout()
-        sample_path = save_dir / "sample_predictions.png"
-        plt.savefig(sample_path)
+        plt.savefig(plots_dir / "feature_importance.png")
         plt.close()
-        logging.info(f"Sample predictions plot saved to {sample_path}")
+        logging.info(f"Saved feature importance plot to {plots_dir / 'feature_importance.png'}")
+    except Exception as e:
+        logging.error(f"Error saving feature importance plot: {e}")
     
-    def _save_evaluation_results(self, y_true, y_pred, mae, mape, rmse, save_dir):
-        """
-        Save numerical evaluation results
-        
-        Args:
-            y_true: True values
-            y_pred: Predicted values
-            mae: Mean absolute error
-            mape: Mean absolute percentage error
-            rmse: Root mean squared error
-            save_dir: Directory to save results
-        """
-        # Create results dictionary
-        results = {
-            "overall_metrics": {
-                "mae": float(np.mean(mae)),
-                "mape": float(np.mean(mape)),
-                "rmse": float(np.mean(rmse))
-            },
-            "hourly_metrics": {
-                "mae": mae.tolist(),
-                "mape": mape.tolist(),
-                "rmse": rmse.tolist()
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # Save as JSON
-        results_path = save_dir / "evaluation_metrics.json"
-        with open(results_path, 'w') as f:
-            json.dump(results, f, indent=4)
-        logging.info(f"Evaluation metrics saved to {results_path}")
-        
-        # Save sample predictions as CSV
-        sample_idx = np.random.choice(len(y_true), min(100, len(y_true)), replace=False)
-        samples = {
-            "hour": np.tile(np.arange(24), len(sample_idx)),
-            "sample_id": np.repeat(np.arange(len(sample_idx)), 24),
-            "actual": y_true[sample_idx].flatten(),
-            "predicted": y_pred[sample_idx].flatten(),
-            "error": y_pred[sample_idx].flatten() - y_true[sample_idx].flatten()
-        }
-        
-        samples_df = pd.DataFrame(samples)
-        samples_path = save_dir / "sample_predictions.csv"
-        samples_df.to_csv(samples_path, index=False)
-        logging.info(f"Sample predictions saved to {samples_path}")
+    # Plot validation predictions
+    try:
+        plt.figure(figsize=(15, 8))
+        plt.plot(X_val.index, val_actual, label='Actual')
+        plt.plot(X_val.index, val_pred_values, label='XGBoost Forecast')
+        plt.title('Validation Set Prediction vs Actual')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.savefig(plots_dir / "validation_prediction.png")
+        plt.close()
+        logging.info(f"Saved validation prediction plot to {plots_dir / 'validation_prediction.png'}")
+    except Exception as e:
+        logging.error(f"Error saving validation prediction plot: {e}")
+    
+    # Plot a sample week for better visibility
+    if len(val_actual) >= 24*7:
+        try:
+            plt.figure(figsize=(15, 8))
+            plt.plot(X_val.index[:24*7], val_actual[:24*7], label='Actual')
+            plt.plot(X_val.index[:24*7], val_pred_values[:24*7], label='XGBoost Forecast')
+            plt.title('Validation Set Prediction vs Actual (First Week)')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            plt.savefig(plots_dir / "validation_prediction_week.png")
+            plt.close()
+            logging.info(f"Saved weekly validation plot to {plots_dir / 'validation_prediction_week.png'}")
+        except Exception as e:
+            logging.error(f"Error saving weekly validation plot: {e}")
+    
+    logging.info("XGBoost trend model training completed")
+    
+    # Return the trained model and metrics
+    return model, val_metrics
 
-    def _create_asymmetric_huber_loss(self, asymmetry_factor):
-        """Create an asymmetric Huber loss function that penalizes underprediction more than overprediction
+def build_tcn_model(input_shape, output_dim=PREDICTION_HORIZON, is_binary=False, model_type='trend'):
+    """
+    Build a TCN model for time series prediction.
+    
+    Args:
+        input_shape: Shape of input sequences (lookback, num_features)
+        output_dim: Number of output dimensions (prediction horizon)
+        is_binary: Whether this is a binary classification model
+        model_type: Type of model ('peak' or 'valley')
         
-        Args:
-            asymmetry_factor: Factor to multiply loss when underpredicting (y_pred < y_true)
-            
-        Returns:
-            Custom loss function
-        """
-        def asymmetric_huber_loss(y_true, y_pred, delta=1.0):
-            """Custom asymmetric Huber loss that penalizes underprediction more heavily
-            
-            Args:
-                y_true: Ground truth values
-                y_pred: Predicted values
-                delta: Threshold for switching between MSE and MAE (as in Huber loss)
-            """
-            error = y_true - y_pred
-            is_underpredict = K.cast(K.less(y_pred, y_true), K.floatx())
-            
-            # Calculate absolute error
-            abs_error = K.abs(error)
-            
-            # Standard Huber loss calculation
-            huber_loss = K.switch(
-                abs_error <= delta,
-                0.5 * K.square(error),  # MSE for small errors
-                delta * (abs_error - 0.5 * delta)  # MAE for large errors
+    Returns:
+        Compiled model
+    """
+    # Input layer
+    input_layer = Input(shape=input_shape)
+    
+    # Get model-specific parameters
+    if model_type == 'peak':
+        tcn_filters = PEAK_TCN_FILTERS
+        tcn_kernel_size = PEAK_TCN_KERNEL_SIZE
+        tcn_dilations = PEAK_TCN_DILATIONS
+        tcn_nb_stacks = PEAK_TCN_NB_STACKS
+        learning_rate = PEAK_LEARNING_RATE
+    elif model_type == 'valley':
+        tcn_filters = VALLEY_TCN_FILTERS
+        tcn_kernel_size = VALLEY_TCN_KERNEL_SIZE
+        tcn_dilations = VALLEY_TCN_DILATIONS
+        tcn_nb_stacks = VALLEY_TCN_NB_STACKS
+        learning_rate = VALLEY_LEARNING_RATE
+    else:
+        # Default to peak model parameters if not specified
+        tcn_filters = PEAK_TCN_FILTERS
+        tcn_kernel_size = PEAK_TCN_KERNEL_SIZE
+        tcn_dilations = PEAK_TCN_DILATIONS
+        tcn_nb_stacks = PEAK_TCN_NB_STACKS
+        learning_rate = PEAK_LEARNING_RATE
+    
+    # TCN layer
+    tcn_layer = TCN(
+        nb_filters=tcn_filters,
+        kernel_size=tcn_kernel_size,
+        nb_stacks=tcn_nb_stacks,
+        dilations=tcn_dilations,
+        padding='causal',
+        use_skip_connections=True,
+        dropout_rate=DROPOUT_RATE,
+        return_sequences=False if model_type != 'valley' else True,  # For valley model, return sequences for attention
+        activation='relu',
+        kernel_initializer='he_normal',
+        use_batch_norm=True,
+        use_layer_norm=False
+    )(input_layer)
+    
+    # For valley model, add attention mechanism to focus on relevant parts of the sequence
+    if model_type == 'valley':
+        # Apply attention mechanism
+        # Simple self-attention implementation
+        attention = Dense(1, activation='tanh')(tcn_layer)  # (batch, seq_len, 1)
+        attention = Flatten()(attention)  # (batch, seq_len)
+        attention_weights = Activation('softmax')(attention)  # (batch, seq_len)
+        
+        # Apply attention weights to TCN output
+        expanded_weights = Reshape((input_shape[0], 1))(attention_weights)  # (batch, seq_len, 1)
+        weighted_output = Multiply()([tcn_layer, expanded_weights])  # (batch, seq_len, nb_filters)
+        
+        # Replace Lambda layer with a more serialization-friendly approach using TensorFlow ops directly
+        # Use the custom GlobalSumPooling1D layer defined at module level
+        x = GlobalSumPooling1D()(weighted_output)
+        
+        # Add extra dense layer with strong regularization
+        x = Dense(tcn_filters, activation='relu')(x)
+        x = BatchNormalization()(x)
+        x = Dropout(DROPOUT_RATE * 1.5)(x)  # Increase dropout for valley model
+    else:
+        # For other models, standard architecture
+        x = Dropout(DROPOUT_RATE)(tcn_layer)
+    
+    # Output layer
+    if is_binary:
+        # For binary classification (peak/valley detection)
+        output_activation = 'sigmoid'
+        output_dim = 1  # Always 1 for binary classification
+    else:
+        # For regression (trend prediction)
+        output_activation = 'linear'
+    
+    # Add final dense layers
+    if model_type == 'valley':
+        # More specialized for valley detection with extra layer
+        x = Dense(max(32, tcn_filters // 2), activation='relu')(x)
+        x = BatchNormalization()(x)
+        x = Dropout(DROPOUT_RATE)(x)
+        outputs = Dense(output_dim, activation=output_activation)(x)
+    else:
+        # Simpler architecture for other models with regularization
+        outputs = Dense(output_dim, activation=output_activation, 
+                        kernel_regularizer=l1_l2(l1=L1_REG, l2=L2_REG))(x)
+    
+    # Create and compile model
+    model = Model(inputs=input_layer, outputs=outputs)
+    
+    # Logging model architecture
+    logging.info(f"Built {model_type} model with input shape {input_shape}")
+    
+    return model
+
+def get_focal_loss(alpha=0.75, gamma=3.0):
+    """
+    Create a focal loss function for imbalanced classification.
+    
+    Args:
+        alpha: Weighting factor for the rare class (higher value gives more weight to valley class)
+        gamma: Focusing parameter to down-weight easy examples (higher value focuses more on hard examples)
+        
+    Returns:
+        Focal loss function
+    """
+    def focal_loss(y_true, y_pred):
+        # Clip the prediction value to prevent extreme cases
+        epsilon = K.epsilon()
+        y_pred = K.clip(y_pred, epsilon, 1. - epsilon)
+        
+        # Calculate cross entropy
+        cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
+        
+        # Apply class weighting
+        class_weights = y_true * alpha + (1 - y_true) * (1 - alpha)
+        
+        # Calculate focal loss with modulating factor based on how correct the prediction is
+        # This down-weights easy examples and focuses on hard ones
+        p_t = y_true * y_pred + (1 - y_true) * (1 - y_pred)
+        modulating_factor = K.pow(1. - p_t, gamma)
+        
+        # Combine all factors
+        loss = class_weights * modulating_factor * cross_entropy
+        
+        # Return mean loss
+        return K.mean(loss)
+    
+    # Include parameters in the function name for better tracking
+    focal_loss.__name__ = f'focal_loss_a{alpha}_g{gamma}'
+    return focal_loss
+
+def get_recall_oriented_loss(false_neg_weight=8.0, false_pos_weight=1.5):
+    """
+    Create a custom loss function that prioritizes recall over precision.
+    This is an enhanced version with higher false negative penalty.
+    
+    Args:
+        false_neg_weight: Weight for false negatives (missed valleys) - higher means better recall
+        false_pos_weight: Weight for false positives (false alarms) - lower means more permissive predictions
+        
+    Returns:
+        Recall-oriented loss function
+    """
+    def recall_oriented_loss(y_true, y_pred):
+        # Clip predictions for numerical stability
+        epsilon = K.epsilon()
+        y_pred = K.clip(y_pred, epsilon, 1 - epsilon)
+        
+        # Calculate binary cross entropy
+        bce = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
+        
+        # Apply weights based on error type:
+        # - False Negatives (y_true=1, y_pred=0): Heavily penalized for better recall
+        # - False Positives (y_true=0, y_pred=1): Less penalized to allow more predictions
+        weights = y_true * false_neg_weight * (1 - y_pred) + (1 - y_true) * false_pos_weight * y_pred
+        
+        # Combine weights with base loss
+        weighted_loss = weights * bce
+        
+        # Return mean loss
+        return K.mean(weighted_loss)
+    
+    # Include parameters in function name for better tracking
+    recall_oriented_loss.__name__ = f'recall_loss_fn{false_neg_weight}_fp{false_pos_weight}'
+    return recall_oriented_loss
+
+def train_peak_valley_model(data, model_type, production_mode=False):
+    """
+    Train the peak or valley detection model.
+    
+    Args:
+        data: Dictionary with training data
+        model_type: 'peak' or 'valley'
+        production_mode: If True, use all available data for training
+        
+    Returns:
+        Trained model and training history
+    """
+    logging.info(f"Training {model_type} detection model...")
+    
+    if production_mode:
+        logging.info("PRODUCTION MODE: Using all available data for training")
+    
+    # Get the data
+    X_train = data['X_train']
+    y_train = data['y_train']
+    
+    # Only access validation data when not in production mode
+    if not production_mode:
+        X_val = data['X_val']
+        y_val = data['y_val']
+    
+    # Determine the model directory and parameters
+    if model_type == 'peak':
+        model_dir = PEAK_MODEL_DIR
+        model_name = 'peak_model'
+        epochs = PEAK_EPOCHS
+        batch_size = PEAK_BATCH_SIZE
+        early_stopping_patience = PEAK_EARLY_STOPPING_PATIENCE
+    else:  # valley
+        model_dir = VALLEY_MODEL_DIR
+        model_name = 'valley_model'
+        epochs = VALLEY_EPOCHS
+        batch_size = VALLEY_BATCH_SIZE
+        early_stopping_patience = VALLEY_EARLY_STOPPING_PATIENCE
+        # Valley models ALWAYS use recall-oriented loss
+        logging.info("Valley model: Using recall-oriented loss for better valley detection")
+        
+        # Generate valley label validation plots when training valley model
+        logging.info("Generating valley label validation plots...")
+        validation_plots_dir = model_dir / "valley_validation"
+        validation_plots_dir.mkdir(parents=True, exist_ok=True)
+        plot_valley_labels(data['df'], output_dir=validation_plots_dir, num_samples=5, days_per_sample=14)
+    
+    # Save model artifacts early - before training begins
+    feature_names = data['feature_names']
+    feature_scaler = data['feature_scaler']
+    thresholds = data['thresholds']
+    
+    # Save feature list
+    with open(model_dir / f"feature_list_{model_name}.json", 'w') as f:
+        json.dump(feature_names, f)
+    logging.info(f"Saved feature list with {len(feature_names)} features")
+    
+    # Save feature scaler
+    if feature_scaler:
+        joblib.dump(feature_scaler, model_dir / f"feature_scaler_{model_name}.save")
+        logging.info("Saved feature scaler")
+    
+    # Save price thresholds
+    if thresholds:
+        with open(model_dir / "thresholds.json", 'w') as f:
+            json.dump(thresholds, f)
+        logging.info(f"Saved thresholds: {thresholds}")
+    
+    # Input shape calculation
+    _, lookback, n_features = X_train.shape
+    input_shape = (lookback, n_features)
+    
+    # Build model
+    model = build_tcn_model(input_shape, output_dim=1, is_binary=True, model_type=model_type)
+    
+    # Class weights to handle imbalance
+    class_ratio = np.mean(y_train)
+    if class_ratio < 0.5:
+        # More 0s than 1s - class 1 is minority
+        weight_for_0 = 1
+        # Make weight for valley class (1) much higher - increase from the original calculation
+        if model_type == 'valley':
+            # Apply the multiplier from config to make the valley class weight even higher
+            weight_for_1 = (1 - class_ratio) / class_ratio * VALLEY_CLASS_WEIGHT_MULTIPLIER
+            logging.info(f"Using aggressive class weighting for valley model: {weight_for_1:.2f}x weight for valleys")
+        else:
+            weight_for_1 = (1 - class_ratio) / class_ratio
+    else:
+        # More 1s than 0s - class 0 is minority
+        weight_for_1 = 1
+        weight_for_0 = class_ratio / (1 - class_ratio)
+    
+    class_weight = {0: weight_for_0, 1: weight_for_1}
+    logging.info(f"Class weights: {class_weight}")
+    
+    # Set up callbacks
+    callbacks = []
+    
+    # Only use validation-dependent callbacks when not in production mode
+    if not production_mode:
+        callbacks.extend([
+            EarlyStopping(
+                monitor='val_loss',
+                patience=early_stopping_patience,
+                verbose=1,
+                restore_best_weights=True
+            ),
+            ModelCheckpoint(
+                filepath=model_dir / f"best_{model_name}.keras",
+                monitor='val_loss',
+                save_best_only=True,
+                verbose=1
+            ),
+            ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.5,
+                patience=10,
+                min_lr=1e-6,
+                verbose=1
             )
-            
-            # Apply asymmetry factor to underpredictions
-            asymmetric_factor = 1.0 + (asymmetry_factor - 1.0) * is_underpredict
-            weighted_loss = huber_loss * asymmetric_factor
-            
-            return K.mean(weighted_loss)
-            
-        # Set the name for the loss function
-        asymmetric_huber_loss.__name__ = 'asymmetric_huber_loss'
+        ])
+    else:
+        # In production mode, use training metrics instead of validation
+        callbacks.extend([
+            ModelCheckpoint(
+                filepath=model_dir / f"best_{model_name}.keras",
+                monitor='loss',  # Monitor training loss
+                save_best_only=True,  # Still save only the best model here
+                save_weights_only=False,
+                verbose=1
+            ),
+            ReduceLROnPlateau(
+                monitor='loss',  # Monitor training loss
+                factor=0.5,
+                patience=5,
+                min_lr=1e-6,
+                verbose=1
+            )
+        ])
+        logging.info("Added production-mode callbacks")
+    
+    # Always include TensorBoard callback
+    callbacks.append(
+        TensorBoard(
+            log_dir=model_dir / 'logs',
+            histogram_freq=1,
+            write_graph=True,
+            update_freq='epoch'
+        )
+    )
+    
+    # For valley model, add a callback to save the model with best recall
+    if model_type == 'valley':
+        # Add a callback to save the model with the best recall
+        callbacks.append(
+            ModelCheckpoint(
+                filepath=model_dir / f"best_recall_{model_name}.keras",
+                monitor='recall',
+                mode='max',  # Higher recall is better
+                save_best_only=True,
+                verbose=1
+            )
+        )
+        logging.info("Added callback to save model with best recall")
         
-        logging.info(f"Created asymmetric Huber loss with asymmetry factor: {asymmetry_factor}")
-        return asymmetric_huber_loss
-
-def main():
-    # Set up argument parser
-    parser = argparse.ArgumentParser(description='Train electricity price prediction model using LSTM architecture')
-    parser.add_argument('mode', choices=['production', 'evaluation'], 
-                        help='Training mode: "production" uses all data for deployment, "evaluation" creates train/validation/test split for model assessment without running evaluation')
-    parser.add_argument('--window', type=int, default=None,
-                        help='Override window size (past hours to use for prediction). Default is from config.')
-    args = parser.parse_args()
-
-    # Set training mode based on argument
-    train_from_all_data = args.mode == 'production'
+        # Also add a callback to save the model with best F1 score
+        # This optimizes for the balance between precision and recall
+        callbacks.append(
+            ModelCheckpoint(
+                filepath=model_dir / f"best_f1_{model_name}.keras",
+                monitor='val_precision',  # We'll use this as a proxy for F1
+                mode='max',  # Higher F1 is better
+                save_best_only=True,
+                verbose=1
+            )
+        )
+        logging.info("Added callback to save model with best precision (proxy for F1)")
     
-    # Log the training mode
-    logging.info(f"\n=== Training {args.mode.capitalize()} Model ===")
-    logging.info(f"Training with {'all available' if train_from_all_data else 'train/val/test split'} data")
+    # Compile model based on model type
+    if model_type == 'valley':
+        # Valley models ALWAYS use recall-oriented loss
+        logging.info("Using recall-oriented loss function to prioritize valley detection")
+        # Use a high false negative penalty to improve recall, with values from config
+        recall_loss_fn = get_recall_oriented_loss(FALSE_NEG_WEIGHT, FALSE_POS_WEIGHT)
+        model.compile(
+            optimizer=Adam(learning_rate=VALLEY_LEARNING_RATE),
+            loss=recall_loss_fn,
+            metrics=['accuracy', Precision(), Recall(), AUC()]
+        )
+    else:
+        # Peak models use standard binary crossentropy
+        model.compile(
+            optimizer=Adam(learning_rate=PEAK_LEARNING_RATE),
+            loss=BinaryCrossentropy(),
+            metrics=['accuracy', Precision(), Recall(), AUC()]
+        )
     
-    # Initialize and train the model
-    trainer = PriceModelTrainer(window_size=args.window, train_from_all_data=train_from_all_data)
+    # Train the model with or without validation data
+    fit_args = {
+        'x': X_train,
+        'y': y_train,
+        'epochs': epochs,
+        'batch_size': batch_size,
+        'callbacks': callbacks,
+        'class_weight': class_weight,
+        'verbose': 1
+    }
+    
+    # Only add validation data when not in production mode
+    if not production_mode:
+        fit_args['validation_data'] = (X_val, y_val)
+        logging.info(f"Training with validation data (shape: {X_val.shape})")
+    else:
+        logging.info("Training without validation in production mode")
     
     # Train the model
-    model, history, dates = trainer.run_training()
+    history = model.fit(**fit_args)
     
-    logging.info(f"{args.mode.capitalize()} model training complete!")
-    logging.info("Model and scalers have been saved successfully")
-    
-    if args.mode == 'production':
-        logging.info(f"Model saved to: {trainer.saved_dir / trainer.model_name}")
+    # Log training results
+    if not production_mode and 'val_loss' in history.history:
+        val_loss = history.history['val_loss']
+        best_epoch = np.argmin(val_loss) + 1
+        best_val_loss = val_loss[best_epoch - 1]
+        logging.info(f"Training completed. Best validation loss {best_val_loss:.4f} at epoch {best_epoch}")
+        
+        # Find optimal probability threshold using Precision-Recall curve (if validation data available)
+        if model_type == 'valley':
+            try:
+                # Get validation predictions
+                val_preds = model.predict(X_val, verbose=0)
+                
+                # Calculate precision and recall at various thresholds
+                from sklearn.metrics import precision_recall_curve, f1_score
+                precision, recall, thresholds = precision_recall_curve(y_val, val_preds)
+                
+                # Calculate F1 score for each threshold
+                f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
+                
+                # Find threshold with best F1 score
+                best_f1_idx = np.argmax(f1_scores)
+                best_threshold = thresholds[best_f1_idx] if best_f1_idx < len(thresholds) else 0.5
+                
+                # Save the threshold
+                with open(model_dir / f"optimal_threshold.json", 'w') as f:
+                    json.dump({"threshold": float(best_threshold), "f1_score": float(f1_scores[best_f1_idx])}, f)
+                
+                logging.info(f"Optimal probability threshold: {best_threshold:.4f} with F1 score: {f1_scores[best_f1_idx]:.4f}")
+                
+                # Plot Precision-Recall curve
+                import matplotlib.pyplot as plt
+                plt.figure(figsize=(10, 8))
+                plt.plot(recall, precision, 'b-', linewidth=2)
+                plt.scatter(recall[best_f1_idx], precision[best_f1_idx], marker='o', color='red', s=100, 
+                           label=f'Best threshold: {best_threshold:.4f}, F1: {f1_scores[best_f1_idx]:.4f}')
+                
+                # Plot random baseline
+                plt.plot([0, 1], [np.mean(y_val), np.mean(y_val)], 'r--', linewidth=1, label=f'Random ({np.mean(y_val):.4f})')
+                
+                plt.title('Precision-Recall Curve for Valley Detection')
+                plt.xlabel('Recall')
+                plt.ylabel('Precision')
+                plt.grid(True, alpha=0.3)
+                plt.legend()
+                plt.savefig(model_dir / "precision_recall_curve.png")
+                plt.close()
+                
+                logging.info("Generated Precision-Recall curve for threshold selection")
+            except Exception as e:
+                logging.error(f"Error generating PR curve: {e}")
     else:
-        logging.info(f"Model saved to: {trainer.saved_dir / trainer.model_name}")
-        logging.info(f"Test data saved to: {trainer.test_data_dir}")
-        logging.info("\nTo evaluate the model, run: python evaluate.py")
+        # For production mode, track best epoch based on training loss
+        train_loss = history.history['loss']
+        best_epoch = np.argmin(train_loss) + 1
+        best_train_loss = train_loss[best_epoch - 1]
+        logging.info(f"Training completed in production mode. Best training loss {best_train_loss:.4f} at epoch {best_epoch}")
+        
+        # Create a record of training progress
+        training_summary = {
+            "best_epoch": int(best_epoch),
+            "best_training_loss": float(best_train_loss),
+            "epochs_trained": len(train_loss),
+            "training_losses": [float(loss) for loss in train_loss],
+            "final_loss": float(train_loss[-1]),
+            "training_accuracy": [float(acc) for acc in history.history.get('accuracy', [])],
+            "date_trained": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # Save training summary
+        with open(model_dir / f"{model_name}_training_summary.json", 'w') as f:
+            json.dump(training_summary, f, indent=4)
+        logging.info(f"Saved training summary to {model_dir / f'{model_name}_training_summary.json'}")
+    
+    # Save training history
+    with open(model_dir / f"{model_name}_history.json", 'w') as f:
+        # Convert numpy values to float for JSON serialization
+        history_dict = {}
+        for k, v in history.history.items():
+            history_dict[k] = [float(val) for val in v]
+        json.dump(history_dict, f)
+    
+    # Save the final model
+    final_model_path = model_dir / f"final_{model_name}.keras"
+    model.save(final_model_path)
+    logging.info(f"Saved model to {final_model_path}")
+    
+    # In production mode, also save as "best" model since we don't have model checkpoints
+    if production_mode:
+        best_model_path = model_dir / f"best_{model_name}.keras"
+        model.save(best_model_path)
+        logging.info(f"In production mode, also saved model as {best_model_path}")
+    
+    # Evaluate model on validation data
+    if not production_mode:
+        val_loss, val_acc, val_precision, val_recall, val_auc = model.evaluate(X_val, y_val, verbose=0)
+        logging.info(f"Validation metrics - Loss: {val_loss:.4f}, Accuracy: {val_acc:.4f}, "
+                    f"Precision: {val_precision:.4f}, Recall: {val_recall:.4f}, AUC: {val_auc:.4f}")
+    
+    # Return model and training history
+    return model, history
+
+def create_directories():
+    """Create all necessary directories for model training and evaluation."""
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    TREND_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Create evaluation directories
+    EVAL_DIR.mkdir(parents=True, exist_ok=True)
+    TREND_EVAL_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Create subdirectories for detailed visualizations
+    (TREND_EVAL_DIR / "weekly").mkdir(parents=True, exist_ok=True)
+    (TREND_EVAL_DIR / "daily").mkdir(parents=True, exist_ok=True)
+    (TREND_EVAL_DIR / "monthly").mkdir(parents=True, exist_ok=True)
+    
+    logging.info("Created all necessary directories")
+
+def load_and_merge_data():
+    """Load and merge data from various sources with proper date alignment."""
+    logging.info("Loading and merging data...")
+    
+    # Load price data (our target variable source)
+    try:
+        price_df = pd.read_csv(SE3_PRICES_FILE)
+        if 'HourSE' in price_df.columns:
+            price_df['datetime'] = pd.to_datetime(price_df['HourSE'], utc=True)
+            price_df.set_index('datetime', inplace=True)
+        else:
+            price_df.index = pd.to_datetime(price_df.index, utc=True)
+        
+        logging.info(f"Loaded price data: {price_df.shape}")
+        logging.info(f"Price data date range: {price_df.index.min()} to {price_df.index.max()}")
+        
+        # Get the valid date range from price data - this will be our reference
+        min_date = price_df.index.min()
+        max_date = price_df.index.max()
+        
+        # Only keep rows with valid target values
+        price_df = price_df.dropna(subset=[TARGET_VARIABLE])
+        
+        if len(price_df) < len(price_df.index):
+            logging.info(f"Removed {len(price_df.index) - len(price_df)} rows with missing target values")
+            # Update date range after dropping NAs
+            min_date = price_df.index.min()
+            max_date = price_df.index.max()
+            
+        # Create merged dataframe starting with price data
+        merged_df = price_df.copy()
+        
+    except Exception as e:
+        logging.error(f"Error loading price data: {e}")
+        raise ValueError(f"Could not load price data: {e}")
+
+    # Load and merge grid data
+    try:
+        grid_df = pd.read_csv(SWEDEN_GRID_FILE)
+        if 'datetime' in grid_df.columns:
+            grid_df['datetime'] = pd.to_datetime(grid_df['datetime'], utc=True)
+            grid_df.set_index('datetime', inplace=True)
+        else:
+            grid_df.index = pd.to_datetime(grid_df.index, utc=True)
+        
+        # Filter grid data to match price data date range
+        grid_df = grid_df.loc[(grid_df.index >= min_date) & (grid_df.index <= max_date)]
+        logging.info(f"Grid data range after trimming: {grid_df.index.min()} to {grid_df.index.max()}")
+        
+        # Merge grid features
+        merged_df = merged_df.join(grid_df[GRID_FEATURES], how='left')
+        logging.info(f"Merged grid data: {merged_df.shape}")
+        
+    except Exception as e:
+        logging.warning(f"Error loading grid data: {e}")
+        logging.warning("Continuing without grid data")
+
+    # Load and merge time features
+    try:
+        time_df = pd.read_csv(TIME_FEATURES_FILE)
+        if 'Unnamed: 0' in time_df.columns:
+            time_df['datetime'] = pd.to_datetime(time_df['Unnamed: 0'], utc=True)
+            time_df.drop('Unnamed: 0', axis=1, inplace=True)
+            time_df.set_index('datetime', inplace=True)
+        else:
+            time_df.index = pd.to_datetime(time_df.index, utc=True)
+        
+        # Filter time data to match price data date range
+        time_df = time_df.loc[(time_df.index >= min_date) & (time_df.index <= max_date)]
+        
+        # Merge time features
+        merged_df = merged_df.join(time_df[TIME_FEATURES], how='left')
+        logging.info(f"Merged time features: {merged_df.shape}")
+        
+    except Exception as e:
+        logging.warning(f"Error loading time features: {e}")
+        logging.warning("Continuing without time features")
+
+    # Load and merge holidays data
+    try:
+        holidays_df = pd.read_csv(HOLIDAYS_FILE)
+        if 'Unnamed: 0' in holidays_df.columns:
+            holidays_df['datetime'] = pd.to_datetime(holidays_df['Unnamed: 0'], utc=True)
+            holidays_df.drop('Unnamed: 0', axis=1, inplace=True)
+            holidays_df.set_index('datetime', inplace=True)
+        else:
+            holidays_df.index = pd.to_datetime(holidays_df.index, utc=True)
+        
+        # Filter holidays data to match price data date range
+        holidays_df = holidays_df.loc[(holidays_df.index >= min_date) & (holidays_df.index <= max_date)]
+        
+        # Merge holiday features
+        merged_df = merged_df.join(holidays_df[HOLIDAY_FEATURES], how='left')
+        logging.info(f"Merged holiday data: {merged_df.shape}")
+        
+    except Exception as e:
+        logging.warning(f"Error loading holidays data: {e}")
+        logging.warning("Continuing without holidays data")
+
+    # Load and merge weather data
+    try:
+        weather_df = pd.read_csv(WEATHER_DATA_FILE)
+        if 'date' in weather_df.columns:
+            weather_df['datetime'] = pd.to_datetime(weather_df['date'], utc=True)
+            weather_df.drop('date', axis=1, inplace=True)
+            weather_df.set_index('datetime', inplace=True)
+        else:
+            weather_df.index = pd.to_datetime(weather_df.index, utc=True)
+        
+        # Filter weather data to match price data date range
+        weather_df = weather_df.loc[(weather_df.index >= min_date) & (weather_df.index <= max_date)]
+        logging.info(f"Weather data range after trimming: {weather_df.index.min()} to {weather_df.index.max()}")
+        
+        # Merge weather features
+        merged_df = merged_df.join(weather_df[WEATHER_FEATURES], how='left')
+        logging.info(f"Merged weather data: {merged_df.shape}")
+        
+    except Exception as e:
+        logging.warning(f"Error loading weather data: {e}")
+        logging.warning("Continuing without weather data")
+    
+    # Sort by datetime
+    merged_df.sort_index(inplace=True)
+    
+    # Check for remaining missing values
+    missing_values = merged_df.isna().sum()
+    if missing_values.any():
+        logging.warning(f"Found missing values after merging: {missing_values[missing_values > 0]}")
+    else:
+        logging.info("No missing values in merged dataframe - all data ranges properly aligned")
+    
+    # Handle any remaining missing values
+    for col in merged_df.columns:
+        if merged_df[col].isnull().any():
+            # Count missing values
+            missing_count = merged_df[col].isnull().sum()
+            missing_percent = (missing_count / len(merged_df)) * 100
+            
+            # Log detailed information about the gaps
+            logging.warning(f"Missing values in '{col}': {missing_count} rows ({missing_percent:.2f}%)")
+            
+            # Find contiguous gaps (runs of NaN values)
+            is_null = merged_df[col].isnull()
+            
+            # Find the indices where is_null changes (boundaries of runs)
+            null_run_starts = is_null[~is_null.shift(1, fill_value=False)].index
+            null_run_ends = is_null[~is_null.shift(-1, fill_value=False)].index
+            
+            # Pair start and end indices
+            null_runs = list(zip(null_run_starts, null_run_ends))
+            
+            # Log the largest gaps
+            if len(null_runs) > 0:
+                # Calculate run lengths
+                run_lengths = [(end - start).total_seconds() / 3600 + 1 for start, end in null_runs]
+                
+                # Sort runs by length (descending)
+                sorted_runs = sorted(zip(null_runs, run_lengths), key=lambda x: x[1], reverse=True)
+                
+                # Log the 5 largest gaps
+                logging.warning(f"Top gaps in '{col}':")
+                for i, ((start, end), length) in enumerate(sorted_runs[:5]):
+                    logging.warning(f"  Gap #{i+1}: {start} to {end} ({int(length)} hours)")
+                
+                # Log summary stats about all gaps
+                if len(null_runs) > 5:
+                    logging.warning(f"  ... and {len(null_runs)-5} more gaps")
+                
+                logging.warning(f"  Median gap size: {np.median(run_lengths):.1f} hours")
+                logging.warning(f"  Average gap size: {np.mean(run_lengths):.1f} hours")
+            
+            # Choose appropriate fill method based on column type
+            if merged_df[col].dtype.kind in 'iufc':  # Numeric
+                merged_df[col] = merged_df[col].ffill().bfill()
+                logging.info(f"Filled missing values in {col} with forward/backward fill")
+            else:
+                merged_df[col] = merged_df[col].ffill().fillna('')
+                logging.info(f"Filled missing values in {col} with forward fill")
+    
+    logging.info(f"Final merged dataframe shape: {merged_df.shape}")
+    logging.info(f"Date range: {merged_df.index.min()} to {merged_df.index.max()}")
+    
+    return merged_df
+
+def load_data(test_mode=False):
+    """
+    Load and prepare data for model training.
+    
+    Args:
+        test_mode: If True, use a smaller dataset for testing
+        
+    Returns:
+        Dictionary with prepared data for model training
+    """
+    logging.info("Loading data...")
+    
+    # Load and merge all data sources with alignment
+    df = load_and_merge_data()
+    
+    # In test mode, use a smaller dataset
+    if test_mode:
+        # Use only the most recent 3 months for quick testing
+        test_period = timedelta(days=90)
+        df = df.iloc[-int(24*test_period.days):]
+        logging.warning(f"Test mode: Using reduced dataset with {len(df)} rows")
+    
+    # Train/validation/test split
+    train_size = int(len(df) * (1 - VALIDATION_SPLIT - TEST_SPLIT))
+    val_size = int(len(df) * VALIDATION_SPLIT)
+    
+    train_df = df.iloc[:train_size].copy()
+    val_df = df.iloc[train_size:train_size+val_size].copy()
+    test_df = df.iloc[train_size+val_size:].copy()
+    
+    # Log split sizes
+    logging.info(f"Train size: {len(train_df)}, from {train_df.index[0]} to {train_df.index[-1]}")
+    logging.info(f"Validation size: {len(val_df)}, from {val_df.index[0]} to {val_df.index[-1]}")
+    logging.info(f"Test size: {len(test_df)}, from {test_df.index[0]} to {test_df.index[-1]}")
+    
+    # Create target variables
+    train_target = train_df[TARGET_VARIABLE]
+    val_target = val_df[TARGET_VARIABLE]
+    test_target = test_df[TARGET_VARIABLE]
+    
+    # Create combined target for production mode (all data)
+    combined_target = df[TARGET_VARIABLE]
+    
+    # Return all prepared data
+    return {
+        'full_df': df,
+        'train_df': train_df,
+        'val_df': val_df,
+        'test_df': test_df,
+        'train_target': train_target,
+        'val_target': val_target,
+        'test_target': test_target,
+        'combined_target': combined_target  # Add combined target for production mode
+    }
+
+def add_lag_features(df, target_col):
+    """Add lagged features of the target variable."""
+    logging.info("Adding lag features for trend detection...")
+    result_df = df.copy()
+    
+    # Create lag features for different time horizons
+    for lag in PRICE_LAG_HOURS:
+        col_name = f"{target_col}_lag_{lag}h"
+        result_df[col_name] = result_df[target_col].shift(lag)
+    
+    # Add momentum features (price differences) for valley detection
+    result_df['price_diff_1h'] = result_df[target_col].diff(1)
+    result_df['price_diff_3h'] = result_df[target_col].diff(3)
+    result_df['price_diff_6h'] = result_df[target_col].diff(6)
+    
+    # Calculate a simple price momentum (acceleration) feature
+    result_df['price_momentum'] = result_df['price_diff_1h'] - result_df['price_diff_1h'].shift(1)
+    
+    # Create a detrended price series based on 24h moving average
+    result_df['price_detrended'] = result_df[target_col] - result_df[target_col].rolling(window=24, center=True).mean()
+    
+    # Fill NA values that result from lag creation
+    numeric_cols = result_df.select_dtypes(include=['float64', 'int64']).columns
+    for col in numeric_cols:
+        if result_df[col].isnull().any():
+            result_df[col] = result_df[col].fillna(method='bfill').fillna(method='ffill')
+    
+    logging.info(f"Added {len(PRICE_LAG_HOURS)} lag features and 4 momentum/detrended features")
+    return result_df
+
+def main():
+    """Main function to train electricity price forecasting models."""
+    # Parse arguments
+    parser = argparse.ArgumentParser(description='Train electricity price forecasting models')
+    parser.add_argument('--model', type=str, choices=['trend', 'peak', 'valley'], default='trend',
+                      help='Model type: trend (XGBoost), peak (TCN), or valley (TCN)')
+    parser.add_argument('--test-mode', action='store_true',
+                      help='Run in test mode with reduced dataset')
+    parser.add_argument('--production', action='store_true',
+                      help='Train with all available data for production use')
+    args = parser.parse_args()
+    
+    # Configure logging
+    configure_logging()
+    
+    # Create necessary directories
+    create_directories()
+    
+    # Check if we're in test mode
+    test_mode = args.test_mode
+    if test_mode:
+        logging.warning("Running in TEST MODE with reduced dataset!")
+    
+    # Check if we're in production mode
+    production_mode = args.production
+    if production_mode:
+        logging.info("Running in PRODUCTION MODE with all available data!")
+    
+    try:
+        # Load the data
+        data = load_data(test_mode=test_mode)
+        
+        # Train the selected model
+        if args.model == 'trend':
+            logging.info("=== Starting trend model training (XGBoost) ===")
+            print("\n==================================")
+            print("=== TRAINING TREND MODEL (XGBoost) ===")
+            print("==================================\n")
+            model, metrics = train_trend_model(data, production_mode=production_mode)
+            logging.info(f"Trend model training complete with metrics: {metrics}")
+            print(f"\nTrend model training complete with validation metrics:")
+            for k, v in metrics.items():
+                print(f"  {k}: {v:.4f}")
+        
+        elif args.model == 'peak':
+            logging.info("=== Starting peak model training (TCN) ===")
+            print("\n==================================")
+            print("=== TRAINING PEAK MODEL (TCN) ===")
+            print("==================================\n")
+            peak_data = prepare_peak_valley_data(target_col='is_price_peak', production_mode=production_mode)
+            model, history = train_peak_valley_model(peak_data, 'peak', production_mode=production_mode)
+            logging.info(f"Peak model training complete")
+            
+        elif args.model == 'valley':
+            logging.info("=== Starting valley model training (TCN) ===")
+            print("\n==================================")
+            print("=== TRAINING VALLEY MODEL (TCN) ===")
+            print("==================================\n")
+            
+            # Valley model always uses SMOTE and recall-oriented loss
+            logging.info("Valley model always uses SMOTE for class balancing")
+            print("SMOTE oversampling enabled for balanced class distribution")
+            logging.info("Valley model always uses recall-oriented loss for better handling of class imbalance")
+            print("Using recall-oriented loss for better valley detection")
+            
+            # Get valley data with SMOTE always enabled
+            valley_data = prepare_peak_valley_data(
+                target_col='is_price_valley', 
+                production_mode=production_mode
+            )
+            
+            # Create validation plots for valley labels before training
+            validation_plots_dir = VALLEY_MODEL_DIR / "valley_validation"
+            validation_plots_dir.mkdir(parents=True, exist_ok=True)
+            plot_valley_labels(valley_data['df'], output_dir=validation_plots_dir, num_samples=5, days_per_sample=14)
+            logging.info(f"Generated valley label validation plots in {validation_plots_dir}")
+            
+            model, history = train_peak_valley_model(
+                valley_data, 
+                'valley', 
+                production_mode=production_mode
+            )
+            logging.info(f"Valley model training complete")
+        
+        logging.info(f"{args.model} model training completed successfully")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Error in training process: {e}")
+        logging.error(traceback.format_exc())
+        print(f"\nError during training: {e}")
+        return False
 
 if __name__ == "__main__":
-    main()
-
-
+    main() 

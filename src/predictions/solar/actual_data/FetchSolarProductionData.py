@@ -25,7 +25,7 @@ ENTITY_ID = "sensor.solar_generated_power_2"
 RESOLUTION = "hourly"
 OUTPUT_FILE = "ActualSolarProductionData.csv"
 CURRENT_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path("Data/HomeAssistant")
+DATA_DIR = Path(__file__).resolve().parents[4] / "data/HomeAssistant"
 DOWNLOAD_SCRIPT = Path(__file__).resolve().parents[3] / "download_entity_data_from_HA.py"
 
 def main():

@@ -16,8 +16,7 @@ solar_prediction_script = "C:/_Projects/home-energy-ai/src/predictions/solar/mak
 # This script fetches the price related data from ElectricityMaps API (grid features) and mgrey.se/espot API (current e-spot price)
 price_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py"
 
-
-
+Co2GasCoal_update_script = "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py"
 
 
 
@@ -39,7 +38,9 @@ def run_script(script_path, script_name):
         result = subprocess.run(["python", script_path], capture_output=True, text=True, check=True)
         log_message(f"{script_name} completed successfully.")
         log_message(f"Output:\n{result.stdout}")
+        print(f"SUCCESS in {script_name}")
     except subprocess.CalledProcessError as e:
+        print(f"ERROR in {script_name}:\n{e.stderr}")
         log_message(f"ERROR in {script_name}:\n{e.stderr}")
     
 
@@ -53,6 +54,8 @@ log_message(f"\n\n")
 run_script(solar_prediction_script, "Solar Prediction")
 log_message(f"\n\n")
 run_script(price_updateData_script, "Price Data Update")
+log_message(f"\n\n")
+run_script(Co2GasCoal_update_script, "CO2, Gas and Coal Data Update")
 log_message(f"\n\n")
 
 log_message(f"################################## END OF SCRIPT  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ##################################")

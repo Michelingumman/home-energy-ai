@@ -1,0 +1,38 @@
+2025-05-06 14:20:02,371 - INFO - Starting valley model evaluation with 4 weeks of visualizations...
+2025-05-06 14:20:02,371 - INFO - Loading data...
+2025-05-06 14:20:02,454 - INFO - Loaded price data with shape (73007, 11)
+2025-05-06 14:20:02,542 - INFO - Loaded grid data with shape (73132, 19)
+2025-05-06 14:20:02,814 - INFO - Loaded time features with shape (289296, 10)
+2025-05-06 14:20:03,280 - INFO - Loaded holidays data with shape (710017, 4)
+2025-05-06 14:20:03,389 - INFO - Loaded weather data with shape (73080, 6)
+2025-05-06 14:20:06,569 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-06 14:20:06,571 - INFO - Identified 14059 valleys (19.3% of data) using robust valley detection
+2025-05-06 14:20:06,571 - INFO - Final merged data shape: (73007, 65)
+2025-05-06 14:20:06,574 - INFO - Starting valley model evaluation...
+2025-05-06 14:20:06,574 - INFO - Loading valley model...
+2025-05-06 14:20:06,574 - INFO - Loading valley detection model...
+2025-05-06 14:20:06,574 - INFO - Using model from best_valley_model.keras
+2025-05-06 14:20:07,573 - WARNING - From C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-05-06 14:20:07,726 - INFO - Loaded valley model from C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\best_valley_model.keras
+2025-05-06 14:20:07,726 - INFO - Loaded feature list with 27 features
+2025-05-06 14:20:07,727 - INFO - Loaded feature scaler from C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\feature_scaler_valley_model.save
+2025-05-06 14:20:07,727 - INFO - Evaluating valley detection model on validation data...
+2025-05-06 14:20:07,727 - INFO - Using probability threshold: 0.5000
+2025-05-06 14:20:07,727 - INFO - Adding specialized features for valley detection...
+2025-05-06 14:20:07,786 - INFO - Using 672 validation samples for evaluation
+2025-05-06 14:20:08,504 - INFO - Valley detection validation metrics (threshold=0.5000):
+2025-05-06 14:20:08,504 - INFO -   Accuracy: 0.7526
+2025-05-06 14:20:08,504 - INFO -   Precision: 0.3714
+2025-05-06 14:20:08,504 - INFO -   Recall: 0.8784
+2025-05-06 14:20:08,505 - INFO -   F1 Score: 0.5221
+2025-05-06 14:20:08,505 - INFO -   ROC AUC: 0.8797
+2025-05-06 14:20:08,505 - INFO -   Actual valley rate: 0.1538 (74 valleys)
+2025-05-06 14:20:08,505 - INFO -   Predicted valley rate: 0.3638 (175 valleys)
+2025-05-06 14:20:08,505 - INFO - Data dimensions: timestamps 481, predictions (481,), probabilities (481,), actuals (481,), prices (481,)
+2025-05-06 14:20:09,767 - INFO - Generated visualization for week starting 2024-01-08
+2025-05-06 14:20:11,323 - INFO - Generated visualization for week starting 2024-01-15
+2025-05-06 14:20:12,655 - INFO - Generated visualization for week starting 2024-01-22
+2025-05-06 14:20:12,657 - WARNING - Skipping week 2024-01-29 - insufficient data (only 16 hours)
+2025-05-06 14:20:12,661 - INFO - Valley model evaluation complete.
+2025-05-06 14:20:12,665 - INFO - Valley model evaluation completed successfully.

@@ -8,123 +8,41 @@ from dotenv import load_dotenv
 import numpy as np
 import os
 
-project_root = Path(__file__).resolve().parents[3]
-class FeatureConfig:
-    def __init__(self):
-        self.config_path = Path(__file__).parent / "config.json"
-        self.load_config()
-    
-    def load_config(self):
-        """Load the feature configuration from JSON"""
-        with open(self.config_path, 'r') as f:
-            self.config = json.load(f)
-        
-        # Set attributes for easy access
-        self.feature_groups = self.config["feature_groups"]
-        self.metadata = self.config["feature_metadata"]
-        self.model_config = self.config["model_config"]
-        
-        # Set individual feature groups
-        self.price_cols = self.feature_groups["price_cols"]
-        self.grid_cols = self.feature_groups["grid_cols"]
-        self.cyclical_cols = self.feature_groups["cyclical_cols"]
-        self.binary_cols = self.feature_groups["binary_cols"]
-        
-        # Set important metadata
-        self.target_feature = self.metadata["target_feature"]
-        self.feature_order = self.metadata["feature_order"]
-        
-        # Set model configuration
-        self.architecture = self.model_config["architecture"]
-        self.training = self.model_config["training"]
-        self.callbacks = self.model_config["callbacks"]
-        self.data_split = self.model_config["data_split"]
-        self.scaling = self.model_config["scaling"]
-    
-    @property
-    def total_features(self):
-        """Calculate total number of features dynamically"""
-        return len(self.get_all_features())
-    
-    def get_all_features(self):
-        """Get all features in the correct order"""
-        all_features = []
-        for group in self.feature_order:
-            all_features.extend(self.feature_groups[group])
-        return all_features
-    
-    def get_feature_group(self, group_name):
-        """Get features for a specific group"""
-        return self.feature_groups.get(group_name, [])
-    
-    def get_ordered_features(self):
-        """Get all features in the training order with target first"""
-        features = [self.target_feature]  # Target always first
-        features.extend([f for f in self.price_cols if f != self.target_feature])
-        
-        # Add other features in order
-        for group in self.feature_order[1:]:  # Skip price_cols as we handled it
-            features.extend(self.feature_groups[group])
-        
-        return features
-    
-    def verify_features(self, available_features):
-        """Verify that all required features are available"""
-        required_features = set(self.get_all_features())
-        missing_features = required_features - set(available_features)
-        return list(missing_features)
-    
-    def get_model_architecture(self):
-        """Get the model architecture configuration"""
-        return self.architecture
-    
-    def get_training_params(self):
-        """Get training parameters"""
-        return self.training
-    
-    def get_callback_params(self):
-        """Get callback configurations"""
-        return self.callbacks
-    
-    def get_data_split_ratios(self):
-        """Get data split ratios"""
-        return self.data_split
-    
-    def get_scaling_params(self):
-        """Get scaling configurations"""
-        return self.scaling
+# Import from config.py
+from config import (
+    TARGET_VARIABLE, DATA_DIR, SE3_PRICES_FILE, SWEDEN_GRID_FILE,
+    TIME_FEATURES_FILE, HOLIDAYS_FILE, WEATHER_DATA_FILE,
+    GRID_FEATURES, MARKET_FEATURES, PRICE_FEATURES, TIME_FEATURES, HOLIDAY_FEATURES,
+    FEATURE_GROUPS, WEATHER_FEATURES
+)
 
+# Get project root from DATA_DIR
+project_root = DATA_DIR.resolve().parents[1]
 
-
-
-
-
-def update_price_data(project_root):
+def update_price_data():
     """Update the price data from the API and calculate features"""
-    csv_file_path = project_root / 'data' / 'processed' / 'SE3prices.csv'
+    # Use paths from config
+    csv_file_path = DATA_DIR / SE3_PRICES_FILE.name
 
     # Check if the file exists
     if not csv_file_path.exists():
-        df = pd.DataFrame(columns=['HourSE', 'PriceArea', 'SE3_price_ore'])
-        # Start from 7 days ago instead of 1999 to avoid excessive API calls
-        latest_timestamp = pd.Timestamp.now() - timedelta(days=7)
+        df = pd.DataFrame(columns=['HourSE', 'PriceArea', TARGET_VARIABLE])
+        # Start from 30 days ago if creating a new file to avoid excessive API calls
+        latest_timestamp = pd.Timestamp.now() - timedelta(days=30)
+        print(f"Creating new price data file. Starting from {latest_timestamp}")
     else:
         # Read the existing CSV file
         df = pd.read_csv(csv_file_path)
         df['HourSE'] = pd.to_datetime(df['HourSE'])
         
-        # If the file exists but is empty or corrupted, start from 7 days ago
+        # If the file exists but is empty or corrupted, start from 30 days ago
         if df.empty:
-            latest_timestamp = pd.Timestamp.now() - timedelta(days=7)
+            latest_timestamp = pd.Timestamp.now() - timedelta(days=30)
+            print(f"Existing file is empty. Starting from {latest_timestamp}")
         else:
             # Get the latest timestamp from the existing data
             latest_timestamp = df['HourSE'].max()
-            
-            # Ensure we're not going back too far (limit to 7 days ago)
-            seven_days_ago = pd.Timestamp.now() - timedelta(days=7)
-            if latest_timestamp < seven_days_ago:
-                print("Limiting price data update to the last 7 days")
-                latest_timestamp = seven_days_ago
+            print(f"Continuing from latest timestamp in file: {latest_timestamp}")
 
     # Get the current time
     current_time = datetime.now()
@@ -152,7 +70,7 @@ def update_price_data(project_root):
                         new_data.append({
                             'HourSE': f'{next_date_str} {next_hour_str}',
                             'PriceArea': 'SE3',
-                            'SE3_price_ore': hour_data['price_sek'],
+                            TARGET_VARIABLE: hour_data['price_sek'],
                         })
                     else:
                         print(f"No data available for {next_date_str} {next_hour_str}")
@@ -173,11 +91,11 @@ def update_price_data(project_root):
         df = df.sort_values(by="HourSE")
 
         # Calculate features
-        df["price_24h_avg"] = df["SE3_price_ore"].rolling(window=24, min_periods=1).mean()
-        df["price_168h_avg"] = df["SE3_price_ore"].rolling(window=168, min_periods=1).mean()
-        df["price_24h_std"] = df["SE3_price_ore"].rolling(window=24, min_periods=1).std()
-        df["hour_avg_price"] = df.groupby(df["HourSE"].dt.hour)["SE3_price_ore"].transform("mean")
-        df["price_vs_hour_avg"] = df["SE3_price_ore"] / df["hour_avg_price"]
+        df["price_24h_avg"] = df[TARGET_VARIABLE].rolling(window=24, min_periods=1).mean()
+        df["price_168h_avg"] = df[TARGET_VARIABLE].rolling(window=168, min_periods=1).mean()
+        df["price_24h_std"] = df[TARGET_VARIABLE].rolling(window=24, min_periods=1).std()
+        df["hour_avg_price"] = df.groupby(df["HourSE"].dt.hour)[TARGET_VARIABLE].transform("mean")
+        df["price_vs_hour_avg"] = df[TARGET_VARIABLE] / df["hour_avg_price"]
 
         # Save to CSV
         try:
@@ -189,11 +107,10 @@ def update_price_data(project_root):
         print("Price data is already up-to-date.")
 
 
-
-
-def update_grid_data(project_root):
+def update_grid_data():
     """Update the grid data using Electricity Maps API with hourly resolution"""
-    grid_file_path = project_root / 'data' / 'processed' / 'SwedenGrid.csv'
+    # Use path from config
+    grid_file_path = DATA_DIR / SWEDEN_GRID_FILE.name
     
     # Load API key from env file
     dotenv_path = project_root / 'api.env'
@@ -204,9 +121,8 @@ def update_grid_data(project_root):
         print("Error: ELECTRICITYMAPS API key not found in api.env.")
         return
     
-    # Load config to ensure correct columns
-    config = FeatureConfig()
-    grid_cols = config.grid_cols
+    # Use grid columns from feature groups config
+    grid_cols = FEATURE_GROUPS["grid_cols"]
     
     # Define the essential zones for import/export
     zones = {
@@ -215,7 +131,6 @@ def update_grid_data(project_root):
         'NO-NO1': 'Norway connection',
         'DK-DK1': 'Denmark connection',
         'FI': 'Finland connection',
-        'AX': 'Åland connection'
     }
     
     # Define the power sources matching config
@@ -306,7 +221,14 @@ def update_grid_data(project_root):
         # Set datetime as index and ensure it's properly formatted
         if not df.empty:
             df.set_index('datetime', inplace=True)
-            df = df[grid_cols]  # Ensure columns are in correct order
+            
+            # Ensure all required columns are present (initialize with zeros if missing)
+            for col in grid_cols:
+                if col not in df.columns:
+                    df[col] = 0
+            
+            # Select only the columns defined in grid_cols and in the correct order
+            df = df[grid_cols]
             df.sort_index(inplace=True)
             
             # Fill any missing values with 0
@@ -315,82 +237,66 @@ def update_grid_data(project_root):
             # Merge with existing data if it exists and is not empty
             if grid_file_path.exists():
                 try:
-                    existing_df = pd.read_csv(grid_file_path, index_col=0, parse_dates=True)
+                    existing_df = pd.read_csv(grid_file_path)
                     if not existing_df.empty:
-                        # Handle different timestamp formats in existing data
-                        try:
-                            # Convert string index to datetime objects with proper handling
-                            # for timezone information like "2025-04-15 19:00:00+00:00"
-                            existing_df.index = pd.to_datetime(existing_df.index)
-                            
-                            # If timestamps have timezone info, convert to UTC then make naive
-                            if existing_df.index.tzinfo is not None:
-                                existing_df.index = existing_df.index.tz_convert('UTC').tz_localize(None)
-                        except AttributeError:
-                            # Handle case where index elements have mixed timezone info
-                            # Convert each timestamp individually
-                            new_index = []
-                            for ts in existing_df.index:
-                                ts_dt = pd.to_datetime(ts)
-                                if hasattr(ts_dt, 'tzinfo') and ts_dt.tzinfo is not None:
-                                    ts_dt = ts_dt.tz_convert('UTC').tz_localize(None)
-                                new_index.append(ts_dt)
-                            existing_df.index = pd.DatetimeIndex(new_index)
+                        # Ensure datetime column exists and convert to proper datetime
+                        if 'datetime' in existing_df.columns:
+                            existing_df['datetime'] = pd.to_datetime(existing_df['datetime'])
+                            existing_df.set_index('datetime', inplace=True)
+                        else:
+                            # If no datetime column, try using the first column as index
+                            existing_df = pd.read_csv(grid_file_path, index_col=0, parse_dates=True)
                         
-                        # Ensure existing data has all required columns
-                        for col in grid_cols:
-                            if col not in existing_df.columns:
-                                existing_df[col] = 0
+                        # Handle timezone issues
+                        if existing_df.index.tzinfo is not None:
+                            existing_df.index = existing_df.index.tz_convert('UTC').tz_localize(None)
                         
-                        # Keep only config columns and ensure order
-                        existing_df = existing_df[grid_cols]
+                        # Combine data, keeping the newer data for duplicated timestamps
+                        combined_df = pd.concat([existing_df, df])
+                        combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+                        combined_df.sort_index(inplace=True)
                         
-                        # Round existing data to 2 decimals
-                        existing_df = existing_df.round(2)
+                        # Reset index to save datetime as column
+                        combined_df.reset_index(inplace=True)
+                        combined_df.rename(columns={'index': 'datetime'}, inplace=True)
                         
-                        # Fill any missing values with 0
-                        existing_df = existing_df.fillna(0)
-                        
-                        # Combine old and new data
-                        df = pd.concat([existing_df, df])
-                        df = df[~df.index.duplicated(keep='last')]  # Remove duplicates
-                except pd.errors.EmptyDataError:
-                    print("Existing file was empty, creating new file with current data.")
+                        # Save the updated data
+                        combined_df.to_csv(grid_file_path, index=False)
+                        print(f'Updated grid data with {len(df)} new records.')
+                    else:
+                        # If existing file is empty or corrupted, just save the new data
+                        df.reset_index(inplace=True)
+                        df.to_csv(grid_file_path, index=False)
+                        print(f'Created new grid data file with {len(df)} records.')
                 except Exception as e:
-                    print(f"Error processing existing grid data: {str(e)}")
-                    print("Creating new file with current data only.")
-            
-            # Sort by date, round all values, and save
-            df.sort_index(inplace=True)
-            df = df.round(2)  # Final rounding of all values
-            df.to_csv(grid_file_path)
-            print(f"Successfully updated grid data through {df.index.max().strftime('%Y-%m-%d %H:%M')}")
+                    print(f"Error merging with existing grid data: {e}")
+                    # If there's an error with the existing file, save the new data as backup
+                    backup_path = grid_file_path.with_suffix('.backup.csv')
+                    df.reset_index(inplace=True)
+                    df.to_csv(backup_path, index=False)
+                    print(f'Saved backup grid data to {backup_path}')
+            else:
+                # No existing file, just save the new data
+                df.reset_index(inplace=True)
+                df.to_csv(grid_file_path, index=False)
+                print(f'Created new grid data file with {len(df)} records.')
         else:
-            print("No grid data records found in API response.")
-        
+            print("No grid data records received from API.")
     except Exception as e:
-        print(f"Error updating grid data: {str(e)}")
-        if 'response' in locals():
-            print("Response content:", response.content.decode() if hasattr(response, 'content') else "No response")
+        print(f"Error updating grid data: {e}")
 
 def main():
-    feature_config = FeatureConfig() 
-    print(feature_config.get_ordered_features())
+    """Main function to update all data files"""
+    # Ensure data directory exists
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Use the same path as defined at the top of the file for consistency
-    project_root = Path(__file__).resolve().parents[3]
-    
-    """Update both price and grid data"""
-    # Create processed data directory if it doesn't exist
-    processed_dir = project_root / 'data' / 'processed'
-    processed_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Update both datasets
-    print("\nUpdating price data...")
-    update_price_data(project_root)
+    print("Updating price data...")
+    update_price_data()
     
     print("\nUpdating grid data...")
-    update_grid_data(project_root)
+    update_grid_data()
+    
+    print("\nData update complete.")
 
 if __name__ == "__main__":
     main()

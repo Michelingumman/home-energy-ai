@@ -1,0 +1,52 @@
+2025-05-08 14:16:16,865 - INFO - Loaded price data with shape (73007, 11)
+2025-05-08 14:16:16,958 - INFO - Loaded grid data with shape (73180, 19)
+2025-05-08 14:16:17,250 - INFO - Loaded time features with shape (289296, 10)
+2025-05-08 14:16:17,752 - INFO - Loaded holidays data with shape (710017, 4)
+2025-05-08 14:16:17,867 - INFO - Loaded weather data with shape (73080, 6)
+2025-05-08 14:16:21,017 - INFO - Robust valley detection found 14058 valleys (19.3% of data)
+2025-05-08 14:16:21,019 - INFO - Identified 14058 valleys (19.3% of data) using robust valley detection
+2025-05-08 14:16:21,020 - INFO - Final merged data shape: (73007, 65)
+2025-05-08 14:16:21,024 - INFO - Searching for trend models...
+2025-05-08 14:16:21,024 - INFO - Using best trend model: C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.pkl
+2025-05-08 14:16:21,025 - INFO - Loaded parameters for XGBoost model
+2025-05-08 14:16:21,471 - INFO - Successfully loaded model from C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.pkl
+2025-05-08 14:16:21,472 - INFO - Loaded feature order list with 22 features
+2025-05-08 14:16:21,473 - INFO - Model uses 22 features
+2025-05-08 14:16:21,473 - INFO - Top features: ['price_24h_avg', 'price_168h_avg', 'is_business_hour', 'hour_avg_price', 'is_morning_peak']
+2025-05-08 14:16:21,473 - INFO - Loading peak detection model...
+2025-05-08 14:16:21,474 - INFO - Using model from best_peak_model.keras
+2025-05-08 14:16:22,362 - WARNING - From C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-05-08 14:16:22,655 - INFO - Loaded peak model from C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\best_peak_model.keras without compilation
+2025-05-08 14:16:22,655 - INFO - Loaded feature list with 23 features
+2025-05-08 14:16:22,656 - INFO - Loaded feature scaler from C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\feature_scaler_peak_model.save
+2025-05-08 14:16:22,657 - INFO - Loading valley detection model...
+2025-05-08 14:16:22,657 - INFO - Using model from best_valley_model.keras
+2025-05-08 14:16:22,657 - INFO - Using optimal probability threshold: 0.5987509489059448
+2025-05-08 14:16:22,836 - INFO - Loaded valley model from C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\best_valley_model.keras
+2025-05-08 14:16:22,837 - INFO - Loaded feature list with 27 features
+2025-05-08 14:16:22,837 - INFO - Loaded feature scaler from C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\feature_scaler_valley_model.save
+2025-05-08 14:16:22,837 - INFO - Starting simplified merged model evaluation...
+2025-05-08 14:16:22,863 - INFO - Using validation data with 14601 rows from 2021-12-31 05:00:00+00:00 to 2023-08-31 14:00:00+00:00
+2025-05-08 14:16:22,872 - INFO - Added cyclical time features
+2025-05-08 14:16:22,872 - INFO - Using 22 features for trend prediction
+2025-05-08 14:16:23,064 - INFO - Successfully made trend predictions
+2025-05-08 14:16:23,131 - INFO - Added peak detection features
+2025-05-08 14:16:30,818 - INFO - Added peak predictions with 0 peaks detected
+2025-05-08 14:16:30,818 - INFO - Adding specialized features for valley detection...
+2025-05-08 14:16:30,832 - INFO - Added valley detection features
+2025-05-08 14:16:34,253 - INFO - Added valley predictions with 0 valleys detected
+2025-05-08 14:16:34,255 - INFO - Simple merging complete - created predictions for 14601 samples
+2025-05-08 14:16:34,256 - INFO - Generating weekly plots for simplified merged model...
+2025-05-08 14:16:35,316 - INFO - Generated plot for week 1: 20211231 to 20220107
+2025-05-08 14:16:36,218 - INFO - Generated plot for week 2: 20220107 to 20220114
+2025-05-08 14:16:37,103 - INFO - Generated plot for week 3: 20220114 to 20220121
+2025-05-08 14:16:38,026 - INFO - Generated plot for week 4: 20220121 to 20220128
+2025-05-08 14:16:38,922 - INFO - Generated plot for week 5: 20220128 to 20220204
+2025-05-08 14:16:39,791 - INFO - Generated plot for week 6: 20220204 to 20220211
+2025-05-08 14:16:40,707 - INFO - Generated plot for week 7: 20220211 to 20220218
+2025-05-08 14:16:41,581 - INFO - Generated plot for week 8: 20220218 to 20220225
+2025-05-08 14:16:42,463 - INFO - Generated plot for week 9: 20220225 to 20220304
+2025-05-08 14:16:43,321 - INFO - Generated plot for week 10: 20220304 to 20220311
+2025-05-08 14:16:43,321 - INFO - Simple merging complete - created predictions for 14601 samples
+2025-05-08 14:16:43,360 - INFO - Simple merged model evaluation complete

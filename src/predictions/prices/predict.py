@@ -30,6 +30,7 @@ from tcn import TCN
 import os
 import sys
 import xgboost as xgb  # Added XGBoost import
+from xgboost import Booster
 
 # Add the directory of this file to the Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -204,6 +205,7 @@ def load_trend_model():
     
     # Try loading XGBoost model first
     if xgb_model_path.exists():
+        logging.info(f"xgboost trend model found!")
         try:
             model = xgb.Booster()
             model.load_model(str(xgb_model_path))
@@ -216,7 +218,7 @@ def load_trend_model():
     if model_type == "xgboost":
         feature_list_path = TREND_MODEL_DIR / "feature_names.json"
     else:
-        feature_list_path = TREND_MODEL_DIR / "feature_list_trend_model.json"
+        feature_list_path = TREND_MODEL_DIR / "feature_names.json"
         
     try:
         with open(feature_list_path, 'r') as f:

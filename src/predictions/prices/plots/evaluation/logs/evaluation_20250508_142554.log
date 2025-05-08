@@ -1,0 +1,58 @@
+2025-05-08 14:25:54,628 - INFO - Loaded price data with shape (73007, 11)
+2025-05-08 14:25:54,717 - INFO - Loaded grid data with shape (73180, 19)
+2025-05-08 14:25:54,987 - INFO - Loaded time features with shape (289296, 10)
+2025-05-08 14:25:55,440 - INFO - Loaded holidays data with shape (710017, 4)
+2025-05-08 14:25:55,551 - INFO - Loaded weather data with shape (73080, 6)
+2025-05-08 14:25:58,745 - INFO - Robust valley detection found 14058 valleys (19.3% of data)
+2025-05-08 14:25:58,747 - INFO - Identified 14058 valleys (19.3% of data) using robust valley detection
+2025-05-08 14:25:58,748 - INFO - Final merged data shape: (73007, 65)
+2025-05-08 14:25:58,752 - INFO - Searching for trend models...
+2025-05-08 14:25:58,753 - INFO - Using best trend model: C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.pkl
+2025-05-08 14:25:58,753 - INFO - Loaded parameters for XGBoost model
+2025-05-08 14:25:59,243 - INFO - Successfully loaded model from C:\_Projects\home-energy-ai\src\predictions\prices\models\trend_model\best_trend_model.pkl
+2025-05-08 14:25:59,244 - INFO - Loaded feature order list with 22 features
+2025-05-08 14:25:59,244 - INFO - Model uses 22 features
+2025-05-08 14:25:59,244 - INFO - Top features: ['price_24h_avg', 'price_168h_avg', 'is_business_hour', 'hour_avg_price', 'is_morning_peak']
+2025-05-08 14:25:59,244 - INFO - Loading peak detection model...
+2025-05-08 14:25:59,245 - INFO - Using model from best_peak_model.keras
+2025-05-08 14:26:00,155 - WARNING - From C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-05-08 14:26:00,485 - INFO - Loaded peak model from C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\best_peak_model.keras without compilation
+2025-05-08 14:26:00,485 - INFO - Loaded feature list with 23 features
+2025-05-08 14:26:00,486 - INFO - Loaded feature scaler from C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\feature_scaler_peak_model.save
+2025-05-08 14:26:00,486 - INFO - Loading valley detection model...
+2025-05-08 14:26:00,486 - INFO - Using model from best_valley_model.keras
+2025-05-08 14:26:00,487 - INFO - Using optimal probability threshold: 0.5987509489059448
+2025-05-08 14:26:00,660 - INFO - Loaded valley model from C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\best_valley_model.keras
+2025-05-08 14:26:00,661 - INFO - Loaded feature list with 27 features
+2025-05-08 14:26:00,661 - INFO - Loaded feature scaler from C:\_Projects\home-energy-ai\src\predictions\prices\models\valley_model\feature_scaler_valley_model.save
+2025-05-08 14:26:00,662 - INFO - Starting simplified merged model evaluation...
+2025-05-08 14:26:00,693 - INFO - Using test data with 14601 rows from 2023-08-31 15:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-08 14:26:00,702 - INFO - Added cyclical time features
+2025-05-08 14:26:00,702 - INFO - Using 22 features for trend prediction
+2025-05-08 14:26:00,869 - INFO - Successfully made trend predictions
+2025-05-08 14:26:00,943 - INFO - Added peak detection features
+2025-05-08 14:26:00,943 - WARNING - Peak model scaler not found, peak predictions may be inaccurate
+2025-05-08 14:26:00,945 - INFO - Creating peak sequences with 23 features and window size 168
+2025-05-08 14:26:01,052 - INFO - Making peak predictions with input shape (14434, 168, 23)
+2025-05-08 14:26:08,856 - INFO - Added peak predictions with 0 peaks detected
+2025-05-08 14:26:08,857 - INFO - Adding specialized features for valley detection...
+2025-05-08 14:26:08,870 - INFO - Added valley detection features
+2025-05-08 14:26:08,870 - WARNING - Valley model scaler not found, valley predictions may be inaccurate
+2025-05-08 14:26:08,872 - INFO - Creating valley sequences with 27 features and window size 168
+2025-05-08 14:26:08,974 - INFO - Making valley predictions with input shape (14434, 168, 27)
+2025-05-08 14:26:12,575 - ERROR - Error making valley predictions: Reindexing only valid with uniquely valued Index objects
+2025-05-08 14:26:12,579 - INFO - Simple merging complete - created predictions for 14601 samples
+2025-05-08 14:26:12,580 - INFO - Generating weekly plots for simplified merged model...
+2025-05-08 14:26:13,661 - INFO - Generated plot for week 1: 20230831 to 20230907
+2025-05-08 14:26:14,576 - INFO - Generated plot for week 2: 20230907 to 20230914
+2025-05-08 14:26:15,476 - INFO - Generated plot for week 3: 20230914 to 20230921
+2025-05-08 14:26:16,370 - INFO - Generated plot for week 4: 20230921 to 20230928
+2025-05-08 14:26:17,256 - INFO - Generated plot for week 5: 20230928 to 20231005
+2025-05-08 14:26:18,160 - INFO - Generated plot for week 6: 20231005 to 20231012
+2025-05-08 14:26:19,063 - INFO - Generated plot for week 7: 20231012 to 20231019
+2025-05-08 14:26:19,950 - INFO - Generated plot for week 8: 20231019 to 20231026
+2025-05-08 14:26:20,896 - INFO - Generated plot for week 9: 20231026 to 20231102
+2025-05-08 14:26:21,832 - INFO - Generated plot for week 10: 20231102 to 20231109
+2025-05-08 14:26:21,832 - INFO - Simple merging complete - created predictions for 14601 samples
+2025-05-08 14:26:21,879 - INFO - Simple merged model evaluation complete

@@ -1,27 +1,32 @@
 ================================================================================
 VALLEY DETECTION MODEL EVALUATION SUMMARY
 ================================================================================
-Date: 2025-05-06 22:54:49
+Date: 2025-05-08 12:31:58
 Evaluation metrics:
-  Probability threshold: 0.5
+  Probability threshold: 0.9
 
 METRICS
 ----------------------------------------
-Accuracy: 0.7505197505197505
-Precision: 0.3525641025641026
-Recall: 0.7432432432432432
-F1 Score: 0.4782608695652174
-ROC AUC: 0.8446443986984528
-Actual valley rate: 0.15384615384615385
-Predicted valley rate: 0.32432432432432434
+Accuracy: 0.7831743278404163
+Precision: 0.0
+Recall: 0.0
+F1 Score: 0.0
+ROC AUC: 0.9001483942414175
+Actual valley rate: 0.2168256721595837
+Predicted valley rate: 0.0
 
 VISUALIZATION FILES
 ----------------------------------------
-Plots directory: C:\_Projects\home-energy-ai\src\predictions\prices\plots\evaluation\valley\validation
+Plots directory: C:\_Projects\home-energy-ai\src\predictions\prices\plots\evaluation\valley\test
 
-- valley_week_2024-01-08.png
-- valley_week_2024-01-15.png
-- valley_week_2024-01-22.png
+- valley_week_2025-03-10.png
+- valley_week_2025-03-17.png
+- valley_week_2025-03-24.png
+- valley_week_2025-03-31.png
+- valley_week_2025-04-07.png
+- valley_week_2025-04-14.png
+- valley_week_2025-04-21.png
+- valley_week_2025-04-28.png
 
 NOTES
 ----------------------------------------

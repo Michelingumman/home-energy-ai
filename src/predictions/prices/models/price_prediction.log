@@ -54,3 +54,175 @@
 2025-05-06 11:33:10,613 - ERROR - Error loading feature list: [Errno 2] No such file or directory: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\trend_model\\feature_list_trend_model.json'
 2025-05-06 11:33:10,613 - ERROR - Error in trend prediction: [Errno 2] No such file or directory: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\trend_model\\feature_list_trend_model.json'
 2025-05-06 11:33:10,613 - ERROR - Error in prediction: [Errno 2] No such file or directory: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\trend_model\\feature_list_trend_model.json'
+2025-05-07 19:47:55,515 - INFO - Using 10 day horizon (240 hours)
+2025-05-07 19:47:55,515 - INFO - Loading data for prediction...
+2025-05-07 19:47:55,515 - INFO - Loading and merging data...
+2025-05-07 19:47:55,623 - INFO - Loaded price data: (73007, 11)
+2025-05-07 19:47:55,623 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:47:55,716 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:47:55,725 - INFO - Merged grid data: (73008, 19)
+2025-05-07 19:47:56,034 - INFO - Merged time features: (73008, 10)
+2025-05-07 19:47:56,625 - INFO - Merged holiday data: (73008, 4)
+2025-05-07 19:47:56,742 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:47:56,745 - INFO - Merged weather data: (73008, 7)
+2025-05-07 19:47:56,773 - WARNING - Found missing values in data after merging: price_24h_std    1
+dtype: int64
+2025-05-07 19:47:56,774 - WARNING - Missing 'price_24h_std' data between 2017-01-01 00:00:00 and 2017-01-01 00:00:00
+2025-05-07 19:47:56,775 - INFO - Final merged dataframe shape: (73007, 50)
+2025-05-07 19:47:56,775 - INFO - Date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:47:56,783 - INFO - Loaded data with shape (73007, 50)
+2025-05-07 19:47:56,783 - INFO - Making trend model predictions...
+2025-05-07 19:47:57,006 - ERROR - Error loading XGBoost trend model: [19:47:56] C:\buildkite-agent\builds\buildkite-windows-cpu-autoscaling-group-i-08cbc0333d8d4aae1-1\xgboost\xgboost-ci-windows\src\learner.cc:1007: Check failed: fi->Read(&tparam_.objective): BoostLearner: wrong model format
+2025-05-07 19:47:57,007 - ERROR - Error loading feature list: [Errno 2] No such file or directory: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\trend_model\\feature_list_trend_model.json'
+2025-05-07 19:47:57,007 - ERROR - Error in trend prediction: [Errno 2] No such file or directory: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\trend_model\\feature_list_trend_model.json'
+2025-05-07 19:47:57,007 - ERROR - Error in prediction: [Errno 2] No such file or directory: 'C:\\_Projects\\home-energy-ai\\src\\predictions\\prices\\models\\trend_model\\feature_list_trend_model.json'
+2025-05-07 19:49:25,253 - INFO - Using 10 day horizon (240 hours)
+2025-05-07 19:49:25,253 - INFO - Loading data for prediction...
+2025-05-07 19:49:25,253 - INFO - Loading and merging data...
+2025-05-07 19:49:25,360 - INFO - Loaded price data: (73007, 11)
+2025-05-07 19:49:25,360 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:49:25,451 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:49:25,458 - INFO - Merged grid data: (73008, 19)
+2025-05-07 19:49:25,752 - INFO - Merged time features: (73008, 10)
+2025-05-07 19:49:26,319 - INFO - Merged holiday data: (73008, 4)
+2025-05-07 19:49:26,427 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:49:26,430 - INFO - Merged weather data: (73008, 7)
+2025-05-07 19:49:26,456 - WARNING - Found missing values in data after merging: price_24h_std    1
+dtype: int64
+2025-05-07 19:49:26,457 - WARNING - Missing 'price_24h_std' data between 2017-01-01 00:00:00 and 2017-01-01 00:00:00
+2025-05-07 19:49:26,458 - INFO - Final merged dataframe shape: (73007, 50)
+2025-05-07 19:49:26,459 - INFO - Date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:49:26,465 - INFO - Loaded data with shape (73007, 50)
+2025-05-07 19:49:26,466 - INFO - Making trend model predictions...
+2025-05-07 19:49:26,676 - ERROR - Error loading XGBoost trend model: [19:49:26] C:\buildkite-agent\builds\buildkite-windows-cpu-autoscaling-group-i-08cbc0333d8d4aae1-1\xgboost\xgboost-ci-windows\src\learner.cc:1007: Check failed: fi->Read(&tparam_.objective): BoostLearner: wrong model format
+2025-05-07 19:49:26,676 - ERROR - Error in trend prediction: unsupported operand type(s) for +: 'NoneType' and 'str'
+2025-05-07 19:49:26,677 - ERROR - Error in prediction: unsupported operand type(s) for +: 'NoneType' and 'str'
+2025-05-07 19:50:46,349 - INFO - Using 10 day horizon (240 hours)
+2025-05-07 19:50:46,349 - INFO - Loading data for prediction...
+2025-05-07 19:50:46,349 - INFO - Loading and merging data...
+2025-05-07 19:50:46,457 - INFO - Loaded price data: (73007, 11)
+2025-05-07 19:50:46,458 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:50:46,548 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:50:46,555 - INFO - Merged grid data: (73008, 19)
+2025-05-07 19:50:46,847 - INFO - Merged time features: (73008, 10)
+2025-05-07 19:50:47,401 - INFO - Merged holiday data: (73008, 4)
+2025-05-07 19:50:47,525 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:50:47,530 - INFO - Merged weather data: (73008, 7)
+2025-05-07 19:50:47,562 - WARNING - Found missing values in data after merging: price_24h_std    1
+dtype: int64
+2025-05-07 19:50:47,563 - WARNING - Missing 'price_24h_std' data between 2017-01-01 00:00:00 and 2017-01-01 00:00:00
+2025-05-07 19:50:47,564 - INFO - Final merged dataframe shape: (73007, 50)
+2025-05-07 19:50:47,565 - INFO - Date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:50:47,571 - INFO - Loaded data with shape (73007, 50)
+2025-05-07 19:50:47,571 - INFO - Making trend model predictions...
+2025-05-07 19:50:47,775 - ERROR - Error loading XGBoost trend model: [19:50:47] C:\buildkite-agent\builds\buildkite-windows-cpu-autoscaling-group-i-08cbc0333d8d4aae1-1\xgboost\xgboost-ci-windows\src\learner.cc:1007: Check failed: fi->Read(&tparam_.objective): BoostLearner: wrong model format
+2025-05-07 19:50:47,776 - INFO - Loaded feature list with 22 features
+2025-05-07 19:50:47,777 - ERROR - No target scaler found for Keras model
+2025-05-07 19:50:47,777 - ERROR - Error in trend prediction: No target scaler found
+2025-05-07 19:50:47,777 - ERROR - Error in prediction: No target scaler found
+2025-05-07 19:53:58,109 - INFO - Using 10 day horizon (240 hours)
+2025-05-07 19:53:58,109 - INFO - Loading data for prediction...
+2025-05-07 19:53:58,110 - INFO - Loading and merging data...
+2025-05-07 19:53:58,220 - INFO - Loaded price data: (73007, 11)
+2025-05-07 19:53:58,220 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:53:58,315 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:53:58,321 - INFO - Merged grid data: (73008, 19)
+2025-05-07 19:53:58,649 - INFO - Merged time features: (73008, 10)
+2025-05-07 19:53:59,237 - INFO - Merged holiday data: (73008, 4)
+2025-05-07 19:53:59,347 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:53:59,350 - INFO - Merged weather data: (73008, 7)
+2025-05-07 19:53:59,376 - WARNING - Found missing values in data after merging: price_24h_std    1
+dtype: int64
+2025-05-07 19:53:59,376 - WARNING - Missing 'price_24h_std' data between 2017-01-01 00:00:00 and 2017-01-01 00:00:00
+2025-05-07 19:53:59,378 - INFO - Final merged dataframe shape: (73007, 50)
+2025-05-07 19:53:59,378 - INFO - Date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:53:59,385 - INFO - Loaded data with shape (73007, 50)
+2025-05-07 19:53:59,385 - INFO - Making trend model predictions...
+2025-05-07 19:53:59,594 - ERROR - Error loading XGBoost trend model: [19:53:59] C:\buildkite-agent\builds\buildkite-windows-cpu-autoscaling-group-i-08cbc0333d8d4aae1-1\xgboost\xgboost-ci-windows\src\learner.cc:1007: Check failed: fi->Read(&tparam_.objective): BoostLearner: wrong model format
+2025-05-07 19:53:59,595 - INFO - Loaded feature list with 22 features
+2025-05-07 19:53:59,595 - ERROR - No target scaler found for Keras model
+2025-05-07 19:53:59,595 - ERROR - Error in trend prediction: No target scaler found
+2025-05-07 19:53:59,595 - ERROR - Error in prediction: No target scaler found
+2025-05-07 19:59:15,461 - INFO - Using 10 day horizon (240 hours)
+2025-05-07 19:59:15,461 - INFO - Loading data for prediction...
+2025-05-07 19:59:15,462 - INFO - Loading and merging data...
+2025-05-07 19:59:15,570 - INFO - Loaded price data: (73007, 11)
+2025-05-07 19:59:15,570 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:59:15,660 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:59:15,667 - INFO - Merged grid data: (73008, 19)
+2025-05-07 19:59:15,971 - INFO - Merged time features: (73008, 10)
+2025-05-07 19:59:16,537 - INFO - Merged holiday data: (73008, 4)
+2025-05-07 19:59:16,647 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:59:16,650 - INFO - Merged weather data: (73008, 7)
+2025-05-07 19:59:16,677 - WARNING - Found missing values in data after merging: price_24h_std    1
+dtype: int64
+2025-05-07 19:59:16,678 - WARNING - Missing 'price_24h_std' data between 2017-01-01 00:00:00 and 2017-01-01 00:00:00
+2025-05-07 19:59:16,679 - INFO - Final merged dataframe shape: (73007, 50)
+2025-05-07 19:59:16,680 - INFO - Date range: 2017-01-01 00:00:00 to 2025-04-30 23:00:00
+2025-05-07 19:59:16,687 - INFO - Loaded data with shape (73007, 50)
+2025-05-07 19:59:16,687 - INFO - Making trend model predictions...
+2025-05-07 19:59:16,896 - ERROR - Error loading XGBoost trend model: [19:59:16] C:\buildkite-agent\builds\buildkite-windows-cpu-autoscaling-group-i-08cbc0333d8d4aae1-1\xgboost\xgboost-ci-windows\src\learner.cc:1007: Check failed: fi->Read(&tparam_.objective): BoostLearner: wrong model format
+2025-05-07 19:59:16,897 - INFO - Loaded feature list with 22 features
+2025-05-07 19:59:16,897 - ERROR - No target scaler found for Keras model
+2025-05-07 19:59:16,898 - ERROR - Error in trend prediction: No target scaler found
+2025-05-07 19:59:16,898 - ERROR - Error in prediction: No target scaler found
+2025-05-07 20:04:56,124 - INFO - Using 10 day horizon (240 hours)
+2025-05-07 20:04:56,125 - INFO - Loading data for prediction...
+2025-05-07 20:04:56,125 - INFO - Loading and merging data...
+2025-05-07 20:04:56,233 - INFO - Loaded price data: (73173, 11)
+2025-05-07 20:04:56,233 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-05-07 21:00:00
+2025-05-07 20:04:56,323 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-05-07 18:00:00
+2025-05-07 20:04:56,330 - INFO - Merged grid data: (73171, 19)
+2025-05-07 20:04:56,638 - INFO - Merged time features: (73174, 10)
+2025-05-07 20:04:57,196 - INFO - Merged holiday data: (73174, 4)
+2025-05-07 20:04:57,307 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-05-03 21:00:00
+2025-05-07 20:04:57,310 - INFO - Merged weather data: (73078, 7)
+2025-05-07 20:04:57,334 - WARNING - Found missing values in data after merging: price_24h_std      1
+Gas_Price        166
+Coal_Price       166
+CO2_Price        166
+dtype: int64
+2025-05-07 20:04:57,336 - WARNING - Missing 'price_24h_std' data between 2017-01-01 00:00:00 and 2017-01-01 00:00:00
+2025-05-07 20:04:57,337 - WARNING - Missing 'Gas_Price' data between 2025-05-01 00:00:00 and 2025-05-07 21:00:00
+2025-05-07 20:04:57,339 - WARNING - Missing 'Coal_Price' data between 2025-05-01 00:00:00 and 2025-05-07 21:00:00
+2025-05-07 20:04:57,339 - WARNING - Missing 'CO2_Price' data between 2025-05-01 00:00:00 and 2025-05-07 21:00:00
+2025-05-07 20:04:57,341 - INFO - Final merged dataframe shape: (73173, 50)
+2025-05-07 20:04:57,341 - INFO - Date range: 2017-01-01 00:00:00 to 2025-05-07 21:00:00
+2025-05-07 20:04:57,347 - INFO - Loaded data with shape (73173, 50)
+2025-05-07 20:04:57,347 - INFO - Making trend model predictions...
+2025-05-07 20:04:57,347 - INFO - xgboost trend model found!
+2025-05-07 20:04:57,348 - ERROR - Error loading XGBoost trend model: 'NoneType' object has no attribute 'load_model'
+2025-05-07 20:04:57,348 - INFO - Loaded feature list with 22 features
+2025-05-07 20:04:57,348 - ERROR - No target scaler found for Keras model
+2025-05-07 20:04:57,348 - ERROR - Error in trend prediction: No target scaler found
+2025-05-07 20:04:57,348 - ERROR - Error in prediction: No target scaler found
+2025-05-07 20:06:24,941 - INFO - Using 10 day horizon (240 hours)
+2025-05-07 20:06:24,942 - INFO - Loading data for prediction...
+2025-05-07 20:06:24,942 - INFO - Loading and merging data...
+2025-05-07 20:06:25,043 - INFO - Loaded price data: (73173, 11)
+2025-05-07 20:06:25,043 - INFO - Price data date range: 2017-01-01 00:00:00 to 2025-05-07 21:00:00
+2025-05-07 20:06:25,133 - INFO - Grid data range after trimming: 2017-01-01 00:00:00 to 2025-05-07 18:00:00
+2025-05-07 20:06:25,140 - INFO - Merged grid data: (73171, 19)
+2025-05-07 20:06:25,447 - INFO - Merged time features: (73174, 10)
+2025-05-07 20:06:25,989 - INFO - Merged holiday data: (73174, 4)
+2025-05-07 20:06:26,099 - INFO - Weather data range after trimming: 2017-01-01 00:00:00 to 2025-05-03 21:00:00
+2025-05-07 20:06:26,102 - INFO - Merged weather data: (73078, 7)
+2025-05-07 20:06:26,127 - WARNING - Found missing values in data after merging: price_24h_std      1
+Gas_Price        166
+Coal_Price       166
+CO2_Price        166
+dtype: int64
+2025-05-07 20:06:26,128 - WARNING - Missing 'price_24h_std' data between 2017-01-01 00:00:00 and 2017-01-01 00:00:00
+2025-05-07 20:06:26,130 - WARNING - Missing 'Gas_Price' data between 2025-05-01 00:00:00 and 2025-05-07 21:00:00
+2025-05-07 20:06:26,131 - WARNING - Missing 'Coal_Price' data between 2025-05-01 00:00:00 and 2025-05-07 21:00:00
+2025-05-07 20:06:26,132 - WARNING - Missing 'CO2_Price' data between 2025-05-01 00:00:00 and 2025-05-07 21:00:00
+2025-05-07 20:06:26,133 - INFO - Final merged dataframe shape: (73173, 50)
+2025-05-07 20:06:26,133 - INFO - Date range: 2017-01-01 00:00:00 to 2025-05-07 21:00:00
+2025-05-07 20:06:26,140 - INFO - Loaded data with shape (73173, 50)
+2025-05-07 20:06:26,140 - INFO - Making trend model predictions...
+2025-05-07 20:06:26,140 - INFO - xgboost trend model found!
+2025-05-07 20:06:26,346 - ERROR - Error loading XGBoost trend model: [20:06:26] C:\buildkite-agent\builds\buildkite-windows-cpu-autoscaling-group-i-08cbc0333d8d4aae1-1\xgboost\xgboost-ci-windows\src\learner.cc:1007: Check failed: fi->Read(&tparam_.objective): BoostLearner: wrong model format
+2025-05-07 20:06:26,346 - INFO - Loaded feature list with 22 features
+2025-05-07 20:06:26,347 - ERROR - No target scaler found for Keras model
+2025-05-07 20:06:26,347 - ERROR - Error in trend prediction: No target scaler found
+2025-05-07 20:06:26,347 - ERROR - Error in prediction: No target scaler found

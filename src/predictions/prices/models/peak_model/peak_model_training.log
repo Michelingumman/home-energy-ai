@@ -801,3 +801,471 @@ dtype: int64
 2025-05-06 22:16:17,666 - INFO - Built peak model with input shape (168, 23)
 2025-05-06 22:16:17,666 - INFO - Class weights: {0: 1, 1: 49.359050445103854}
 2025-05-06 22:16:17,677 - INFO - Training with validation data (shape: (10760, 168, 23))
+2025-05-07 15:46:20,941 - INFO - Logging configured for peak model. Log file: C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\peak_model_training.log
+2025-05-07 15:46:20,942 - INFO - Created all necessary directories
+2025-05-07 15:46:20,942 - INFO - Running in PRODUCTION MODE with all available data!
+2025-05-07 15:46:20,942 - INFO - Loading data...
+2025-05-07 15:46:20,943 - INFO - Loading and merging data...
+2025-05-07 15:46:21,046 - INFO - Loaded price data: (73162, 11)
+2025-05-07 15:46:21,047 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-05-07 10:00:00+00:00
+2025-05-07 15:46:21,140 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-05-07 07:00:00+00:00
+2025-05-07 15:46:21,147 - INFO - Merged grid data: (73162, 21)
+2025-05-07 15:46:21,466 - INFO - Merged time features: (73162, 31)
+2025-05-07 15:46:21,941 - INFO - Merged holiday data: (73162, 35)
+2025-05-07 15:46:22,050 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-05-03 21:00:00+00:00
+2025-05-07 15:46:22,058 - INFO - Merged weather data: (73162, 41)
+2025-05-07 15:46:22,067 - WARNING - Found missing values after merging: price_24h_std                1
+Gas_Price                  155
+Coal_Price                 155
+CO2_Price                  155
+powerConsumptionTotal        3
+powerProductionTotal         3
+powerImportTotal             3
+powerExportTotal             3
+nuclear                      3
+wind                         3
+hydro                        3
+solar                        3
+renewablePercentage          3
+fossilFreePercentage         3
+temperature_2m              85
+cloud_cover                 85
+relative_humidity_2m        85
+wind_speed_100m             85
+wind_direction_100m         85
+shortwave_radiation_sum     85
+dtype: int64
+2025-05-07 15:46:22,070 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-07 15:46:22,248 - WARNING - Top gaps in 'price_24h_std':
+2025-05-07 15:46:22,248 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,249 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,249 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,249 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,249 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,250 - WARNING -   ... and 73156 more gaps
+2025-05-07 15:46:22,252 - WARNING -   Median gap size: 0.0 hours
+2025-05-07 15:46:22,255 - WARNING -   Average gap size: 0.0 hours
+2025-05-07 15:46:22,255 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-07 15:46:22,256 - WARNING - Missing values in 'Gas_Price': 155 rows (0.21%)
+2025-05-07 15:46:22,430 - WARNING - Top gaps in 'Gas_Price':
+2025-05-07 15:46:22,431 - WARNING -   Gap #1: 2025-04-30 23:00:00+00:00 to 2025-05-07 10:00:00+00:00 (156 hours)
+2025-05-07 15:46:22,431 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,431 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,431 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,431 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,431 - WARNING -   ... and 73002 more gaps
+2025-05-07 15:46:22,434 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:22,436 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:22,437 - INFO - Filled missing values in Gas_Price with forward/backward fill
+2025-05-07 15:46:22,437 - WARNING - Missing values in 'Coal_Price': 155 rows (0.21%)
+2025-05-07 15:46:22,762 - WARNING - Top gaps in 'Coal_Price':
+2025-05-07 15:46:22,762 - WARNING -   Gap #1: 2025-04-30 23:00:00+00:00 to 2025-05-07 10:00:00+00:00 (156 hours)
+2025-05-07 15:46:22,762 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,762 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,762 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,762 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,762 - WARNING -   ... and 73002 more gaps
+2025-05-07 15:46:22,765 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:22,767 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:22,768 - INFO - Filled missing values in Coal_Price with forward/backward fill
+2025-05-07 15:46:22,768 - WARNING - Missing values in 'CO2_Price': 155 rows (0.21%)
+2025-05-07 15:46:22,941 - WARNING - Top gaps in 'CO2_Price':
+2025-05-07 15:46:22,941 - WARNING -   Gap #1: 2025-04-30 23:00:00+00:00 to 2025-05-07 10:00:00+00:00 (156 hours)
+2025-05-07 15:46:22,941 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,941 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,942 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,942 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:22,942 - WARNING -   ... and 73002 more gaps
+2025-05-07 15:46:22,944 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:22,947 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:22,947 - INFO - Filled missing values in CO2_Price with forward/backward fill
+2025-05-07 15:46:22,948 - WARNING - Missing values in 'powerConsumptionTotal': 3 rows (0.00%)
+2025-05-07 15:46:23,115 - WARNING - Top gaps in 'powerConsumptionTotal':
+2025-05-07 15:46:23,116 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:23,116 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,116 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,116 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,116 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,116 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:23,118 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:23,121 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:23,122 - INFO - Filled missing values in powerConsumptionTotal with forward/backward fill
+2025-05-07 15:46:23,122 - WARNING - Missing values in 'powerProductionTotal': 3 rows (0.00%)
+2025-05-07 15:46:23,295 - WARNING - Top gaps in 'powerProductionTotal':
+2025-05-07 15:46:23,295 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:23,295 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,295 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,295 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,295 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,296 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:23,298 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:23,300 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:23,301 - INFO - Filled missing values in powerProductionTotal with forward/backward fill
+2025-05-07 15:46:23,301 - WARNING - Missing values in 'powerImportTotal': 3 rows (0.00%)
+2025-05-07 15:46:23,474 - WARNING - Top gaps in 'powerImportTotal':
+2025-05-07 15:46:23,475 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:23,475 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,475 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,475 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,475 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,475 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:23,478 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:23,481 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:23,481 - INFO - Filled missing values in powerImportTotal with forward/backward fill
+2025-05-07 15:46:23,482 - WARNING - Missing values in 'powerExportTotal': 3 rows (0.00%)
+2025-05-07 15:46:23,808 - WARNING - Top gaps in 'powerExportTotal':
+2025-05-07 15:46:23,808 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:23,808 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,808 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,808 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,809 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,809 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:23,811 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:23,814 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:23,815 - INFO - Filled missing values in powerExportTotal with forward/backward fill
+2025-05-07 15:46:23,815 - WARNING - Missing values in 'nuclear': 3 rows (0.00%)
+2025-05-07 15:46:23,982 - WARNING - Top gaps in 'nuclear':
+2025-05-07 15:46:23,983 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:23,983 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,983 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,983 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,983 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:23,984 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:23,986 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:23,988 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:23,989 - INFO - Filled missing values in nuclear with forward/backward fill
+2025-05-07 15:46:23,990 - WARNING - Missing values in 'wind': 3 rows (0.00%)
+2025-05-07 15:46:24,158 - WARNING - Top gaps in 'wind':
+2025-05-07 15:46:24,159 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:24,159 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,159 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,159 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,159 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,159 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:24,162 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:24,165 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:24,165 - INFO - Filled missing values in wind with forward/backward fill
+2025-05-07 15:46:24,166 - WARNING - Missing values in 'hydro': 3 rows (0.00%)
+2025-05-07 15:46:24,338 - WARNING - Top gaps in 'hydro':
+2025-05-07 15:46:24,338 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:24,339 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,339 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,339 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,340 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,340 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:24,342 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:24,345 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:24,346 - INFO - Filled missing values in hydro with forward/backward fill
+2025-05-07 15:46:24,346 - WARNING - Missing values in 'solar': 3 rows (0.00%)
+2025-05-07 15:46:24,512 - WARNING - Top gaps in 'solar':
+2025-05-07 15:46:24,513 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:24,513 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,513 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,513 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,513 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,513 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:24,516 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:24,518 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:24,519 - INFO - Filled missing values in solar with forward/backward fill
+2025-05-07 15:46:24,520 - WARNING - Missing values in 'renewablePercentage': 3 rows (0.00%)
+2025-05-07 15:46:24,848 - WARNING - Top gaps in 'renewablePercentage':
+2025-05-07 15:46:24,848 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:24,848 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,848 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,849 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,849 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:24,849 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:24,852 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:24,854 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:24,855 - INFO - Filled missing values in renewablePercentage with forward/backward fill
+2025-05-07 15:46:24,856 - WARNING - Missing values in 'fossilFreePercentage': 3 rows (0.00%)
+2025-05-07 15:46:25,024 - WARNING - Top gaps in 'fossilFreePercentage':
+2025-05-07 15:46:25,024 - WARNING -   Gap #1: 2025-05-07 07:00:00+00:00 to 2025-05-07 10:00:00+00:00 (4 hours)
+2025-05-07 15:46:25,024 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,024 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,025 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,025 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,025 - WARNING -   ... and 73154 more gaps
+2025-05-07 15:46:25,028 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:25,030 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:25,031 - INFO - Filled missing values in fossilFreePercentage with forward/backward fill
+2025-05-07 15:46:25,033 - WARNING - Missing values in 'temperature_2m': 85 rows (0.12%)
+2025-05-07 15:46:25,196 - WARNING - Top gaps in 'temperature_2m':
+2025-05-07 15:46:25,197 - WARNING -   Gap #1: 2025-05-03 21:00:00+00:00 to 2025-05-07 10:00:00+00:00 (86 hours)
+2025-05-07 15:46:25,197 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,197 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,197 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,197 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,197 - WARNING -   ... and 73072 more gaps
+2025-05-07 15:46:25,200 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:25,202 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:25,203 - INFO - Filled missing values in temperature_2m with forward/backward fill
+2025-05-07 15:46:25,203 - WARNING - Missing values in 'cloud_cover': 85 rows (0.12%)
+2025-05-07 15:46:25,377 - WARNING - Top gaps in 'cloud_cover':
+2025-05-07 15:46:25,378 - WARNING -   Gap #1: 2025-05-03 21:00:00+00:00 to 2025-05-07 10:00:00+00:00 (86 hours)
+2025-05-07 15:46:25,378 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,378 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,379 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,379 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,379 - WARNING -   ... and 73072 more gaps
+2025-05-07 15:46:25,381 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:25,384 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:25,384 - INFO - Filled missing values in cloud_cover with forward/backward fill
+2025-05-07 15:46:25,385 - WARNING - Missing values in 'relative_humidity_2m': 85 rows (0.12%)
+2025-05-07 15:46:25,550 - WARNING - Top gaps in 'relative_humidity_2m':
+2025-05-07 15:46:25,550 - WARNING -   Gap #1: 2025-05-03 21:00:00+00:00 to 2025-05-07 10:00:00+00:00 (86 hours)
+2025-05-07 15:46:25,550 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,550 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,551 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,551 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,551 - WARNING -   ... and 73072 more gaps
+2025-05-07 15:46:25,553 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:25,556 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:25,556 - INFO - Filled missing values in relative_humidity_2m with forward/backward fill
+2025-05-07 15:46:25,557 - WARNING - Missing values in 'wind_speed_100m': 85 rows (0.12%)
+2025-05-07 15:46:25,723 - WARNING - Top gaps in 'wind_speed_100m':
+2025-05-07 15:46:25,723 - WARNING -   Gap #1: 2025-05-03 21:00:00+00:00 to 2025-05-07 10:00:00+00:00 (86 hours)
+2025-05-07 15:46:25,724 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,724 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,724 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,724 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:25,724 - WARNING -   ... and 73072 more gaps
+2025-05-07 15:46:25,727 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:25,729 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:25,730 - INFO - Filled missing values in wind_speed_100m with forward/backward fill
+2025-05-07 15:46:25,731 - WARNING - Missing values in 'wind_direction_100m': 85 rows (0.12%)
+2025-05-07 15:46:26,045 - WARNING - Top gaps in 'wind_direction_100m':
+2025-05-07 15:46:26,045 - WARNING -   Gap #1: 2025-05-03 21:00:00+00:00 to 2025-05-07 10:00:00+00:00 (86 hours)
+2025-05-07 15:46:26,045 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:26,045 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:26,046 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:26,046 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:26,046 - WARNING -   ... and 73072 more gaps
+2025-05-07 15:46:26,048 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:26,051 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:26,052 - INFO - Filled missing values in wind_direction_100m with forward/backward fill
+2025-05-07 15:46:26,052 - WARNING - Missing values in 'shortwave_radiation_sum': 85 rows (0.12%)
+2025-05-07 15:46:26,217 - WARNING - Top gaps in 'shortwave_radiation_sum':
+2025-05-07 15:46:26,217 - WARNING -   Gap #1: 2025-05-03 21:00:00+00:00 to 2025-05-07 10:00:00+00:00 (86 hours)
+2025-05-07 15:46:26,217 - WARNING -   Gap #2: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:46:26,218 - WARNING -   Gap #3: 2017-01-01 01:00:00+00:00 to 2017-01-01 01:00:00+00:00 (1 hours)
+2025-05-07 15:46:26,218 - WARNING -   Gap #4: 2017-01-01 02:00:00+00:00 to 2017-01-01 02:00:00+00:00 (1 hours)
+2025-05-07 15:46:26,218 - WARNING -   Gap #5: 2017-01-01 03:00:00+00:00 to 2017-01-01 03:00:00+00:00 (1 hours)
+2025-05-07 15:46:26,218 - WARNING -   ... and 73072 more gaps
+2025-05-07 15:46:26,220 - WARNING -   Median gap size: 1.0 hours
+2025-05-07 15:46:26,223 - WARNING -   Average gap size: 1.0 hours
+2025-05-07 15:46:26,223 - INFO - Filled missing values in shortwave_radiation_sum with forward/backward fill
+2025-05-07 15:46:26,224 - INFO - Final merged dataframe shape: (73162, 41)
+2025-05-07 15:46:26,224 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-05-07 10:00:00+00:00
+2025-05-07 15:46:26,243 - INFO - Train size: 51213, from 2017-01-01 00:00:00+00:00 to 2022-11-04 20:00:00+00:00
+2025-05-07 15:46:26,243 - INFO - Validation size: 10974, from 2022-11-04 21:00:00+00:00 to 2024-02-05 02:00:00+00:00
+2025-05-07 15:46:26,243 - INFO - Test size: 10975, from 2024-02-05 03:00:00+00:00 to 2025-05-07 10:00:00+00:00
+2025-05-07 15:46:26,243 - INFO - === Starting peak model training (TCN) ===
+2025-05-07 15:46:26,244 - INFO - Preparing data for is_price_peak model training...
+2025-05-07 15:46:26,244 - INFO - Loading and merging data...
+2025-05-07 15:48:27,035 - INFO - Logging configured for peak model. Log file: C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\peak_model_training.log
+2025-05-07 15:48:27,036 - INFO - Created all necessary directories
+2025-05-07 15:48:27,037 - INFO - Running in PRODUCTION MODE with all available data!
+2025-05-07 15:48:27,037 - INFO - Loading data...
+2025-05-07 15:48:27,037 - INFO - Loading and merging data...
+2025-05-07 15:48:27,153 - INFO - Loaded price data: (73007, 11)
+2025-05-07 15:48:27,154 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 15:48:27,248 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 15:48:27,254 - INFO - Merged grid data: (73007, 21)
+2025-05-07 15:48:27,538 - INFO - Merged time features: (73007, 31)
+2025-05-07 15:48:28,003 - INFO - Merged holiday data: (73007, 35)
+2025-05-07 15:48:28,115 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 15:48:28,131 - INFO - Merged weather data: (73007, 41)
+2025-05-07 15:48:28,140 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-07 15:48:28,144 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-07 15:48:28,331 - WARNING - Top gaps in 'price_24h_std':
+2025-05-07 15:48:28,332 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:48:28,332 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-07 15:48:28,332 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-07 15:48:28,332 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-07 15:48:28,332 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-07 15:48:28,332 - WARNING -   ... and 73001 more gaps
+2025-05-07 15:48:28,335 - WARNING -   Median gap size: 0.0 hours
+2025-05-07 15:48:28,337 - WARNING -   Average gap size: 0.0 hours
+2025-05-07 15:48:28,338 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-07 15:48:28,341 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-07 15:48:28,341 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 15:48:28,359 - INFO - Train size: 51104, from 2017-01-01 00:00:00+00:00 to 2022-10-31 07:00:00+00:00
+2025-05-07 15:48:28,360 - INFO - Validation size: 10951, from 2022-10-31 08:00:00+00:00 to 2024-01-30 14:00:00+00:00
+2025-05-07 15:48:28,360 - INFO - Test size: 10952, from 2024-01-30 15:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 15:48:28,360 - INFO - === Starting peak model training (TCN) ===
+2025-05-07 15:48:28,360 - INFO - Preparing data for is_price_peak model training...
+2025-05-07 15:48:28,361 - INFO - Loading and merging data...
+2025-05-07 15:48:28,468 - INFO - Loaded price data: (73007, 11)
+2025-05-07 15:48:28,469 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 15:48:28,564 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 15:48:28,570 - INFO - Merged grid data: (73007, 21)
+2025-05-07 15:48:28,871 - INFO - Merged time features: (73007, 31)
+2025-05-07 15:48:29,359 - INFO - Merged holiday data: (73007, 35)
+2025-05-07 15:48:29,470 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 15:48:29,484 - INFO - Merged weather data: (73007, 41)
+2025-05-07 15:48:29,492 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-07 15:48:29,496 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-07 15:48:29,675 - WARNING - Top gaps in 'price_24h_std':
+2025-05-07 15:48:29,675 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 15:48:29,675 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-07 15:48:29,675 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-07 15:48:29,676 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-07 15:48:29,676 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-07 15:48:29,676 - WARNING -   ... and 73001 more gaps
+2025-05-07 15:48:29,678 - WARNING -   Median gap size: 0.0 hours
+2025-05-07 15:48:29,681 - WARNING -   Average gap size: 0.0 hours
+2025-05-07 15:48:29,682 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-07 15:48:29,684 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-07 15:48:29,684 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 15:48:29,691 - INFO - Adding lag features for trend detection...
+2025-05-07 15:48:29,733 - INFO - Added 9 lag features and 4 momentum/detrended features
+2025-05-07 15:48:29,755 - INFO - Using improved relative peak detection for peak/valley identification
+2025-05-07 15:48:56,598 - INFO - Detected 398 peaks (0.5% of data) and 519 valleys (0.7% of data)
+2025-05-07 15:48:56,598 - INFO - Using window=24h, relative_height=0.20, distance=6h, prominence=0.15
+2025-05-07 15:48:56,609 - INFO - Using robust peak detection algorithm for comparison
+2025-05-07 15:48:59,595 - INFO - Robust peak detection found 14836 peaks (20.3% of data)
+2025-05-07 15:48:59,598 - INFO - Using new robust valley detection algorithm
+2025-05-07 15:49:02,675 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-07 15:49:02,678 - INFO - Using Scipy method for peak detection
+2025-05-07 15:49:02,683 - INFO - Detected 1805 peaks (2.5% of data) and 14059 valleys (19.3% of data)
+2025-05-07 15:49:02,684 - INFO - For reference - traditional method would detect 7301 peaks (10.0% of data)
+2025-05-07 15:49:02,684 - INFO - Traditional thresholds - spike: 115.66, valley: 8.26
+2025-05-07 15:49:02,686 - INFO - Using peak-specific features for model training
+2025-05-07 15:49:02,687 - INFO - Using 24 features for is_price_peak detection
+2025-05-07 15:49:02,699 - INFO - PRODUCTION MODE: Using ALL available data for training
+2025-05-07 15:49:02,701 - INFO - Combined data shape: (73007, 24)
+2025-05-07 15:49:02,701 - INFO - Target distribution in combined data: 2.47% positive samples
+2025-05-07 15:49:03,425 - INFO - Prepared training data: X_train shape (72816, 168, 23), y_train shape (72816, 1)
+2025-05-07 15:49:03,428 - INFO - Training peak detection model...
+2025-05-07 15:49:03,428 - INFO - PRODUCTION MODE: Using all available data for training
+2025-05-07 15:49:03,428 - INFO - Generating peak label validation plots...
+2025-05-07 15:49:07,926 - INFO - Peak detection validation plots saved to C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\peak_validation
+2025-05-07 15:49:07,926 - INFO - Generating peak detection method comparison plots...
+2025-05-07 15:49:07,930 - INFO - Applying different peak detection methods for comparison...
+2025-05-07 15:49:07,932 - INFO - Traditional threshold method: 7301 peaks (10.0% of data)
+2025-05-07 15:49:37,350 - INFO - Detected 398 peaks (0.5% of data) and 519 valleys (0.7% of data)
+2025-05-07 15:49:37,351 - INFO - Using window=24h, relative_height=0.20, distance=6h, prominence=0.15
+2025-05-07 15:49:37,357 - INFO - Relative detection method: 398 peaks (0.5% of data)
+2025-05-07 15:49:40,535 - INFO - Robust peak detection found 14836 peaks (20.3% of data)
+2025-05-07 15:49:40,536 - INFO - Robust detection method: 14836 peaks (20.3% of data)
+2025-05-07 15:49:40,540 - INFO - Simple scipy method: 4709 peaks (6.5% of data)
+2025-05-07 15:49:40,892 - INFO - Local maxima method: 2502 peaks (3.4% of data)
+2025-05-07 15:49:44,213 - INFO - Peak detection method comparison plots saved to C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\peak_method_comparison
+2025-05-07 15:49:44,214 - INFO - Saved feature list with 23 features
+2025-05-07 15:49:44,215 - INFO - Saved feature scaler
+2025-05-07 15:49:44,216 - INFO - Saved thresholds: {'spike_threshold': 115.66180000000014, 'valley_threshold': 8.2626, 'method': 'scipy', 'peak_prominence': 27.805590000000002, 'peak_distance': 4, 'peak_width': 2, 'min_prominence': 0.03, 'min_width': 1, 'distance': 2, 'depth_percentile': 15, 'smoothing_window': 3}
+2025-05-07 15:49:45,057 - WARNING - From C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-05-07 15:49:45,218 - INFO - Built peak model with input shape (168, 23)
+2025-05-07 15:49:45,218 - INFO - Class weights: {0: 1, 1: 39.38602329450915}
+2025-05-07 15:49:45,218 - INFO - Added production-mode callbacks
+2025-05-07 15:49:45,230 - INFO - Training without validation in production mode
+2025-05-07 16:56:32,596 - INFO - Logging configured for peak model. Log file: C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\peak_model_training.log
+2025-05-07 16:56:32,597 - INFO - Created all necessary directories
+2025-05-07 16:56:32,597 - INFO - Running in PRODUCTION MODE with all available data!
+2025-05-07 16:56:32,597 - INFO - Loading data...
+2025-05-07 16:56:32,597 - INFO - Loading and merging data...
+2025-05-07 16:56:32,709 - INFO - Loaded price data: (73007, 11)
+2025-05-07 16:56:32,709 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 16:56:32,812 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 16:56:32,817 - INFO - Merged grid data: (73007, 21)
+2025-05-07 16:56:33,110 - INFO - Merged time features: (73007, 31)
+2025-05-07 16:56:33,631 - INFO - Merged holiday data: (73007, 35)
+2025-05-07 16:56:33,753 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 16:56:33,767 - INFO - Merged weather data: (73007, 41)
+2025-05-07 16:56:33,776 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-07 16:56:33,779 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-07 16:56:33,977 - WARNING - Top gaps in 'price_24h_std':
+2025-05-07 16:56:33,977 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 16:56:33,977 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-07 16:56:33,977 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-07 16:56:33,977 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-07 16:56:33,978 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-07 16:56:33,978 - WARNING -   ... and 73001 more gaps
+2025-05-07 16:56:33,981 - WARNING -   Median gap size: 0.0 hours
+2025-05-07 16:56:33,983 - WARNING -   Average gap size: 0.0 hours
+2025-05-07 16:56:33,984 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-07 16:56:33,987 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-07 16:56:33,987 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 16:56:34,003 - INFO - Train size: 51104, from 2017-01-01 00:00:00+00:00 to 2022-10-31 07:00:00+00:00
+2025-05-07 16:56:34,004 - INFO - Validation size: 10951, from 2022-10-31 08:00:00+00:00 to 2024-01-30 14:00:00+00:00
+2025-05-07 16:56:34,004 - INFO - Test size: 10952, from 2024-01-30 15:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 16:56:34,004 - INFO - === Starting peak model training (TCN) ===
+2025-05-07 16:56:34,005 - INFO - Preparing data for is_price_peak model training...
+2025-05-07 16:56:34,005 - INFO - Loading and merging data...
+2025-05-07 16:56:34,124 - INFO - Loaded price data: (73007, 11)
+2025-05-07 16:56:34,125 - INFO - Price data date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 16:56:34,226 - INFO - Grid data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 16:56:34,234 - INFO - Merged grid data: (73007, 21)
+2025-05-07 16:56:34,524 - INFO - Merged time features: (73007, 31)
+2025-05-07 16:56:35,011 - INFO - Merged holiday data: (73007, 35)
+2025-05-07 16:56:35,121 - INFO - Weather data range after trimming: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 16:56:35,133 - INFO - Merged weather data: (73007, 41)
+2025-05-07 16:56:35,140 - WARNING - Found missing values after merging: price_24h_std    1
+dtype: int64
+2025-05-07 16:56:35,144 - WARNING - Missing values in 'price_24h_std': 1 rows (0.00%)
+2025-05-07 16:56:35,326 - WARNING - Top gaps in 'price_24h_std':
+2025-05-07 16:56:35,327 - WARNING -   Gap #1: 2017-01-01 00:00:00+00:00 to 2017-01-01 00:00:00+00:00 (1 hours)
+2025-05-07 16:56:35,327 - WARNING -   Gap #2: 2017-10-29 02:00:00+00:00 to 2017-10-29 02:00:00+00:00 (1 hours)
+2025-05-07 16:56:35,327 - WARNING -   Gap #3: 2018-10-28 02:00:00+00:00 to 2018-10-28 02:00:00+00:00 (1 hours)
+2025-05-07 16:56:35,327 - WARNING -   Gap #4: 2019-10-27 02:00:00+00:00 to 2019-10-27 02:00:00+00:00 (1 hours)
+2025-05-07 16:56:35,327 - WARNING -   Gap #5: 2020-10-25 02:00:00+00:00 to 2020-10-25 02:00:00+00:00 (1 hours)
+2025-05-07 16:56:35,327 - WARNING -   ... and 73001 more gaps
+2025-05-07 16:56:35,330 - WARNING -   Median gap size: 0.0 hours
+2025-05-07 16:56:35,333 - WARNING -   Average gap size: 0.0 hours
+2025-05-07 16:56:35,333 - INFO - Filled missing values in price_24h_std with forward/backward fill
+2025-05-07 16:56:35,336 - INFO - Final merged dataframe shape: (73007, 41)
+2025-05-07 16:56:35,337 - INFO - Date range: 2017-01-01 00:00:00+00:00 to 2025-04-30 23:00:00+00:00
+2025-05-07 16:56:35,344 - INFO - Adding lag features for trend detection...
+2025-05-07 16:56:35,391 - INFO - Added 9 lag features and 4 momentum/detrended features
+2025-05-07 16:56:35,412 - INFO - Using improved relative peak detection for peak/valley identification
+2025-05-07 16:57:06,216 - INFO - Detected 398 peaks (0.5% of data) and 519 valleys (0.7% of data)
+2025-05-07 16:57:06,217 - INFO - Using window=24h, relative_height=0.20, distance=6h, prominence=0.15
+2025-05-07 16:57:06,230 - INFO - Using robust peak detection algorithm for comparison
+2025-05-07 16:57:09,231 - INFO - Robust peak detection found 14836 peaks (20.3% of data)
+2025-05-07 16:57:09,234 - INFO - Using new robust valley detection algorithm
+2025-05-07 16:57:12,241 - INFO - Robust valley detection found 14059 valleys (19.3% of data)
+2025-05-07 16:57:12,247 - INFO - Using Scipy method for peak detection
+2025-05-07 16:57:12,256 - INFO - Detected 1805 peaks (2.5% of data) and 14059 valleys (19.3% of data)
+2025-05-07 16:57:12,260 - INFO - For reference - traditional method would detect 7301 peaks (10.0% of data)
+2025-05-07 16:57:12,260 - INFO - Traditional thresholds - spike: 115.66, valley: 8.26
+2025-05-07 16:57:12,261 - INFO - Using peak-specific features for model training
+2025-05-07 16:57:12,261 - INFO - Using 24 features for is_price_peak detection
+2025-05-07 16:57:12,280 - INFO - PRODUCTION MODE: Using ALL available data for training
+2025-05-07 16:57:12,283 - INFO - Combined data shape: (73007, 24)
+2025-05-07 16:57:12,283 - INFO - Target distribution in combined data: 2.47% positive samples
+2025-05-07 16:57:12,771 - INFO - Prepared training data: X_train shape (72816, 168, 23), y_train shape (72816, 1)
+2025-05-07 16:57:12,774 - INFO - Training peak detection model...
+2025-05-07 16:57:12,775 - INFO - PRODUCTION MODE: Using all available data for training
+2025-05-07 16:57:12,775 - INFO - Generating peak label validation plots...
+2025-05-07 16:57:17,129 - INFO - Peak detection validation plots saved to C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\peak_validation
+2025-05-07 16:57:17,129 - INFO - Generating peak detection method comparison plots...
+2025-05-07 16:57:17,133 - INFO - Applying different peak detection methods for comparison...
+2025-05-07 16:57:17,135 - INFO - Traditional threshold method: 7301 peaks (10.0% of data)
+2025-05-07 16:57:50,296 - INFO - Detected 398 peaks (0.5% of data) and 519 valleys (0.7% of data)
+2025-05-07 16:57:50,296 - INFO - Using window=24h, relative_height=0.20, distance=6h, prominence=0.15
+2025-05-07 16:57:50,302 - INFO - Relative detection method: 398 peaks (0.5% of data)
+2025-05-07 16:57:53,530 - INFO - Robust peak detection found 14836 peaks (20.3% of data)
+2025-05-07 16:57:53,532 - INFO - Robust detection method: 14836 peaks (20.3% of data)
+2025-05-07 16:57:53,537 - INFO - Simple scipy method: 4709 peaks (6.5% of data)
+2025-05-07 16:57:53,954 - INFO - Local maxima method: 2502 peaks (3.4% of data)
+2025-05-07 16:57:57,237 - INFO - Peak detection method comparison plots saved to C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\peak_method_comparison
+2025-05-07 16:57:57,237 - INFO - Saved feature list with 23 features
+2025-05-07 16:57:57,239 - INFO - Saved feature scaler
+2025-05-07 16:57:57,239 - INFO - Saved thresholds: {'spike_threshold': 115.66180000000014, 'valley_threshold': 8.2626, 'method': 'scipy', 'peak_prominence': 27.805590000000002, 'peak_distance': 4, 'peak_width': 2, 'min_prominence': 0.03, 'min_width': 1, 'distance': 2, 'depth_percentile': 15, 'smoothing_window': 3}
+2025-05-07 16:57:58,067 - WARNING - From C:\Users\adamm\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-05-07 16:57:58,240 - INFO - Built peak model with input shape (168, 23)
+2025-05-07 16:57:58,240 - INFO - Class weights: {0: 1, 1: 39.38602329450915}
+2025-05-07 16:57:58,241 - INFO - Added production-mode callbacks
+2025-05-07 16:57:58,252 - INFO - Training without validation in production mode
+2025-05-07 19:38:21,034 - INFO - Training completed in production mode. Best training loss 0.2684 at epoch 50
+2025-05-07 19:38:21,039 - INFO - Saved training summary to C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\peak_model_training_summary.json
+2025-05-07 19:38:21,204 - INFO - Saved model to C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\final_peak_model.keras
+2025-05-07 19:38:21,362 - INFO - In production mode, also saved model as C:\_Projects\home-energy-ai\src\predictions\prices\models\peak_model\best_peak_model.keras
+2025-05-07 19:38:21,366 - INFO - Peak model training complete
+2025-05-07 19:38:21,366 - INFO - peak model training completed successfully

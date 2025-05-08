@@ -17,6 +17,19 @@ Usage:
     python train.py --model valley --production
 """
 
+import os
+# (optional) still suppress TensorFlow's C++ banners and oneDNN info:
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+import logging
+# silence TensorFlow-emitted WARNING/INFO logs
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+
+import warnings
+# suppress all Python warnings (FutureWarning, DeprecationWarning, etc.)
+warnings.filterwarnings('ignore')
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -135,14 +148,19 @@ def configure_logging():
 
     # Choose the appropriate log file based on model type
     if model_type == 'trend':
-        log_file = TREND_MODEL_DIR / "trend_model_training.log"
+        log_dir = TREND_MODEL_DIR / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "trend_model_training.log"
     elif model_type == 'peak':
-        log_file = PEAK_MODEL_DIR / "peak_model_training.log"
+        log_dir = PEAK_MODEL_DIR / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "peak_model_training.log"
     elif model_type == 'valley':
-        log_file = VALLEY_MODEL_DIR / "valley_model_training.log"
+        log_dir = VALLEY_MODEL_DIR / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "valley_model_training.log"
     else:
-        # Default to a general log file
-        log_file = LOGS_DIR / "model_training.log"
+        raise ValueError(f"Unknown model type: {model_type}")
         
     # Make sure the file exists
     if not log_file.exists():
@@ -1125,8 +1143,8 @@ def prepare_peak_valley_data(target_col='is_price_peak', production_mode=False):
     val_size = int(len(df) * VALIDATION_SPLIT)
     
     train_df = df.iloc[:train_size]
-    val_df = df.iloc[train_size:train_size+val_size]
-    test_df = df.iloc[train_size+val_size:]
+    val_df = df.iloc[train_size:train_size+val_size].copy()
+    test_df = df.iloc[train_size+val_size:].copy()
     
     logging.info(f"Data split: Train {train_df.shape}, Validation {val_df.shape}, Test {test_df.shape}")
     logging.info(f"Target distribution in train: {train_df[target_col].mean()*100:.2f}% positive samples")
@@ -1380,6 +1398,9 @@ def train_trend_model(data, production_mode=False):
     """
     logging.info("Starting Gradient Boosting trend model training...")
     
+    # Get the appropriate model directory
+    model_dir = get_model_dir('trend', production_mode)
+    
     # Get the data
     train_target = data['train_target']
     val_df = data['val_df']
@@ -1394,10 +1415,8 @@ def train_trend_model(data, production_mode=False):
         years_of_data = (combined_target.index[-1] - combined_target.index[0]).days / 365.25
         logging.info(f"Total data span: {years_of_data:.1f} years")
     
-
-    
     # Setup specific logging for debugging
-    log_file = TREND_MODEL_DIR / "trend_model_training_debug.log"
+    log_file = model_dir / "trend_model_training_debug.log"
     # make file if it doesn't exist
     if not log_file.exists():
         log_file.touch()
@@ -1425,7 +1444,7 @@ def train_trend_model(data, production_mode=False):
         else:
             train_target_trimmed = train_target
         
-    logging.info(f"Training data length: {len(train_target_trimmed)}")
+    logging.info(f"Training data length: {len(train_target_trimmed)} hours" )
 
     # Step 2: Check for exogenous features
     logging.info("=== STEP 2: FEATURE INSPECTION ===")
@@ -1754,11 +1773,11 @@ def train_trend_model(data, production_mode=False):
     logging.info("=== STEP 9: MODEL SAVING ===")
     
     # Create directory if it doesn't exist
-    os.makedirs(TREND_MODEL_DIR, exist_ok=True)
+    os.makedirs(model_dir, exist_ok=True)
     
     # Save model
     import pickle
-    model_path = TREND_MODEL_DIR / "best_trend_model.pkl"
+    model_path = model_dir / "best_trend_model.pkl"
     try:
         # First ensure parent directory exists
         model_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1777,7 +1796,7 @@ def train_trend_model(data, production_mode=False):
         raise
     
     # Save feature names and their exact order
-    feature_names_path = TREND_MODEL_DIR / "feature_names.json"
+    feature_names_path = model_dir / "feature_names.json"
     try:
         with open(feature_names_path, 'w') as f:
             json.dump(list(X_train.columns), f)
@@ -1810,7 +1829,7 @@ def train_trend_model(data, production_mode=False):
         'fitted_on': str(X_train.index[0]) + " to " + str(X_train.index[-1])
     }
     
-    params_path = TREND_MODEL_DIR / "trend_model_params.json"
+    params_path = model_dir / "trend_model_params.json"
     try:
         with open(params_path, 'w') as f:
             json.dump(model_params, f, indent=4)
@@ -2072,14 +2091,27 @@ def train_peak_valley_model(data, model_type, production_mode=False):
         X_val = data['X_val']
         y_val = data['y_val']
     
-    # Determine the model directory and parameters
+    # Determine the model directory and parameters based on production mode
     if model_type == 'peak':
-        model_dir = PEAK_MODEL_DIR
+        base_model_dir = PEAK_MODEL_DIR
         model_name = 'peak_model'
         epochs = PEAK_EPOCHS
         batch_size = PEAK_BATCH_SIZE
         early_stopping_patience = PEAK_EARLY_STOPPING_PATIENCE
+    else:  # valley
+        base_model_dir = VALLEY_MODEL_DIR
+        model_name = 'valley_model'
+        epochs = VALLEY_EPOCHS
+        batch_size = VALLEY_BATCH_SIZE
+        early_stopping_patience = VALLEY_EARLY_STOPPING_PATIENCE
+        # Valley models ALWAYS use recall-oriented loss
+        logging.info("Valley model: Using recall-oriented loss for better valley detection")
+    
+    # Use production subdirectory if in production mode
+    model_dir = get_model_dir(model_type, production_mode)
         
+    # Generate validation plots for peak/valley based on model type
+    if model_type == 'peak':
         # Generate peak label validation plots when training peak model
         logging.info("Generating peak label validation plots...")
         validation_plots_dir = model_dir / "peak_validation"
@@ -2106,21 +2138,19 @@ def train_peak_valley_model(data, model_type, production_mode=False):
         
         # Also generate method comparison plots
         logging.info("Generating peak detection method comparison plots...")
-        comparison_dir = plot_peak_detection_comparison(data['df'].copy(), num_samples=3, days_per_sample=7)
+        comparison_dir = plot_peak_detection_comparison(data['df'].copy(), 
+                                                        output_dir=model_dir / "peak_method_comparison", 
+                                                        num_samples=3, 
+                                                        days_per_sample=7)
         logging.info(f"Peak detection method comparison plots saved to {comparison_dir}")
     else:  # valley
-        model_dir = VALLEY_MODEL_DIR
-        model_name = 'valley_model'
-        epochs = VALLEY_EPOCHS
-        batch_size = VALLEY_BATCH_SIZE
-        early_stopping_patience = VALLEY_EARLY_STOPPING_PATIENCE
-        # Valley models ALWAYS use recall-oriented loss
-        logging.info("Valley model: Using recall-oriented loss for better valley detection")
-        
         # Generate valley method comparison plots
         logging.info("Generating valley detection method comparison plots...")
         try:
-            comparison_dir = plot_valley_detection_comparison(data['df'].copy(), num_samples=3, days_per_sample=7)
+            comparison_dir = plot_valley_detection_comparison(data['df'].copy(), 
+                                                              output_dir=model_dir / "valley_method_comparison",
+                                                              num_samples=3, 
+                                                              days_per_sample=7)
             logging.info(f"Valley detection method comparison plots saved to {comparison_dir}")
         except Exception as e:
             logging.error(f"Error generating valley comparison plots: {e}")
@@ -2685,6 +2715,42 @@ def add_lag_features(df, target_col):
     logging.info(f"Added {len(PRICE_LAG_HOURS)} lag features and 4 momentum/detrended features")
     return result_df
 
+def get_model_dir(model_type, production_mode=False):
+    """
+    Get the appropriate model directory path based on model type and production mode.
+    
+    Args:
+        model_type: Type of model ('trend', 'peak', or 'valley')
+        production_mode: Whether we're in production mode
+        
+    Returns:
+        Path object pointing to the appropriate model directory
+    """
+    # Get base model directory
+    if model_type == 'trend':
+        base_dir = TREND_MODEL_DIR
+    elif model_type == 'peak':
+        base_dir = PEAK_MODEL_DIR
+    elif model_type == 'valley':
+        base_dir = VALLEY_MODEL_DIR
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+    
+    # If in production mode, use the production_model subdirectory
+    if production_mode:
+        model_dir = base_dir / "production_model"
+        logging.info(f"Using production model directory: {model_dir}")
+    else:
+        # Use test_model subdirectory for non-production runs
+        model_dir = base_dir / "test_model"
+        logging.info(f"Using test model directory: {model_dir}")
+    
+    # Create directory if it doesn't exist
+    model_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Return the model directory
+    return model_dir
+
 def main():
     """Main function to train electricity price forecasting models."""
     # Parse arguments
@@ -2710,8 +2776,25 @@ def main():
     
     # Check if we're in production mode
     production_mode = args.production
+    
+    # Create specific model directories based on model type and production flag
+    if args.model == 'trend':
+        base_dir = TREND_MODEL_DIR
+    elif args.model == 'peak':
+        base_dir = PEAK_MODEL_DIR
+    else:  # valley
+        base_dir = VALLEY_MODEL_DIR
+    
     if production_mode:
         logging.info("Running in PRODUCTION MODE with all available data!")
+        model_dir = base_dir / "production_model"
+        logging.info(f"Created production model directory: {model_dir}")
+    else:
+        model_dir = base_dir / "test_model"
+        logging.info(f"Created test model directory: {model_dir}")
+    
+    # Create the directory
+    model_dir.mkdir(parents=True, exist_ok=True)
     
     try:
         # Load the data
@@ -2756,8 +2839,11 @@ def main():
                 production_mode=production_mode
             )
             
+            # Get the appropriate model directory for validation plots
+            valley_model_dir = get_model_dir('valley', production_mode)
+            
             # Create validation plots for valley labels before training
-            validation_plots_dir = VALLEY_MODEL_DIR / "valley_validation"
+            validation_plots_dir = valley_model_dir / "valley_validation"
             validation_plots_dir.mkdir(parents=True, exist_ok=True)
             plot_valley_labels(valley_data['df'], output_dir=validation_plots_dir, num_samples=5, days_per_sample=14)
             logging.info(f"Generated valley label validation plots in {validation_plots_dir}")

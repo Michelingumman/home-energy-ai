@@ -1,3 +1,12 @@
+import os
+# (optional) still suppress TensorFlow’s C++ banners and oneDNN info:
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+import warnings
+# suppress all Python warnings (FutureWarning, DeprecationWarning, etc.)
+warnings.filterwarnings('ignore')
+
 from pathlib import Path
 import pandas as pd
 import requests
@@ -6,7 +15,7 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 import numpy as np
-import os
+
 
 # Import from config.py
 from config import (

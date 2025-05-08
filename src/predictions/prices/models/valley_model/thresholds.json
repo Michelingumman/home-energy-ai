@@ -1,1 +1,0 @@
-{"spike_threshold": 115.66180000000014, "valley_threshold": 8.2626, "method": "scipy", "peak_prominence": 27.805590000000002, "peak_distance": 4, "peak_width": 2, "min_prominence": 0.03, "min_width": 1, "distance": 2, "depth_percentile": 15, "smoothing_window": 3}

@@ -77,11 +77,11 @@ TREND_EXOG_FEATURES = [
     # Grid data - key electricity system factors
     "powerConsumptionTotal",  # Electricity demand is crucial
     "powerProductionTotal",   # Supply side
-    "hydro",                  # Major production source in Sweden
-    "nuclear",                # Nuclear power generation
-    "wind",                   # Wind power generation
-    "powerImportTotal",       # Power imports
-    "powerExportTotal",       # Power exports
+    # "hydro",                  # Major production source in Sweden
+    # "nuclear",                # Nuclear power generation
+    # "wind",                   # Wind power generation
+    # "powerImportTotal",       # Power imports
+    # "powerExportTotal",       # Power exports
     
     # Price derived features
     "price_168h_avg",         # Weekly average price (stable)

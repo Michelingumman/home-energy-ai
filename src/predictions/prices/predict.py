@@ -14,6 +14,19 @@ Usage:
     python predict.py --production_mode
 """
 
+import os
+# (optional) still suppress TensorFlow’s C++ banners and oneDNN info:
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+import logging
+# silence TensorFlow-emitted WARNING/INFO logs
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+
+import warnings
+# suppress all Python warnings (FutureWarning, DeprecationWarning, etc.)
+warnings.filterwarnings('ignore')
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf

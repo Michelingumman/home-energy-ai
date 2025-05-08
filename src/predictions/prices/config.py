@@ -95,14 +95,14 @@ TREND_EXOG_FEATURES = [
 
 # ----- Peak Model Specific Parameters -----
 PEAK_BATCH_SIZE = 128         # Larger batch size for handling class imbalance
-PEAK_EPOCHS = 30              # Fewer epochs for faster training
-PEAK_EARLY_STOPPING_PATIENCE = 5
+PEAK_EPOCHS = 50              # Fewer epochs for faster training
+PEAK_EARLY_STOPPING_PATIENCE = 15
 PEAK_LEARNING_RATE = 2e-3     # Higher learning rate for faster convergence
 
 # TCN architecture parameters
 PEAK_TCN_FILTERS = 64         # Reduced from 128 for faster training
 PEAK_TCN_KERNEL_SIZE = 3
-PEAK_TCN_DILATIONS = [1, 2, 4, 8]  # Fewer dilations for faster training
+PEAK_TCN_DILATIONS = [1, 2, 4, 8, 16]  # Fewer dilations for faster training
 PEAK_TCN_NB_STACKS = 2        # Single stack for reduced complexity
 
 #############################################################################
@@ -111,15 +111,15 @@ PEAK_TCN_NB_STACKS = 2        # Single stack for reduced complexity
 
 # ----- Valley Model Specific Parameters -----
 VALLEY_BATCH_SIZE = 128        # Smaller batch size for more gradient updates
-VALLEY_EPOCHS = 30            # Increased epochs for better learning with recall loss
-VALLEY_EARLY_STOPPING_PATIENCE = 5  # Shorter patience for quicker training
+VALLEY_EPOCHS = 50            # Increased epochs for better learning with recall loss
+VALLEY_EARLY_STOPPING_PATIENCE = 15  # Shorter patience for quicker training
 VALLEY_LEARNING_RATE = 5e-4   # Lower learning rate for more stable training
 
 # TCN architecture parameters - optimized for valley detection
 VALLEY_TCN_FILTERS = 64      # Increased from 16 for better capacity 
 VALLEY_TCN_KERNEL_SIZE = 3    # Smaller kernel for faster computation
-VALLEY_TCN_DILATIONS = [1, 2, 4, 8]  # Extended dilations for better temporal context
-VALLEY_TCN_NB_STACKS = 1      # Single stack is sufficient for production
+VALLEY_TCN_DILATIONS = [1, 2, 4, 8, 16]  # Extended dilations for better temporal context
+VALLEY_TCN_NB_STACKS = 2      # Single stack is sufficient for production
 
 # ----- Loss function and optimization parameters -----
 # Higher value will make the model more aggressive in finding valleys

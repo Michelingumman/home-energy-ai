@@ -34,6 +34,7 @@ import logging
 import json
 import joblib
 import pickle  # Add pickle import
+import traceback  # Add traceback import
 from pathlib import Path
 import argparse
 from datetime import datetime, timedelta
@@ -51,8 +52,9 @@ from sklearn.preprocessing import StandardScaler
 from scipy.interpolate import interp1d
 
 
-USE_ADVANCED_TREND_SMOOTHING = True
+USE_ADVANCED_TREND_SMOOTHING = False
 
+# This is not used if above is True
 SIMPLE_TREND_MODEL_SMOOTHING_LEVEL = 'heavy' # 'light', 'medium', 'heavy', 'daily', 'weekly'
 
 
@@ -170,18 +172,18 @@ def adaptive_trend_smoothing(data, timestamps, smoothing_level='light'):
     
     if smoothing_level == 'light':
         # Light smoothing
-        result = exponential_smooth(result, alpha=0.5)
+        result = exponential_smooth(result, alpha=0.6)
         result = median_filter(result, window=3)
         
     elif smoothing_level == 'medium':
         # Medium smoothing (default)
-        result = exponential_smooth(result, alpha=0.35)
+        result = exponential_smooth(result, alpha=0.30)
         result = median_filter(result, window=5)
         result = savitzky_golay_filter(result, window=11, polyorder=2)
         
     elif smoothing_level == 'heavy':
         # Heavy smoothing
-        result = exponential_smooth(result, alpha=0.2)
+        result = exponential_smooth(result, alpha=0.1) # alpha here is the smoothing factor where lower is more smoothing
         result = median_filter(result, window=7)
         result = savitzky_golay_filter(result, window=13, polyorder=2)
         
@@ -245,17 +247,16 @@ def configure_logging(model_type):
     
     # Choose the appropriate log file based on model type
     if model_type == 'trend':
-        log_file = TREND_MODEL_DIR / "logs" / "trend_model_evaluation.log"
+        log_file = TREND_EVAL_DIR / "logs" / "trend_model_evaluation.log"
     elif model_type == 'peak':
-        log_file = PEAK_MODEL_DIR / "logs" / "peak_model_evaluation.log"
+        log_file = PEAK_EVAL_DIR / "logs" / "peak_model_evaluation.log"
     elif model_type == 'valley':
-        log_file = VALLEY_MODEL_DIR / "logs" / "valley_model_evaluation.log"
+        log_file = VALLEY_EVAL_DIR / "logs" / "valley_model_evaluation.log"
     elif model_type == 'merged':
-        log_file = MODELS_DIR / "logs" / "merged_model_evaluation.log"
+        log_file = EVALUATION_DIR / "merged" / "logs" / "merged_model_evaluation.log"
     else:
-        # Default to a general log file
-        log_file = LOGS_DIR / "model_evaluation.log"
-          
+        raise ValueError(f"Unknown model type: {model_type}")
+    
     # Make sure the log directory exists
     log_file.parent.mkdir(parents=True, exist_ok=True)
     
@@ -2621,7 +2622,65 @@ def load_peak_model():
         custom_objects = {'TCN': TCN}
         
         # Add focal loss function
-        custom_objects.update(get_focal_loss_custom_objects())
+        # Instead of using get_focal_loss_custom_objects(), define it directly here
+        def binary_focal_loss(gamma=2.0, alpha=0.25):
+            """
+            Binary form of focal loss.
+            """
+            def binary_focal_loss_fixed(y_true, y_pred):
+                # Clip the prediction value to prevent extreme cases
+                epsilon = K.epsilon()
+                y_pred = K.clip(y_pred, epsilon, 1.0 - epsilon)
+                
+                # Calculate cross entropy
+                cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
+                
+                # Calculate focal loss
+                loss = alpha * K.pow(1 - y_pred, gamma) * y_true * K.log(y_pred) - \
+                       (1 - alpha) * K.pow(y_pred, gamma) * (1 - y_true) * K.log(1 - y_pred)
+                
+                return -K.mean(loss)
+            return binary_focal_loss_fixed
+        
+        focal_loss_fn = binary_focal_loss()
+        focal_loss_fn.__name__ = 'binary_focal_loss_fixed'
+        custom_objects['binary_focal_loss_fixed'] = focal_loss_fn
+        
+        # Add GlobalSumPooling1D custom layer
+        custom_objects['GlobalSumPooling1D'] = GlobalSumPooling1D
+        
+        # Define the lambda_sum function
+        def lambda_sum(x):
+            return K.sum(x, axis=1)
+            
+        # Add the lambda function to custom objects
+        custom_objects['lambda_sum'] = lambda_sum
+        custom_objects['sum_output_shape'] = lambda input_shape: (input_shape[0], input_shape[2])
+        
+        # Add focal loss function
+        # Instead of using get_focal_loss_custom_objects(), define it directly here
+        def binary_focal_loss(gamma=2.0, alpha=0.25):
+            """
+            Binary form of focal loss.
+            """
+            def binary_focal_loss_fixed(y_true, y_pred):
+                # Clip the prediction value to prevent extreme cases
+                epsilon = K.epsilon()
+                y_pred = K.clip(y_pred, epsilon, 1.0 - epsilon)
+                
+                # Calculate cross entropy
+                cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
+                
+                # Calculate focal loss
+                loss = alpha * K.pow(1 - y_pred, gamma) * y_true * K.log(y_pred) - \
+                       (1 - alpha) * K.pow(y_pred, gamma) * (1 - y_true) * K.log(1 - y_pred)
+                
+                return -K.mean(loss)
+            return binary_focal_loss_fixed
+        
+        focal_loss_fn = binary_focal_loss()
+        focal_loss_fn.__name__ = 'binary_focal_loss_fixed'
+        custom_objects['binary_focal_loss_fixed'] = focal_loss_fn
         
         # Define recall-oriented loss function
         def get_recall_oriented_loss(false_neg_weight=5.0, false_pos_weight=1.0):
@@ -2654,17 +2713,6 @@ def load_peak_model():
         # Add the specific recall-oriented loss function
         recall_loss_fn = get_recall_oriented_loss(5.0, 1.0)
         custom_objects[recall_loss_fn.__name__] = recall_loss_fn
-        
-        # Add GlobalSumPooling1D custom layer
-        custom_objects['GlobalSumPooling1D'] = GlobalSumPooling1D
-        
-        # Define the lambda_sum function
-        def lambda_sum(x):
-            return K.sum(x, axis=1)
-            
-        # Add the lambda function to custom objects
-        custom_objects['lambda_sum'] = lambda_sum
-        custom_objects['sum_output_shape'] = lambda input_shape: (input_shape[0], input_shape[2])
         
         # Load the model with custom objects
         model = load_model(model_path, custom_objects=custom_objects, compile=False)
@@ -3214,7 +3262,9 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
     # ==================================================================================
     # 1. GET TREND PREDICTIONS
     # ==================================================================================
-    
+    print("\n" + "=" * 30)
+    print("1. Getting trend predictions")
+    print("=" * 30)
     # Add time features needed for trend prediction
     df = add_cyclical_time_features(df)
     
@@ -3257,10 +3307,12 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
     
     # Apply smoothing to trend predictions for a more stable base
     if USE_ADVANCED_TREND_SMOOTHING:
+        logging.info("Applying advanced trend smoothing pipeline to trend predictions")
         trend_smooth = exponential_smooth(trend_predictions, alpha=0.5)
         trend_smooth = median_filter(trend_smooth, window=5)
         trend_smooth = savitzky_golay_filter(trend_smooth, window=11, polyorder=2)
     elif SIMPLE_TREND_MODEL_SMOOTHING_LEVEL in ['light', 'medium', 'heavy', 'daily', 'weekly']:
+        logging.info(f"Applying {SIMPLE_TREND_MODEL_SMOOTHING_LEVEL} smoothing level to trend predictions")
         trend_smooth = adaptive_trend_smoothing(trend_predictions, df.index, SIMPLE_TREND_MODEL_SMOOTHING_LEVEL)
     else:
         raise ValueError(f"Unknown smoothing level: {SIMPLE_TREND_MODEL_SMOOTHING_LEVEL}")
@@ -3272,6 +3324,9 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
     # ==================================================================================
     # 2. GET PEAK PREDICTIONS
     # ==================================================================================
+    print("\n" + "=" * 30)
+    print("2. Getting peak predictions")
+    print("=" * 30)
     peak_probabilities = None
     peak_predictions = None
     
@@ -3386,6 +3441,9 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
     # ==================================================================================
     # 3. GET VALLEY PREDICTIONS
     # ==================================================================================
+    print("\n" + "=" * 30)
+    print("3. Getting valley predictions")
+    print("=" * 30)
     valley_probabilities = None
     valley_predictions = None
     
@@ -3499,10 +3557,13 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
     # ==================================================================================
     # 4. MERGE PREDICTIONS
     # ==================================================================================
+    print("\n" + "=" * 30)
+    print("4. Merging predictions")
+    print("=" * 30)
     logging.info(f"Simple merging complete - created predictions for {len(df)} samples")
     
     # Copy trend predictions to result column
-    df['predicted_price'] = trend_predictions
+    df['predicted_price'] = df['trend_prediction_smooth']
     
     # Count conflicts (both peak and valley)
     conflicts = 0
@@ -3510,8 +3571,8 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
     valley_count = 0
     
     # Calculate average peak and valley amplitudes for scaling the effects
-    peak_amplitude = 0.2 * df[TARGET_VARIABLE].mean()  # 20% of average price
-    valley_amplitude = 0.2 * df[TARGET_VARIABLE].mean()  # 20% of average price
+    peak_amplitude = 0.8 * df[TARGET_VARIABLE].mean()  # 20% of average price
+    valley_amplitude = 0.8 * df[TARGET_VARIABLE].mean()  # 20% of average price
     
     # Process each row where we have predictions
     for i in range(len(df)):
@@ -3562,7 +3623,9 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
     # ==================================================================================
     # 5. GENERATE PLOTS
     # ==================================================================================
-    
+    print("\n" + "=" * 30)
+    print("5. Generating plots")
+    print("=" * 30)
     # Define output directory
     output_dir = EVALUATION_DIR / "merged" / subset_name
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -3583,7 +3646,8 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
         # Get the data for this week
         week_timestamps = df.index[start_idx:end_idx]
         week_actual_prices = df[TARGET_VARIABLE].values[start_idx:end_idx]
-        week_trend_predictions = trend_predictions[start_idx:end_idx]
+        # Use smoothed trend predictions instead of raw predictions for consistency
+        week_trend_predictions = df['trend_prediction_smooth'].values[start_idx:end_idx]
         week_merged_predictions = df['predicted_price'].values[start_idx:end_idx]
         
         # Get peak and valley data if available
@@ -3612,10 +3676,10 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
         # Plot 1: Actual Price and Base Trend Model
         # -------------------------------------------------------------------------
         axs[0].step(week_timestamps, week_actual_prices, 'b-', label='Actual Price', linewidth=2)
-        axs[0].step(week_timestamps, week_trend_predictions, 'g-', label='Trend Prediction', linewidth=2)
+        axs[0].step(week_timestamps, week_trend_predictions, 'g-', label='Trend Prediction (Smoothed)', linewidth=2)
         
         axs[0].set_ylabel('Price (öre/kWh)')
-        axs[0].set_title(f'Actual Price and Base Trend Model: {start_date} to {end_date}')
+        axs[0].set_title(f'Actual Price and Base Trend Model (Smoothed): {start_date} to {end_date}')
         axs[0].legend(loc='upper right')
         axs[0].grid(True, alpha=0.3)
         
@@ -3623,7 +3687,7 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
         # Plot 2: Combined Model: Trend with Peak & Valley Volatility
         # -------------------------------------------------------------------------
         axs[1].step(week_timestamps, week_actual_prices, 'k-', label='Actual Price', linewidth=1, alpha=0.5)
-        axs[1].step(week_timestamps, week_trend_predictions, 'g-', label='Trend Prediction', linewidth=1.5)
+        axs[1].step(week_timestamps, week_trend_predictions, 'g-', label='Trend Prediction (Smoothed)', linewidth=1.5)
         axs[1].step(week_timestamps, week_merged_predictions, 'm-', label='Merged Prediction', linewidth=2)
         
         # Add peak markers

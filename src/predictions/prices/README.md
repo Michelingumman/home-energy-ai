@@ -11,27 +11,30 @@ src/predictions/prices/
 ├── config.py        # Configuration for features, paths, and model parameters
 ├── utils.py         # Feature engineering and helper functions
 ├── models/
-│   ├── trend_model/            # Saved trend model artifacts
-│   ├── peak_model/             # Saved peak model artifacts
-│   |   |── peak_validation/    # plot of the generated peak labels for visualization
-│   └── valley_model/           # Saved valley model artifacts
-│   |   |── valley_validation/  # plot of the generated peak labels for visualization
-├── data/                    # Input data files (prices, grid, weather, etc.)
-└── plots/                   # Output plots and visualizations
-│   ├── evaluation/   # evaluation plots
-│   |   ├── merged/    # validation plots for visual performance of the trend+peak+valley model
-│   |   ├── peak/      # validation plots for visual performance
-│   |   ├── trend/     # validation plots for visual performance
-│   |   ├── valley/    # validation plots for visual performance
-│   ├── predictions/   # future prediction plots
+│   ├── trend_model/                # Saved peak model artifacts
+│   |   |   |── production_model/       # Plot of the generated peak labels for visualization
+│   |   |   |── test_model/             # Plot of the generated peak labels for visualization
+│   ├── peak_model/                 # Saved peak model artifacts
+│   |   |   |── production_model/       # Plot of the generated peak labels for visualization
+│   |   |   |── test_model/             # Plot of the generated peak labels for visualization
+│   ├── valley_model/               # Saved peak model artifacts
+│   |   |   |── production_model/       # Plot of the generated peak labels for visualization
+│   |   |   |── test_model/             # Plot of the generated peak labels for visualization
+├── plots/                   # Output plots and visualizations
+│   ├── evaluation/          # Evaluation plots
+│   |   ├── merged/          # Validation plots for merged model performance (trend+peak+valley)
+│   |   ├── peak/            # Validation plots for peak model performance
+│   |   ├── trend/           # Validation plots for trend model performance
+│   |   ├── valley/          # Validation plots for valley model performance
+│   ├── predictions/         # Future prediction plots
 ```
 
 ## Models
 
-- **Trend Model:** Predicts the general price trend using XGBoost regression with changeable smoothing mode.
+- **Trend Model:** Predicts the general price trend using XGBoost regression with configurable smoothing levels.
 - **Peak Model:** Detects price spikes (peaks) using a Temporal Convolutional Network (TCN) classifier.
 - **Valley Model:** Detects price valleys using a TCN classifier with recall-oriented loss and class balancing.
-- **Merged Evaluation:** The `evaluate.py` script can also assess a combined prediction that merges the trend forecast with detected peaks and valleys to simulate realistic price volatility.
+- **Merged Evaluation:** Combines the trend forecast with detected peaks and valleys to simulate realistic price volatility.
 
 ## Data Preparation
 
@@ -65,54 +68,67 @@ python evaluate.py --model [trend|peak|valley|merged] [options]
 
 **Key options:**
 - `--model`: Specifies the model to evaluate (`trend`, `peak`, `valley`, or `merged`).
-- `--weeks N` : Number of weeks to visualize (plots are spaced across the dataset).
-- `--test-data` : Evaluate on the test set instead of validation.
-- `--valley-threshold X` : Set the probability threshold for valley detection. For the `merged` model, this also serves as the default threshold.
-- `--peak-threshold X` : Set a separate probability threshold specifically for peak detection
-- `--optimize-threshold` : Automatically find the threshold that maximizes F1 score for peak or valley models (not applicable to `merged` directly, but influences the underlying peak/valley models if they are re-evaluated with this option).
+- `--weeks N`: Number of weeks to visualize (plots are spaced across the dataset).
+- `--test-data`: Evaluate on the test set instead of validation.
+- `--valley-threshold X`: Set the probability threshold for valley detection (default: 0.4 for merged model).
+- `--peak-threshold X`: Set the probability threshold for peak detection (default: 0.5 for merged model).
+- `--optimize-threshold`: Automatically find the threshold that maximizes F1 score for peak or valley models.
 
 **Examples:**
-Evaluate the valley model for 8 weeks with a specific threshold:
+Evaluate the valley model with a specific threshold:
 ```bash
 python evaluate.py --model valley --weeks 8 --valley-threshold 0.65
 ```
-Evaluate the peak model for 8 weeks with a specific threshold:
+Evaluate the peak model with a specific threshold:
 ```bash
-python evaluate.py --model peak --weeks 8 --valley-threshold 0.90
+python evaluate.py --model peak --weeks 8 --peak-threshold 0.90
 ```
-Evaluate the trend model for 8 weeks:
+Evaluate the trend model:
 ```bash
 python evaluate.py --model trend --weeks 8
 ```
-Evaluate the merged model using specific thresholds for peaks and valleys for new data (test data is closer to current date):
+Evaluate the merged model using specific thresholds for peaks and valleys:
 ```bash
-python evaluate.py --model merged --weeks 4 --peak-threshold 0.90 --valley-threshold 0.65 --test-data
+python evaluate.py --model merged --peak-threshold 0.90 --valley-threshold 0.65 --test-data
 ```
 
-Evaluation produces:
-- Weekly plots showing price, predictions, and relevant scores.
-- For `peak` and `valley` models: actual vs. predicted events, and probability scores.
-- For the `merged` model: plots comparing actual price, base trend, and the merged prediction line that incorporates peak/valley volatility. Also includes probability plots for peak and valley detection.
-- Comprehensive metrics including accuracy, precision, recall, F1, ROC AUC, and class rates for classification models (peak/valley). For the trend and merged models, MAE, RMSE, and directional accuracy are provided.
-- All outputs are saved in the corresponding `plots/evaluation/[model_type]/` directory.
+## Trend Model Smoothing
+
+The trend model predictions can be smoothed using different techniques:
+
+- `light`: Exponential smoothing (α=0.6) + small median filter
+- `medium`: Exponential smoothing (α=0.3) + median filter + Savitzky-Golay filter
+- `heavy`: Stronger exponential smoothing (α=0.1) + larger median filter + Savitzky-Golay filter
+- `daily`: Daily averaging of predictions
+- `weekly`: Weekly averaging of predictions
+
+The smoothing level can be configured in the `evaluate.py` script using the `SIMPLE_TREND_MODEL_SMOOTHING_LEVEL` variable.
+
+## Peak and Valley Amplitude
+
+In the merged model evaluation, the script applies:
+- **Peak Amplitude**: 80% of the average price is added to trend predictions for detected peaks
+- **Valley Amplitude**: 80% of the average price is subtracted from trend predictions for detected valleys
+
+The effect is scaled by the detection probability (minimum 75% effect). For cases where both peak and valley are predicted, the model resolves conflicts based on probability.
+
+## Evaluation Metrics and Outputs
+
+- **Weekly plots**: Shows actual prices, trend predictions, and merged predictions incorporating peaks/valleys
+- **Classification metrics**: For peak/valley models: accuracy, precision, recall, F1 score, and ROC AUC
+- **Regression metrics**: For trend and merged models: MAE, RMSE
+- All outputs are saved in the corresponding `plots/evaluation/[model_type]/` directory
 
 ## Customization
 
 - **Feature Engineering:** Modify or extend features in `utils.py` and `config.py`.
 - **Model Parameters:** Adjust hyperparameters in `config.py` for each model.
-- **Labeling:** The labeling logic for peaks and valleys is in `train.py` and uses robust Scipy-based methods for consistency.
-- **Merging Logic:** The strategy for combining trend, peak, and valley predictions in the `merged` evaluation (including amplitude and smoothing) is within `evaluate.py`.
-
-## File Overview
-
-- **train.py**: Main entry point for training. Handles data loading, feature engineering, model fitting, and artifact saving.
-- **evaluate.py**: Main entry point for evaluation. Loads models and artifacts, applies them to validation/test data, computes metrics, and generates plots. Includes logic for evaluating individual models and the merged prediction strategy.
-- **config.py**: Centralized configuration for paths, features, and model parameters.
-- **utils.py**: Helper functions for feature engineering, sequence creation, and label generation.
+- **Labeling:** The labeling logic for peaks and valleys is in `train.py`.
+- **Merging Logic:** The strategy for combining predictions is in `evaluate.py`.
 
 ## Data Requirements
 
-The system expects the following data files in the `data/processed` directory (Note: `data/processed` is a common convention, adapt if your structure is `data/` directly):
+The system expects the following data files in the `data/processed` directory:
 
 - `SE3prices.csv` - Historical electricity prices
 - `SwedenGrid.csv` - Power grid data

@@ -6219,12 +6219,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -6471,12 +6471,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 57/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 56/60 requests remaining in this period
 
@@ -6723,12 +6723,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -6975,12 +6975,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 57/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 56/60 requests remaining in this period
 
@@ -7193,12 +7193,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 55/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 54/60 requests remaining in this period
 
@@ -7411,12 +7411,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -7629,12 +7629,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -7847,12 +7847,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -8065,12 +8065,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -8283,12 +8283,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -8501,12 +8501,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -8719,12 +8719,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -8972,12 +8972,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -9225,12 +9225,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 57/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 56/60 requests remaining in this period
 
@@ -9442,12 +9442,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -9659,12 +9659,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -9876,12 +9876,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -10093,12 +10093,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -10310,12 +10310,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -10527,12 +10527,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -10744,12 +10744,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -10961,12 +10961,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -11178,12 +11178,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -11395,12 +11395,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -11620,12 +11620,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -11846,12 +11846,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -12071,12 +12071,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -12296,12 +12296,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -12521,12 +12521,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -12746,12 +12746,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -12971,12 +12971,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -13196,12 +13196,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -13456,12 +13456,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -13686,12 +13686,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -13929,12 +13929,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -14172,12 +14172,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -14415,12 +14415,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -14658,12 +14658,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -14937,12 +14937,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -15179,12 +15179,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -15413,12 +15413,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -15656,12 +15656,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -15890,12 +15890,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -16115,12 +16115,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -16396,12 +16396,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 57/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 56/60 requests remaining in this period
 
@@ -16612,12 +16612,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 55/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 55/60 requests remaining in this period
 
@@ -16828,12 +16828,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -17050,12 +17050,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -17292,12 +17292,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -17570,12 +17570,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -17840,12 +17840,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 57/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 56/60 requests remaining in this period
 
@@ -18110,12 +18110,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 55/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 54/60 requests remaining in this period
 
@@ -18380,12 +18380,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 53/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 52/60 requests remaining in this period
 
@@ -18598,12 +18598,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 57/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 57/60 requests remaining in this period
 
@@ -18868,12 +18868,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 55/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 54/60 requests remaining in this period
 
@@ -19138,12 +19138,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 53/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 52/60 requests remaining in this period
 
@@ -19355,12 +19355,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -19579,12 +19579,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -19815,12 +19815,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -20051,12 +20051,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -20269,12 +20269,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 58/60 requests remaining in this period
 
@@ -20487,12 +20487,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -20705,12 +20705,12 @@ Fetching 4-day forecast (today + 3 days ahead)
 Loaded API key from C:\_Projects\home-energy-ai\api.env
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/-45/9.72?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 24 panels facing southeast (azimuth -45°)...
+Making authenticated API request for 24 panels facing southeast (azimuth -45ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 URL https://api.forecast.solar/HZy4b32YPefS5ArG/estimate/watthours/59.27316407985615/17.958286019897105/27/135/10.53?full=1&limit=4&damping=1&resolution=60 
 
-Making authenticated API request for 26 panels facing northwest (azimuth 135°)...
+Making authenticated API request for 26 panels facing northwest (azimuth 135ï¿½)...
 Parameters: Start=now, Days=4, Resolution=hourly
 API Rate Limit: 59/60 requests remaining in this period
 
@@ -20903,3 +20903,4 @@ No data available for the specified date range from any source
 
 
 [2025-05-08 05:00:17] ################################## END OF SCRIPT  2025-05-08 05:00:17 ##################################
+[2025-05-08 20:00:02] 

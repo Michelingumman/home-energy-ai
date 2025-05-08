@@ -32,9 +32,17 @@ src/predictions/prices/
 ## Models
 
 - **Trend Model:** Predicts the general price trend using XGBoost regression with configurable smoothing levels.
+![image](https://github.com/user-attachments/assets/461003ed-d6c6-42c3-ab47-eefdbd23e407)
+
 - **Peak Model:** Detects price spikes (peaks) using a Temporal Convolutional Network (TCN) classifier.
+![image](https://github.com/user-attachments/assets/ffeacde8-33de-401a-9fa7-91595fbf97f7)
+
 - **Valley Model:** Detects price valleys using a TCN classifier with recall-oriented loss and class balancing.
+![image](https://github.com/user-attachments/assets/74e67aa1-5969-40cd-b2c8-5452acf53265)
+
 - **Merged Evaluation:** Combines the trend forecast with detected peaks and valleys to simulate realistic price volatility.
+![image](https://github.com/user-attachments/assets/3d5c9993-a60f-4b22-a6c1-50fd49c12fa1)
+
 
 ## Data Preparation
 

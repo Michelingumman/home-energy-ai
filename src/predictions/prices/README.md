@@ -20,18 +20,8 @@ src/predictions/prices/
 │   ├── valley_model/               # Valley detection model artifacts
 │   |   |   |── production_model/       # Production-ready model
 │   |   |   |── test_model/             # Test/development model
-│   ├── trend_model/                # Trend model artifacts
-│   |   |   |── production_model/       # Production-ready model
-│   |   |   |── test_model/             # Test/development model
-│   ├── peak_model/                 # Peak detection model artifacts
-│   |   |   |── production_model/       # Production-ready model
-│   |   |   |── test_model/             # Test/development model
-│   ├── valley_model/               # Valley detection model artifacts
-│   |   |   |── production_model/       # Production-ready model
-│   |   |   |── test_model/             # Test/development model
 ├── plots/                   # Output plots and visualizations
 │   ├── evaluation/          # Evaluation plots
-│   |   ├── merged/          # Validation plots for merged model performance
 │   |   ├── merged/          # Validation plots for merged model performance
 │   |   ├── peak/            # Validation plots for peak model performance
 │   |   ├── trend/           # Validation plots for trend model performance
@@ -64,31 +54,6 @@ The merged approach combines the trend forecast with detected peaks and valleys 
 
 ![Merged Model Evaluation](https://github.com/user-attachments/assets/3d5c9993-a60f-4b22-a6c1-50fd49c12fa1)
 *Complete merged prediction incorporating trend, peaks, and valleys for comprehensive price forecasting*
-## Models Overview
-
-### Trend Model
-The trend model predicts the general price movement using XGBoost regression with configurable smoothing levels.
-
-![Trend Model Evaluation](https://github.com/user-attachments/assets/461003ed-d6c6-42c3-ab47-eefdbd23e407)
-*Example of trend model prediction showing the underlying price movement pattern*
-
-### Peak Model
-The peak model detects price spikes using a Temporal Convolutional Network (TCN) classifier with specialized loss functions.
-
-![Peak Model Evaluation](https://github.com/user-attachments/assets/ffeacde8-33de-401a-9fa7-91595fbf97f7)
-*Visualization of peak detection results with prediction probabilities*
-
-### Valley Model
-The valley model identifies price drops using a TCN classifier with recall-oriented loss and class balancing techniques.
-
-![Valley Model Evaluation](https://github.com/user-attachments/assets/647af62e-7ba2-41fc-a455-68322d4a89d7)
-*Valley detection results showing correctly identified low-price periods*
-
-### Merged Evaluation
-The merged approach combines the trend forecast with detected peaks and valleys to simulate realistic price volatility.
-
-![Merged Model Evaluation](https://github.com/user-attachments/assets/3d5c9993-a60f-4b22-a6c1-50fd49c12fa1)
-*Complete merged prediction incorporating trend, peaks, and valleys for comprehensive price forecasting*
 
 ## Data Preparation
 
@@ -96,16 +61,15 @@ All models use a unified data pipeline that merges price, grid, weather, time, a
 
 Peak and valley labels are generated using robust, Scipy-based detection algorithms, ensuring high-quality targets for classification.
 
-## Training Process
+
 ## Training Process
 
 Run the training script to train any of the three base models:
 
-```bash
+```python
 python train.py --model [trend|peak|valley]
 ```
 
-### Training Options:
 ### Training Options:
 - `--model`: Selects which model to train.
 - `--production`: (Optional) Trains on all available data for production deployment.
@@ -116,13 +80,12 @@ Artifacts (model weights, scalers, feature lists, and thresholds) are saved in t
 ## Evaluation
 
 Evaluate any trained model or the merged prediction strategy:
-Evaluate any trained model or the merged prediction strategy:
 
-```bash
-python run_model.py --model [trend|peak|valley|merged] [options]
+```python
+python run_model.py
 ```
 
-### Evaluation Options:
+
 ### Evaluation Options:
 - `--model`: Specifies the model to evaluate (`trend`, `peak`, `valley`, or `merged`).
 - `--weeks N`: Number of weeks to visualize (plots are spaced across the dataset).
@@ -131,34 +94,26 @@ python run_model.py --model [trend|peak|valley|merged] [options]
 - `--peak-threshold X`: Set the probability threshold for peak detection (default: 0.75 for merged model).
 - `--optimize-threshold`: Automatically find the threshold that maximizes F1 score for peak or valley models.
 
+
 ### Example Commands:
 
 **Valley Model Evaluation:**
-### Example Commands:
-
-**Valley Model Evaluation:**
-```bash
+```python
 python run_model.py --model valley --weeks 8 --valley-threshold 0.65
 ```
 
 **Peak Model Evaluation:**
-
-**Peak Model Evaluation:**
-```bash
+```python
 python run_model.py --model peak --weeks 8 --peak-threshold 0.90
 ```
 
 **Trend Model Evaluation:**
-
-**Trend Model Evaluation:**
-```bash
+```python
 python run_model.py --model trend --weeks 8
 ```
 
 **Merged Model Evaluation:**
-
-**Merged Model Evaluation:**
-```bash
+```python
 python run_model.py --model merged --peak-threshold 0.90 --valley-threshold 0.65 --test-data
 ```
 
@@ -166,13 +121,6 @@ python run_model.py --model merged --peak-threshold 0.90 --valley-threshold 0.65
 
 The trend model predictions can be smoothed using different techniques:
 
-| Smoothing Level | Description |
-|-----------------|-------------|
-| `light`         | Exponential smoothing (α=0.6) + small median filter |
-| `medium`        | Exponential smoothing (α=0.3) + median filter + Savitzky-Golay filter |
-| `heavy`         | Stronger exponential smoothing (α=0.1) + larger median filter + Savitzky-Golay filter |
-| `daily`         | Daily averaging of predictions |
-| `weekly`        | Weekly averaging of predictions |
 | Smoothing Level | Description |
 |-----------------|-------------|
 | `light`         | Exponential smoothing (α=0.6) + small median filter |
@@ -223,6 +171,6 @@ The system expects the following data files in the `data/processed` directory:
 
 - Trained models are saved in the `models` directory
 - Evaluation results and plots are saved in the `plots/evaluation` directory
-- Predictions (if a prediction script is added) would typically be saved in `plots/predictions` or a dedicated `output/predictions` directory.
+- Predictions saved in `plots/predictions` or a dedicated `output/predictions` directory.
 
 ---

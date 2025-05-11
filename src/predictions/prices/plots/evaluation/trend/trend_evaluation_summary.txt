@@ -1,21 +1,21 @@
 ================================================================================
 TREND MODEL EVALUATION SUMMARY
 ================================================================================
-Date: 2025-05-08 19:46:20
+Date: 2025-05-09 12:48:51
 Model type: XGBoost
-Test period: 2024-01-30 15:00:00+00:00 to 2025-04-30 23:00:00+00:00
-Number of observations: 10952
+Test period: 2024-02-06 16:00:00+00:00 to 2025-05-09 06:00:00+00:00
+Number of observations: 10982
 
 METRICS
 ----------------------------------------
-Mean Absolute Error (MAE): 21.8426
-Root Mean Squared Error (RMSE): 32.5259
-Mean Absolute Percentage Error (MAPE): 237.21%
-Symmetric Mean Absolute Percentage Error (SMAPE): 67.02%
-Median Absolute Error: 15.2967
-Direction Accuracy: 0.5421
-Peak Accuracy: 0.8926
-Peak Mean Absolute Error: 45.7376
+Mean Absolute Error (MAE): 23.7221
+Root Mean Squared Error (RMSE): 34.9406
+Mean Absolute Percentage Error (MAPE): 261.67%
+Symmetric Mean Absolute Percentage Error (SMAPE): 69.60%
+Median Absolute Error: 16.7302
+Direction Accuracy: 0.5867
+Peak Accuracy: 0.8853
+Peak Mean Absolute Error: 50.0275
 
 VISUALIZATION FILES
 ----------------------------------------

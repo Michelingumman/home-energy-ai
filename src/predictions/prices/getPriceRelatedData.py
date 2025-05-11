@@ -102,7 +102,7 @@ def update_price_data():
         # Calculate features
         df["price_24h_avg"] = df[TARGET_VARIABLE].rolling(window=24, min_periods=1).mean()
         df["price_168h_avg"] = df[TARGET_VARIABLE].rolling(window=168, min_periods=1).mean()
-        df["price_24h_std"] = df[TARGET_VARIABLE].rolling(window=24, min_periods=1).std()
+        df["price_24h_std"] = df[TARGET_VARIABLE].rolling(window=24, min_periods=1).std().fillna(0)
         df["hour_avg_price"] = df.groupby(df["HourSE"].dt.hour)[TARGET_VARIABLE].transform("mean")
         df["price_vs_hour_avg"] = df[TARGET_VARIABLE] / df["hour_avg_price"]
 

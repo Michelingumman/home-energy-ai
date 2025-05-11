@@ -1,0 +1,32 @@
+================================================================================
+VALLEY DETECTION MODEL EVALUATION SUMMARY
+================================================================================
+Date: 2025-05-11 15:44:13
+Evaluation metrics:
+  Probability threshold: 0.5
+
+METRICS
+----------------------------------------
+Accuracy: 0.762993762993763
+Precision: 0.39766081871345027
+Recall: 0.8607594936708861
+F1 Score: 0.544
+ROC AUC: 0.8844700547893445
+Actual valley rate: 0.16424116424116425
+Predicted valley rate: 0.35550935550935553
+
+VISUALIZATION FILES
+----------------------------------------
+Plots directory: C:\_Projects\home-energy-ai\src\predictions\prices\plots\evaluation\valley\validation
+
+- valley_week_2024-01-15.png
+- valley_week_2024-01-22.png
+- valley_week_2024-01-29.png
+- valley_week_2024-02-05.png
+
+NOTES
+----------------------------------------
+- Valley detection is a binary classification task
+- Precision is the ratio of correctly identified valleys to all predicted valleys
+VISUALIZATION FILES
+----------------------------------------

@@ -105,6 +105,9 @@ PEAK_TCN_KERNEL_SIZE = 3
 PEAK_TCN_DILATIONS = [1, 2, 4, 8, 16]  # Fewer dilations for faster training
 PEAK_TCN_NB_STACKS = 2        # Single stack for reduced complexity
 
+CONSTANT_PEAK_FILTERING_THRESHOLD = 80.0  # öre/kWh
+MIN_PEAK_PROMINENCE_FOR_LABEL = 50.0  # Min prominence in öre/kWh for a peak to be labeled
+
 #############################################################################
 #                           VALLEY MODEL SETTINGS                           #
 #############################################################################

@@ -98,26 +98,23 @@ from utils import (
 
 # Import config
 from config import (
-    MODELS_DIR, DATA_DIR, PLOTS_DIR, LOGS_DIR,
+    MODELS_DIR, PLOTS_DIR, LOGS_DIR,
     TARGET_VARIABLE, LOOKBACK_WINDOW, PREDICTION_HORIZON,
     VALIDATION_SPLIT, TEST_SPLIT,
     DROPOUT_RATE, L1_REG, L2_REG,
-    CORE_FEATURES, EXTENDED_FEATURES,
     SE3_PRICES_FILE, SWEDEN_GRID_FILE, TIME_FEATURES_FILE, 
-    HOLIDAYS_FILE, WEATHER_DATA_FILE,
-    PRICE_FEATURES, GRID_FEATURES, TIME_FEATURES,
-    HOLIDAY_FEATURES, WEATHER_FEATURES, MARKET_FEATURES,
-    LOSS_FUNCTION, WEIGHTED_LOSS_PARAMS,
+    HOLIDAYS_FILE, WEATHER_DATA_FILE, GRID_FEATURES, TIME_FEATURES,
+    HOLIDAY_FEATURES, WEATHER_FEATURES,
     
     TREND_MODEL_DIR, PEAK_MODEL_DIR, VALLEY_MODEL_DIR, EVAL_DIR, TREND_EVAL_DIR,
     SPIKE_THRESHOLD_PERCENTILE, VALLEY_THRESHOLD_PERCENTILE,
-    PEAK_CORE_FEATURES, VALLEY_CORE_FEATURES, SPIKE_CORE_FEATURES, SCALING_METHOD,
+    PEAK_CORE_FEATURES, VALLEY_CORE_FEATURES,
     
     
     PEAK_TCN_FILTERS, PEAK_TCN_KERNEL_SIZE, PEAK_TCN_DILATIONS,
     PEAK_TCN_NB_STACKS, PEAK_LEARNING_RATE, PEAK_EARLY_STOPPING_PATIENCE,
-    PEAK_EPOCHS, PEAK_BATCH_SIZE,
-    
+    PEAK_EPOCHS, PEAK_BATCH_SIZE, CONSTANT_PEAK_FILTERING_THRESHOLD,
+    MIN_PEAK_PROMINENCE_FOR_LABEL,
     
     VALLEY_TCN_FILTERS, VALLEY_TCN_KERNEL_SIZE, VALLEY_TCN_DILATIONS,
     VALLEY_TCN_NB_STACKS, VALLEY_LEARNING_RATE, VALLEY_EARLY_STOPPING_PATIENCE,
@@ -125,7 +122,6 @@ from config import (
     
     
     TREND_EXOG_FEATURES,
-    VALLEY_DETECTION_PARAMS,
     ROBUST_VALLEY_DETECTION_PARAMS,
     VALLEY_CLASS_WEIGHT_MULTIPLIER,
     FALSE_NEG_WEIGHT, FALSE_POS_WEIGHT,
@@ -284,17 +280,35 @@ def add_peak_valley_labels(df, target_col=TARGET_VARIABLE):
     price_range = np.max(prices) - np.min(prices)
     
     # Use find_peaks with carefully tuned parameters for better peak detection
-    simple_peaks, _ = find_peaks(prices, 
-                                distance=4,                  # At least 4 hours between peaks
-                                prominence=0.03*price_range, # Minimum prominence relative to price range
-                                width=2)                     # Minimum width of 2 hours
+    # Capture properties dictionary which includes prominences
+    simple_peaks_indices, peak_properties = find_peaks(prices, 
+                                distance=2,                  # At least 4 hours between peaks
+                                prominence=0.03*price_range, # Initial coarse prominence filter relative to price range
+                                width=1)                     # Minimum width of 2 hours
     
-    # Create 'is_price_peak_scipy' column
-    df['is_price_peak_scipy'] = 0
-    df.iloc[simple_peaks, df.columns.get_loc('is_price_peak_scipy')] = 1
+    # Initialize 'is_price_peak' column to all zeros
+    df['is_price_peak'] = 0
     
-    # Now use the scipy-detected peaks as the main peak label
-    df['is_price_peak'] = df['is_price_peak_scipy']
+    # Filter peaks based on MIN_PEAK_PROMINENCE_FOR_LABEL from config
+    # And assign to 'is_price_peak'
+    num_peaks_before_prominence_filter = len(simple_peaks_indices)
+    actual_kept_peaks_indices = []
+
+    if 'prominences' in peak_properties:
+        for i, peak_idx in enumerate(simple_peaks_indices):
+            if peak_properties['prominences'][i] >= MIN_PEAK_PROMINENCE_FOR_LABEL:
+                df.iloc[peak_idx, df.columns.get_loc('is_price_peak')] = 1
+                actual_kept_peaks_indices.append(peak_idx)
+    else:
+        logging.warning("Could not find 'prominences' in peak_properties. Skipping prominence-based filtering.")
+        # Fallback or error handling if prominences are not available
+        # For now, let's assume if prominences aren't there, we keep all simple_peaks_indices found by initial find_peaks
+        df.iloc[simple_peaks_indices, df.columns.get_loc('is_price_peak')] = 1
+        actual_kept_peaks_indices = simple_peaks_indices.tolist()
+
+    post_filter_peaks = df['is_price_peak'].sum()
+    logging.info(f"Initial Scipy find_peaks identified {num_peaks_before_prominence_filter} peaks.")
+    logging.info(f"Filtered peaks by prominence (>= {MIN_PEAK_PROMINENCE_FOR_LABEL} öre/kWh): {len(actual_kept_peaks_indices)} peaks kept.")
     
     # Keep the robust valleys
     df['is_price_valley'] = df['is_price_valley_robust']
@@ -316,12 +330,13 @@ def add_peak_valley_labels(df, target_col=TARGET_VARIABLE):
     
     # Save thresholds for later use in prediction
     thresholds = {
-        "spike_threshold": float(spike_threshold),
-        "valley_threshold": float(valley_threshold),
-        "method": "scipy",  # Changed to use scipy method for peaks
-        "peak_prominence": float(0.03*price_range),  # Save the peak prominence used
-        "peak_distance": 4,  # Save the peak distance used
-        "peak_width": 2,     # Save the peak width used
+        "spike_threshold": float(spike_threshold), # This is from traditional quantile method, for reference
+        "valley_threshold": float(valley_threshold), # This is from traditional quantile method, for reference
+        "peak_detection_method": "scipy_find_peaks",
+        "find_peaks_initial_prominence_relative": 0.03, # Relative to price_range
+        "find_peaks_distance_hours": 4,
+        "find_peaks_min_width_hours": 1,
+        "min_peak_prominence_for_label_ore": float(MIN_PEAK_PROMINENCE_FOR_LABEL), # New prominence threshold for final label
         **ROBUST_VALLEY_DETECTION_PARAMS  # Include all valley detection parameters
     }
     
@@ -2117,23 +2132,11 @@ def train_peak_valley_model(data, model_type, production_mode=False):
         validation_plots_dir = model_dir / "peak_validation"
         validation_plots_dir.mkdir(parents=True, exist_ok=True)
         
-        # Use the same Scipy-based peak detection we're now using for training labels
-        peak_df = data['df'].copy()
-        prices = peak_df[TARGET_VARIABLE].values
-        price_range = np.max(prices) - np.min(prices)
-        
-        # Using the same parameters as in add_peak_valley_labels 
-        simple_peaks, _ = find_peaks(prices, 
-                                   distance=4,                  # At least 4 hours between peaks
-                                   prominence=0.03*price_range, # Minimum prominence relative to price range
-                                   width=2)                     # Minimum width of 2 hours
-        
-        # Create is_price_peak column with Scipy-detected peaks
-        peak_df['is_price_peak'] = 0
-        peak_df.iloc[simple_peaks, peak_df.columns.get_loc('is_price_peak')] = 1
-        
-        # Generate the validation plots with Scipy-detected peaks
-        plot_peak_labels(peak_df, output_dir=validation_plots_dir, num_samples=5, days_per_sample=14)
+        # The 'is_price_peak' column in data['df'] is already processed
+        # by add_peak_valley_labels (via prepare_peak_valley_data)
+        # and includes the constant öre/kWh filtering.
+        # No need to recalculate it here.
+        plot_peak_labels(data['df'], output_dir=validation_plots_dir, num_samples=10, days_per_sample=14)
         logging.info(f"Peak detection validation plots saved to {validation_plots_dir}")
         
         # Also generate method comparison plots
@@ -2462,18 +2465,46 @@ def load_and_merge_data():
         logging.info(f"Loaded price data: {price_df.shape}")
         logging.info(f"Price data date range: {price_df.index.min()} to {price_df.index.max()}")
         
-        # Get the valid date range from price data - this will be our reference
-        min_date = price_df.index.min()
-        max_date = price_df.index.max()
-        
-        # Only keep rows with valid target values
+        # Only keep rows with valid target values BEFORE checking for duplicates in index
+        original_price_rows = len(price_df)
         price_df = price_df.dropna(subset=[TARGET_VARIABLE])
+        if len(price_df) < original_price_rows:
+            logging.info(f"Removed {original_price_rows - len(price_df)} rows from price_df with missing target values ('{TARGET_VARIABLE}').")
+            # Update date range after dropping NAs in target, as it might change min/max
+            if not price_df.empty:
+                min_date = price_df.index.min()
+                max_date = price_df.index.max()
+            else:
+                logging.error("Price data is empty after dropping rows with missing target values. Cannot proceed.")
+                raise ValueError("Price data empty after cleaning target variable.")
         
-        if len(price_df) < len(price_df.index):
-            logging.info(f"Removed {len(price_df.index) - len(price_df)} rows with missing target values")
-            # Update date range after dropping NAs
-            min_date = price_df.index.min()
-            max_date = price_df.index.max()
+        # Check for and log duplicate timestamps in price_df.index
+        if price_df.index.has_duplicates:
+            duplicated_timestamps = price_df.index[price_df.index.duplicated(keep=False)] # Get all occurrences of duplicates
+            unique_duplicated_timestamps = duplicated_timestamps.unique()
+            num_total_duplicates = price_df.index.duplicated().sum() # Count of subsequent occurrences
+            
+            logging.warning(f"Price data index contains {num_total_duplicates} duplicate timestamp(s) (referring to {len(unique_duplicated_timestamps)} unique duplicated timestamps).")
+            logging.warning("Details of rows with duplicate timestamps (before deduplication):")
+            for ts in unique_duplicated_timestamps:
+                duplicate_rows = price_df[price_df.index == ts]
+                logging.warning(f"Timestamp: {ts}")
+                for i, (_, row) in enumerate(duplicate_rows.iterrows()):
+                    logging.warning(f"  Occurrence {i+1}: {row.to_dict()}")
+            
+            # Deduplicate the index, keeping the first occurrence
+            price_df = price_df[~price_df.index.duplicated(keep='first')]
+            logging.warning(f"Removed {num_total_duplicates} duplicate rows from price_df, keeping the first occurrence. New shape: {price_df.shape}")
+            # Update min_date and max_date again if deduplication changed the range (though unlikely if keeping first)
+            if not price_df.empty:
+                min_date = price_df.index.min()
+                max_date = price_df.index.max()
+            else:
+                # This case should be rare if there was data before deduplication
+                logging.error("Price data is empty after deduplication. Cannot proceed.")
+                raise ValueError("Price data empty after deduplication.")
+        else:
+            logging.info("Price data index has no duplicate timestamps.")
             
         # Create merged dataframe starting with price data
         merged_df = price_df.copy()
@@ -2491,17 +2522,17 @@ def load_and_merge_data():
         else:
             grid_df.index = pd.to_datetime(grid_df.index, utc=True)
         
-        # Filter grid data to match price data date range
-        grid_df = grid_df.loc[(grid_df.index >= min_date) & (grid_df.index <= max_date)]
-        logging.info(f"Grid data range after trimming: {grid_df.index.min()} to {grid_df.index.max()}")
+        # Reindex to price_df's index and fill
+        grid_df = grid_df.reindex(price_df.index)
+        grid_df = grid_df.ffill().bfill()
+        logging.info(f"Reindexed and filled grid data to match price data index. Shape: {grid_df.shape}")
         
         # Merge grid features
         merged_df = merged_df.join(grid_df[GRID_FEATURES], how='left')
         logging.info(f"Merged grid data: {merged_df.shape}")
         
     except Exception as e:
-        logging.warning(f"Error loading grid data: {e}")
-        logging.warning("Continuing without grid data")
+        logging.warning(f"Error loading or aligning grid data: {e}")
 
     # Load and merge time features
     try:
@@ -2513,16 +2544,17 @@ def load_and_merge_data():
         else:
             time_df.index = pd.to_datetime(time_df.index, utc=True)
         
-        # Filter time data to match price data date range
-        time_df = time_df.loc[(time_df.index >= min_date) & (time_df.index <= max_date)]
+        # Reindex to price_df's index and fill
+        time_df = time_df.reindex(price_df.index)
+        time_df = time_df.ffill().bfill()
+        logging.info(f"Reindexed and filled time data to match price data index. Shape: {time_df.shape}")
         
         # Merge time features
         merged_df = merged_df.join(time_df[TIME_FEATURES], how='left')
         logging.info(f"Merged time features: {merged_df.shape}")
         
     except Exception as e:
-        logging.warning(f"Error loading time features: {e}")
-        logging.warning("Continuing without time features")
+        logging.warning(f"Error loading or aligning time features: {e}")
 
     # Load and merge holidays data
     try:
@@ -2534,16 +2566,17 @@ def load_and_merge_data():
         else:
             holidays_df.index = pd.to_datetime(holidays_df.index, utc=True)
         
-        # Filter holidays data to match price data date range
-        holidays_df = holidays_df.loc[(holidays_df.index >= min_date) & (holidays_df.index <= max_date)]
+        # Reindex to price_df's index and fill
+        holidays_df = holidays_df.reindex(price_df.index)
+        holidays_df = holidays_df.ffill().bfill()
+        logging.info(f"Reindexed and filled holidays data to match price data index. Shape: {holidays_df.shape}")
         
         # Merge holiday features
         merged_df = merged_df.join(holidays_df[HOLIDAY_FEATURES], how='left')
         logging.info(f"Merged holiday data: {merged_df.shape}")
         
     except Exception as e:
-        logging.warning(f"Error loading holidays data: {e}")
-        logging.warning("Continuing without holidays data")
+        logging.warning(f"Error loading or aligning holidays data: {e}")
 
     # Load and merge weather data
     try:
@@ -2555,18 +2588,31 @@ def load_and_merge_data():
         else:
             weather_df.index = pd.to_datetime(weather_df.index, utc=True)
         
-        # Filter weather data to match price data date range
-        weather_df = weather_df.loc[(weather_df.index >= min_date) & (weather_df.index <= max_date)]
-        logging.info(f"Weather data range after trimming: {weather_df.index.min()} to {weather_df.index.max()}")
+        # Reindex to price_df's index and fill
+        weather_df = weather_df.reindex(price_df.index)
+        weather_df = weather_df.ffill().bfill()
+        logging.info(f"Reindexed and filled weather data to match price data index. Shape: {weather_df.shape}")
         
         # Merge weather features
         merged_df = merged_df.join(weather_df[WEATHER_FEATURES], how='left')
         logging.info(f"Merged weather data: {merged_df.shape}")
         
     except Exception as e:
-        logging.warning(f"Error loading weather data: {e}")
-        logging.warning("Continuing without weather data")
+        logging.warning(f"Error loading or aligning weather data: {e}")
     
+    print("Price index dtype:", merged_df.index.dtype)
+    print("Weather index dtype:", weather_df.index.dtype if 'weather_df' in locals() and weather_df is not None else "Weather df not loaded or error")
+    print("First 5 price index:", merged_df.index[:5])
+    print("First 5 weather index:", weather_df.index[:5] if 'weather_df' in locals() and weather_df is not None else "Weather df not loaded or error")
+    
+    if 'weather_df' in locals() and weather_df is not None:
+        print("Are price and weather indices (after reindex) equal?", merged_df.index.equals(weather_df.index))
+        # These checks become less relevant if weather_df is reindexed to merged_df.index
+        # print("Any price index not in weather?", any(~merged_df.index.isin(weather_df.index))) 
+        # print("Any weather index not in price?", any(~weather_df.index.isin(merged_df.index)))
+    else:
+        print("Weather data was not successfully loaded or aligned for index comparison.")
+        
     # Sort by datetime
     merged_df.sort_index(inplace=True)
     
@@ -2601,19 +2647,22 @@ def load_and_merge_data():
             if len(null_runs) > 0:
                 # Calculate run lengths
                 run_lengths = [(end - start).total_seconds() / 3600 + 1 for start, end in null_runs]
-                
                 # Sort runs by length (descending)
                 sorted_runs = sorted(zip(null_runs, run_lengths), key=lambda x: x[1], reverse=True)
-                
-                # Log the 5 largest gaps
-                logging.warning(f"Top gaps in '{col}':")
-                for i, ((start, end), length) in enumerate(sorted_runs[:5]):
-                    logging.warning(f"  Gap #{i+1}: {start} to {end} ({int(length)} hours)")
-                
+                # Log the 5 largest gaps or single missing values
+                logging.warning(f"Top gaps/missing values in '{col}': (before filling, may be due to index misalignment, not true missing data in source)")
+                count_logged = 0
+                for i, ((start, end), length) in enumerate(sorted_runs):
+                    if start == end:
+                        logging.warning(f"  Single missing value at {start}")
+                    elif length > 1:
+                        logging.warning(f"  Gap #{i+1}: {start} to {end} ({int(length)} hours)")
+                    count_logged += 1
+                    if count_logged >= 5:
+                        break
                 # Log summary stats about all gaps
                 if len(null_runs) > 5:
-                    logging.warning(f"  ... and {len(null_runs)-5} more gaps")
-                
+                    logging.warning(f"  ... and {len(null_runs)-5} more gaps or missing values")
                 logging.warning(f"  Median gap size: {np.median(run_lengths):.1f} hours")
                 logging.warning(f"  Average gap size: {np.mean(run_lengths):.1f} hours")
             
@@ -2627,6 +2676,13 @@ def load_and_merge_data():
     
     logging.info(f"Final merged dataframe shape: {merged_df.shape}")
     logging.info(f"Date range: {merged_df.index.min()} to {merged_df.index.max()}")
+    
+    # Post-filling check for any remaining missing values
+    remaining_missing = merged_df.isna().sum().sum()
+    if remaining_missing == 0:
+        logging.info("All missing values filled successfully.")
+    else:
+        logging.warning(f"{remaining_missing} missing values remain after filling!")
     
     return merged_df
 
@@ -2845,7 +2901,7 @@ def main():
             # Create validation plots for valley labels before training
             validation_plots_dir = valley_model_dir / "valley_validation"
             validation_plots_dir.mkdir(parents=True, exist_ok=True)
-            plot_valley_labels(valley_data['df'], output_dir=validation_plots_dir, num_samples=5, days_per_sample=14)
+            plot_valley_labels(valley_data['df'], output_dir=validation_plots_dir, num_samples=10, days_per_sample=14)
             logging.info(f"Generated valley label validation plots in {validation_plots_dir}")
             
             model, history = train_peak_valley_model(

@@ -19,3 +19,4 @@ src/predictions/prices/models_v2_price_weather_grid/X_test_price_weather_grid.np
 src/predictions/prices/models/trend_model/production_model/best_trend_model.pkl
 
 *.log
+

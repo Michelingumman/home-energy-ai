@@ -93,6 +93,9 @@ python run_model.py
 - `--valley-threshold X`: Set the probability threshold for valley detection (default: 0.65 for merged model).
 - `--peak-threshold X`: Set the probability threshold for peak detection (default: 0.75 for merged model).
 - `--optimize-threshold`: Automatically find the threshold that maximizes F1 score for peak or valley models.
+- `--production-mode`: Enable production prediction mode for forecasting future prices.
+- `--start YYYY-MM-DD`: (Used with `--production-mode`) Start date for future predictions (defaults to current date).
+- `--horizon N`: (Used with `--production-mode`) Prediction horizon in days (defaults to 1 day).
 
 
 ### Example Commands:
@@ -116,6 +119,14 @@ python run_model.py --model trend --weeks 8
 ```python
 python run_model.py --model merged --peak-threshold 0.90 --valley-threshold 0.65 --test-data
 ```
+
+### Production Prediction Mode (`--production-mode`)
+
+When using `run_model.py` with the `--production-mode` flag, along with `--start` and `--horizon`, the script shifts from evaluating historical performance to generating future price forecasts. This mode has two key operational enhancements:
+
+**Trend-Informed TCN Feature Generation:**
+    For 'peak', 'valley', and 'merged' model predictions, the system uses the underlying trend model's future price forecast as the primary price input when generating features for the TCN (peak/valley detection) models. This means the TCNs react to deviations from a *predicted trend path* for future time steps, rather than relying on a simple persistence of the last known actual price. This approach aims to provide more realistic and context-aware feature inputs for event detection during the forecast period.
+
 
 ## Trend Model Smoothing
 

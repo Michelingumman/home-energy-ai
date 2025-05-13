@@ -42,7 +42,6 @@ from tcn import TCN
 import sys
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import matplotlib.dates as mdates
-import seaborn as sns
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import xgboost as xgb  # For loading and using XGBoost models
 from scipy.signal import medfilt, savgol_filter
@@ -3279,85 +3278,131 @@ def predict_future_prices(model_type, start_date=None, horizon_days=1, peak_thre
         model = trend_artifacts['model']
         if trend_artifacts.get('model_type', '').lower() == 'xgboost':
             model.feature_names = None
-            dtest = xgb.DMatrix(X_test.values)
+            # Ensure dtest is created with the correct feature order if feature_order is available
+            if feature_order:
+                dtest = xgb.DMatrix(X_test.values, feature_names=feature_order)
+            else:
+                dtest = xgb.DMatrix(X_test.values) # Fallback if no feature_order
+                
             raw_predictions = model.predict(dtest)
             smoothing_level = SIMPLE_TREND_MODEL_SMOOTHING_LEVEL
             smoothed_predictions = adaptive_trend_smoothing(raw_predictions, future_df.index, smoothing_level)
             trend_results = pd.DataFrame({
                 'timestamp': prediction_timestamps,
-                'predicted_price': raw_predictions,
-                'trend_prediction_smooth': smoothed_predictions
+                'predicted_price': raw_predictions, # Raw trend model output
+                'trend_prediction_smooth': smoothed_predictions # Smoothed version for TCN input and final trend plot
             }).set_index('timestamp')
 
     # --- Peak/Valley prediction (true production, rolling window) ---
-    def rolling_sequence_predict(historical_data, future_df, model_artifacts, add_features_fn, target_col, threshold, lookback_window=168):
+    def rolling_sequence_predict(historical_data, future_df, model_artifacts, add_features_fn, target_col, threshold, trend_predictions_for_horizon=None, lookback_window=168):
         scaler = model_artifacts.get('feature_scaler')
         feature_names = model_artifacts['feature_names']
         model = model_artifacts['model']
+        
+        # Initialize window_df with a copy of historical_data
+        # This window_df will be extended iteratively.
         window_df = historical_data.copy()
-        # Precompute features for the initial window, with logging enabled
+
+        # Precompute features for the initial historical window, with logging enabled if applicable
         if add_features_fn.__name__ == 'add_peak_features' or add_features_fn.__name__ == 'add_valley_features':
-            window_df = add_features_fn(window_df, enable_logging=True)
+            # Call add_features_fn on the historical part.
+            # The result (processed_historical_df) contains all historical data with features.
+            processed_historical_df = add_features_fn(window_df.copy(), enable_logging=True) 
         else:
-            window_df = add_features_fn(window_df) # For other feature functions that might not have the param
+            processed_historical_df = add_features_fn(window_df.copy())
+
+        # This will be the window that slides and grows, from which sequences are taken.
+        # Start it with the processed historical data.
+        # We need to ensure this window contains all necessary 'feature_names' for the TCN.
+        # If add_features_fn doesn't return all feature_names, they must be present in original historical_data
+        # or added here. For now, assume add_features_fn is comprehensive or features exist.
+        current_rolling_window_features = processed_historical_df.copy()
 
         preds = []
         probs = []
+
         for i, ts in enumerate(future_df.index):
-            # Log progress every 24 steps (daily)
             if (i + 1) % 24 == 0 or (i + 1) == len(future_df.index):
                 logging.info(f"Predicting for {target_col.capitalize()} - Step {i+1}/{len(future_df.index)} (Timestamp: {ts})")
 
-            # Prepare new row with time features
-            new_row = pd.DataFrame(index=[ts])
-            for col in window_df.columns:
-                if col in future_df.columns:
-                    new_row[col] = future_df.loc[ts, col]
-                elif col in window_df.columns:
-                    new_row[col] = window_df.iloc[-1][col]
-                else:
-                    new_row[col] = 0
-            if TARGET_VARIABLE not in new_row.columns:
-                new_row[TARGET_VARIABLE] = window_df[TARGET_VARIABLE].iloc[-1]
-            # Append to window
-            # Use pd.concat instead of deprecated append
-            window_df = pd.concat([window_df, new_row], axis=0, ignore_index=False) 
+            # Prepare new_row_dict for the current timestamp 'ts'
+            new_row_dict = {}
 
-            # Only keep last lookback_window rows
-            window_df = window_df.iloc[-lookback_window:]
-            
-            # Recompute features for the current window_df, with logging disabled for peak/valley inside the loop
-            if add_features_fn.__name__ == 'add_peak_features' or add_features_fn.__name__ == 'add_valley_features':
-                processed_window_df = add_features_fn(window_df, enable_logging=False)
+            # 1. Get TARGET_VARIABLE (Price) for the current future step 'ts'
+            if trend_predictions_for_horizon is not None and ts in trend_predictions_for_horizon.index:
+                current_price_for_feature_generation = trend_predictions_for_horizon.loc[ts, 'trend_prediction_smooth']
             else:
-                processed_window_df = add_features_fn(window_df)
+                # Fallback: use the last price from the current_rolling_window_features
+                current_price_for_feature_generation = current_rolling_window_features[TARGET_VARIABLE].iloc[-1]
+                if trend_predictions_for_horizon is not None:
+                    logging.warning(f"Timestamp {ts} not in trend_predictions. Using last price from window for {target_col} feature generation.")
+            new_row_dict[TARGET_VARIABLE] = current_price_for_feature_generation
             
-            # Ensure all features required by the model are present in the processed window
-            for f_name in feature_names:
-                if f_name not in processed_window_df.columns:
-                    # If a feature is missing after processing, add it with a default (e.g., 0 or ffill from historical)
-                    # This case should be rare if feature engineering is comprehensive
-                    processed_window_df[f_name] = 0 
-                    logging.warning(f"Feature '{f_name}' was missing after add_features_fn in rolling_sequence_predict. Added with 0.")
+            # 2. Add other known future exogenous features for 'ts'
+            for f_name in feature_names: # Iterate through all features the TCN model expects
+                if f_name == TARGET_VARIABLE:
+                    continue
+                if f_name in future_df.columns and ts in future_df.index:
+                     # Check if future_df.loc[ts, f_name] is scalar or Series
+                    val = future_df.loc[ts, f_name]
+                    new_row_dict[f_name] = val.iloc[0] if isinstance(val, pd.Series) else val
+                elif f_name in current_rolling_window_features.columns:
+                     # If not in future_df (e.g. a purely derived feature like 'is_holiday' that was part of historical),
+                     # try to carry forward. This might not be ideal for all features.
+                     # Better if all exogenous are in future_df.
+                     new_row_dict[f_name] = current_rolling_window_features[f_name].iloc[-1]
 
-            # Extract features for the last time step from the processed window
-            # Ensure we are using the correct feature_names order for the model
-            X_features_for_model = processed_window_df[feature_names].values
+
+            new_row_df = pd.DataFrame(new_row_dict, index=[ts])
+            
+            # Append this new row to current_rolling_window_features.
+            # This combined DataFrame is what add_features_fn will process to get features for 'ts'.
+            window_for_feature_eng_step = pd.concat([current_rolling_window_features, new_row_df], axis=0, ignore_index=False)
+            
+            # Recompute features for the window_for_feature_eng_step.
+            # The last row of its output will have features for 'ts' based on trend-informed price.
+            if add_features_fn.__name__ == 'add_peak_features' or add_features_fn.__name__ == 'add_valley_features':
+                processed_window_for_step = add_features_fn(window_for_feature_eng_step.copy(), enable_logging=False)
+            else:
+                processed_window_for_step = add_features_fn(window_for_feature_eng_step.copy())
+
+            # Update current_rolling_window_features to be this newly processed window,
+            # trimmed to lookback_window length to prevent indefinite growth and keep fixed sequence length.
+            # This ensures that for the next iteration, current_rolling_window_features contains the most recent
+            # `lookback_window` period with correctly derived features.
+            current_rolling_window_features = processed_window_for_step.iloc[-lookback_window:]
+            
+            # Ensure all features required by the model are present in the current_rolling_window_features
+            # (which is effectively the segment that will become X_seq)
+            for f_name in feature_names:
+                if f_name not in current_rolling_window_features.columns:
+                    current_rolling_window_features[f_name] = 0 
+                    logging.warning(f"Feature '{f_name}' was missing from current_rolling_window_features for ts {ts}. Added with 0 before TCN input.")
+
+            # Extract the features for the TCN model from current_rolling_window_features
+            # It should already be of length lookback_window.
+            X_features_for_model_sequence = current_rolling_window_features[feature_names].values
+            
+            if X_features_for_model_sequence.shape[0] != lookback_window:
+                logging.error(f"Sequence length mismatch for TCN input at ts {ts}. Expected {lookback_window}, got {X_features_for_model_sequence.shape[0]}. Padding/truncating not yet implemented robustly here.")
+                # This implies an issue with window management or initial historical data length.
+                # As a basic fallback, if it's too short, this will error in reshape or predict.
+                # If too long, reshape might also be an issue if not handled.
+                # For now, assume it's correct due to `iloc[-lookback_window:]` above.
 
             if scaler:
-                # Scale all features in the window then take the last sequence
-                X_scaled_features = scaler.transform(X_features_for_model)
-                X_seq = X_scaled_features[-lookback_window:].reshape(1, lookback_window, len(feature_names))
+                X_scaled_features_sequence = scaler.transform(X_features_for_model_sequence)
+                # Reshape to (1, lookback_window, num_features)
+                X_seq = X_scaled_features_sequence.reshape(1, lookback_window, len(feature_names))
             else:
-                # If no scaler, just take the last sequence of raw features
-                X_seq = X_features_for_model[-lookback_window:].reshape(1, lookback_window, len(feature_names))
+                X_seq = X_features_for_model_sequence.reshape(1, lookback_window, len(feature_names))
             
-            # Make prediction with verbose=0
             prediction_output = model.predict(X_seq, verbose=0) 
             prob = prediction_output[0][0] if hasattr(prediction_output[0], '__len__') and len(prediction_output[0]) == 1 else prediction_output[0]
             pred = int(prob >= threshold)
             preds.append(pred)
             probs.append(prob)
+
         return pd.DataFrame({
             'timestamp': future_df.index,
             f'{target_col}_probability': probs,
@@ -3373,6 +3418,7 @@ def predict_future_prices(model_type, start_date=None, horizon_days=1, peak_thre
             add_peak_features,
             'peak',
             peak_threshold,
+            trend_predictions_for_horizon=trend_results, # Pass trend predictions
             lookback_window=168
         )
     if valley_artifacts and model_type in ['valley', 'merged']:
@@ -3383,6 +3429,7 @@ def predict_future_prices(model_type, start_date=None, horizon_days=1, peak_thre
             add_valley_features,
             'valley',
             valley_threshold,
+            trend_predictions_for_horizon=trend_results, # Pass trend predictions
             lookback_window=168
         )
 
@@ -3392,123 +3439,235 @@ def predict_future_prices(model_type, start_date=None, horizon_days=1, peak_thre
         merged_results = trend_results.copy()
         if peak_results is not None:
             merged_results = merged_results.join(peak_results, how='left')
+            # Ensure 'is_predicted_peak' and 'peak_probability' are float for fillna
+            if 'is_predicted_peak' in merged_results.columns:
+                 merged_results['is_predicted_peak'] = merged_results['is_predicted_peak'].astype(float)
+            if 'peak_probability' in merged_results.columns:
+                merged_results['peak_probability'] = merged_results['peak_probability'].astype(float)
+
         if valley_results is not None:
             merged_results = merged_results.join(valley_results, how='left')
+            # Ensure 'is_predicted_valley' and 'valley_probability' are float for fillna
+            if 'is_predicted_valley' in merged_results.columns:
+                merged_results['is_predicted_valley'] = merged_results['is_predicted_valley'].astype(float)
+            if 'valley_probability' in merged_results.columns:
+                merged_results['valley_probability'] = merged_results['valley_probability'].astype(float)
+
+        # Fill NaNs that might result from joins if horizons don't perfectly align or if one model doesn't predict
+        # For binary flags, fill with 0 (not a peak/valley). For probabilities, fill with 0.0 or a neutral 0.5.
+        # Let's use 0 for flags and 0.0 for probabilities for now.
+        if 'is_predicted_peak' in merged_results.columns:
+            merged_results['is_predicted_peak'].fillna(0, inplace=True)
+        if 'peak_probability' in merged_results.columns:
+            merged_results['peak_probability'].fillna(0.0, inplace=True)
+        if 'is_predicted_valley' in merged_results.columns:
+            merged_results['is_predicted_valley'].fillna(0, inplace=True)
+        if 'valley_probability' in merged_results.columns:
+            merged_results['valley_probability'].fillna(0.0, inplace=True)
+            
         # Adjust price prediction based on peaks/valleys
         merged_results['price_prediction'] = merged_results['trend_prediction_smooth']
+        
+        # Ensure probabilities are numeric before multiplication
         if 'is_predicted_peak' in merged_results.columns and 'peak_probability' in merged_results.columns:
-            merged_results.loc[merged_results['is_predicted_peak'] == 1, 'price_prediction'] = \
-                merged_results['trend_prediction_smooth'] * (1 + 0.5 * merged_results['peak_probability'])
+            peak_effect_mask = merged_results['is_predicted_peak'] == 1
+            peak_probs_numeric = pd.to_numeric(merged_results.loc[peak_effect_mask, 'peak_probability'], errors='coerce').fillna(0.5)
+            merged_results.loc[peak_effect_mask, 'price_prediction'] = \
+                merged_results.loc[peak_effect_mask, 'trend_prediction_smooth'] * (1 + 0.5 * peak_probs_numeric)
+
         if 'is_predicted_valley' in merged_results.columns and 'valley_probability' in merged_results.columns:
-            merged_results.loc[merged_results['is_predicted_valley'] == 1, 'price_prediction'] = \
-                merged_results['trend_prediction_smooth'] * (1 - 0.3 * merged_results['valley_probability'])
+            valley_effect_mask = merged_results['is_predicted_valley'] == 1
+            valley_probs_numeric = pd.to_numeric(merged_results.loc[valley_effect_mask, 'valley_probability'], errors='coerce').fillna(0.5)
+            merged_results.loc[valley_effect_mask, 'price_prediction'] = \
+                merged_results.loc[valley_effect_mask, 'trend_prediction_smooth'] * (1 - 0.3 * valley_probs_numeric)
+
 
     # --- Plotting ---
-    plt.figure(figsize=(15, 10))
+    # Determine if we need a probability subplot
+    has_peak_data = peak_results is not None and 'peak_probability' in peak_results.columns
+    has_valley_data = valley_results is not None and 'valley_probability' in valley_results.columns
+    if model_type == 'merged' and merged_results is not None:
+        has_peak_data = 'peak_probability' in merged_results.columns and merged_results['peak_probability'].notna().any()
+        has_valley_data = 'valley_probability' in merged_results.columns and merged_results['valley_probability'].notna().any()
+
+    needs_probability_subplot = model_type in ['peak', 'valley', 'merged'] and (has_peak_data or has_valley_data)
+
+    if needs_probability_subplot:
+        fig, axs = plt.subplots(2, 1, figsize=(15, 12), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
+        price_ax = axs[0]
+        prob_ax = axs[1]
+    else:
+        fig, ax = plt.subplots(figsize=(15, 8))
+        price_ax = ax # All plotting to this single ax
+        prob_ax = None
+
+
     # Plot historical prices (last 48h)
     historical_end = latest_timestamp
     historical_start = historical_end - timedelta(hours=48)
     historical_subset = historical_data[(historical_data.index >= historical_start) & (historical_data.index <= historical_end)]
     if len(historical_subset) > 0:
-        plt.step(historical_subset.index, historical_subset[TARGET_VARIABLE], 'b-', linewidth=2, label='Historical Prices')
-    # Plot predictions
+        price_ax.step(historical_subset.index, historical_subset[TARGET_VARIABLE], 'b-', linewidth=2, label='Historical Prices')
+
+    # Determine results_df and prediction_col for plotting
+    # This logic has been refined
+    results_df_for_plotting = None
+    main_prediction_col_for_plotting = None # This is for the price axis
+    
     if model_type == 'trend' and trend_results is not None:
-        results_df = trend_results
-        prediction_col = 'trend_prediction_smooth'
+        results_df_for_plotting = trend_results
+        main_prediction_col_for_plotting = 'trend_prediction_smooth'
     elif model_type == 'peak' and peak_results is not None:
-        results_df = peak_results
-        prediction_col = None
+        results_df_for_plotting = peak_results
+        # For standalone peak, we need a price baseline to plot markers on. Use trend if available.
+        if trend_results is not None and 'trend_prediction_smooth' in trend_results.columns:
+            results_df_for_plotting = trend_results.join(peak_results, how='left')
+            main_prediction_col_for_plotting = 'trend_prediction_smooth'
+        else: # No trend, just plot probabilities on their own axis later. Markers might be on a flat line or vs prob value.
+             main_prediction_col_for_plotting = None # No price line to plot peak markers against
     elif model_type == 'valley' and valley_results is not None:
-        results_df = valley_results
-        prediction_col = None
-    elif model_type == 'merged' and merged_results is not None:
-        results_df = merged_results
-        prediction_col = 'price_prediction'
-    else:
-        results_df = None
-        prediction_col = None
-    # Plot predicted prices
-    if results_df is not None and prediction_col is not None and prediction_col in results_df.columns:
-        plt.step(results_df.index, results_df[prediction_col], 'r-', linewidth=2, marker='o', markersize=3, label='Price Prediction')
-
-    # --- PLOT ACTUALS IN PREDICTION PERIOD IF AVAILABLE ---
-    # Only for visualization, not for prediction
-    try:
-        # 'data' is the full loaded DataFrame
-        actuals_in_pred_window = data.loc[data.index.intersection(results_df.index)]
-        if len(actuals_in_pred_window) > 0:
-            plt.step(actuals_in_pred_window.index, actuals_in_pred_window[TARGET_VARIABLE],
-                     color='gray', linestyle='--', linewidth=2, alpha=0.5, label='Actual Price (Future, for reference)')
-    except Exception as e:
-        pass
-
-    # Mark predicted peaks/valleys
-    if results_df is not None:
-        if 'is_predicted_peak' in results_df.columns:
-            peak_idx = results_df.index[results_df['is_predicted_peak'] == 1]
-            if len(peak_idx) > 0:
-                plt.scatter(peak_idx, results_df.loc[peak_idx, prediction_col if prediction_col else 'peak_probability'],
-                            color='red', marker='^', s=120, label='Predicted Peaks', zorder=10)
-        if 'is_predicted_valley' in results_df.columns:
-            valley_idx = results_df.index[results_df['is_predicted_valley'] == 1]
-            if len(valley_idx) > 0:
-                plt.scatter(valley_idx, results_df.loc[valley_idx, prediction_col if prediction_col else 'valley_probability'],
-                            color='blue', marker='v', s=120, label='Predicted Valleys', zorder=10)
-    # Add vertical line at prediction start
-    plt.axvline(x=prediction_timestamps[0], color='k', linestyle='--', alpha=0.7)
-    plt.text(prediction_timestamps[0], plt.ylim()[0], 'Prediction Start', rotation=90, verticalalignment='bottom')
-
-    # --- IMPROVED X-AXIS AND DAILY SEPARATORS ---
-    import matplotlib.dates as mdates
-    ax = plt.gca()
-    # Set major ticks to daily, minor to hourly
-    ax.xaxis.set_major_locator(mdates.DayLocator())
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%a %d %b'))
-    ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
-    # Add vertical lines for each day in the prediction period
-    all_dates = pd.date_range(start=historical_start.floor('D'), end=results_df.index[-1].ceil('D'), freq='D')
-    for day in all_dates:
-        plt.axvline(day, color='gray', linestyle=':', alpha=0.4, zorder=0)
-    # Show every 3rd hour label for clarity
-    hour_labels = []
-    hour_ticks = []
-    for i, ts in enumerate(results_df.index):
-        if ts.hour % 3 == 0 and (i == 0 or ts.date() != results_df.index[i-1].date() or ts.hour == 0):
-            hour_labels.append(ts.strftime('%H:%M'))
-            hour_ticks.append(ts)
+        results_df_for_plotting = valley_results
+        if trend_results is not None and 'trend_prediction_smooth' in trend_results.columns:
+            results_df_for_plotting = trend_results.join(valley_results, how='left')
+            main_prediction_col_for_plotting = 'trend_prediction_smooth'
         else:
-            hour_labels.append('')
-    ax.set_xticks(hour_ticks, minor=True)
-    ax.set_xticklabels([ts.strftime('%H:%M') for ts in hour_ticks], minor=True, rotation=90, fontsize=8)
-    plt.gcf().autofmt_xdate(rotation=30, ha='right')
+            main_prediction_col_for_plotting = None
+    elif model_type == 'merged' and merged_results is not None:
+        results_df_for_plotting = merged_results
+        main_prediction_col_for_plotting = 'price_prediction' # Merged model has its own final price prediction
+    
+    # This is the df that contains the actual predictions and probabilities to be saved
+    # It could be trend_results, peak_results, valley_results, or merged_results directly
+    final_results_df_to_save = None
+    if model_type == 'trend': final_results_df_to_save = trend_results
+    elif model_type == 'peak': final_results_df_to_save = peak_results
+    elif model_type == 'valley': final_results_df_to_save = valley_results
+    elif model_type == 'merged': final_results_df_to_save = merged_results
+
+
+    # Plot predicted prices on price_ax
+    if results_df_for_plotting is not None and main_prediction_col_for_plotting is not None and main_prediction_col_for_plotting in results_df_for_plotting.columns:
+        price_ax.step(results_df_for_plotting.index, results_df_for_plotting[main_prediction_col_for_plotting], 'r-', linewidth=2, marker='o', markersize=3, label=f'{model_type.capitalize()} Prediction')
+
+    # --- PLOT ACTUALS IN PREDICTION PERIOD IF AVAILABLE (ON PRICE AXIS) ---
+    try:
+        if results_df_for_plotting is not None and not results_df_for_plotting.empty:
+            actuals_in_pred_window = data.loc[data.index.intersection(results_df_for_plotting.index)]
+            if len(actuals_in_pred_window) > 0:
+                price_ax.step(actuals_in_pred_window.index, actuals_in_pred_window[TARGET_VARIABLE],
+                         color='gray', linestyle='--', linewidth=2, alpha=0.5, label='Actual Price (Future, for reference)')
+    except Exception as e:
+        logging.warning(f"Could not plot actuals in prediction window: {e}")
+
+
+    # Mark predicted peaks/valleys on price_ax
+    if results_df_for_plotting is not None and main_prediction_col_for_plotting is not None : # Check if we have a price axis to plot on
+        if 'is_predicted_peak' in results_df_for_plotting.columns and results_df_for_plotting[main_prediction_col_for_plotting].notna().all():
+            peak_idx = results_df_for_plotting.index[results_df_for_plotting['is_predicted_peak'] == 1]
+            if len(peak_idx) > 0 :
+                price_ax.scatter(peak_idx, results_df_for_plotting.loc[peak_idx, main_prediction_col_for_plotting],
+                            color='red', marker='^', s=120, label='Predicted Peaks', zorder=10)
+        if 'is_predicted_valley' in results_df_for_plotting.columns and results_df_for_plotting[main_prediction_col_for_plotting].notna().all():
+            valley_idx = results_df_for_plotting.index[results_df_for_plotting['is_predicted_valley'] == 1]
+            if len(valley_idx) > 0 :
+                price_ax.scatter(valley_idx, results_df_for_plotting.loc[valley_idx, main_prediction_col_for_plotting],
+                            color='blue', marker='v', s=120, label='Predicted Valleys', zorder=10)
+    
+    price_ax.axvline(x=prediction_timestamps[0], color='k', linestyle='--', alpha=0.7)
+    price_ax.text(prediction_timestamps[0], price_ax.get_ylim()[0], 'Prediction Start', rotation=90, verticalalignment='bottom')
+    price_ax.set_title(f'Electricity Price Prediction - {horizon_days} Day Horizon ({model_type.capitalize()} Model)')
+    price_ax.set_ylabel('Price (öre/kWh)')
+    price_ax.grid(True, alpha=0.3, which='both', axis='y') # Grid on y-axis for price
+    price_ax.legend(loc='best')
+
+
+    # --- Probability Subplot (prob_ax) ---
+    if prob_ax is not None and final_results_df_to_save is not None:
+        plot_prob_legend = False
+        if 'peak_probability' in final_results_df_to_save.columns and final_results_df_to_save['peak_probability'].notna().any():
+            prob_ax.plot(final_results_df_to_save.index, final_results_df_to_save['peak_probability'], 'r-', alpha=0.7, label='Peak Probability')
+            prob_ax.axhline(y=peak_threshold, color='r', linestyle=':', alpha=0.5, label=f'Peak Thresh ({peak_threshold:.2f})')
+            if 'is_predicted_peak' in final_results_df_to_save.columns:
+                actual_peak_markers = final_results_df_to_save.index[final_results_df_to_save['is_predicted_peak'] == 1]
+                if len(actual_peak_markers) > 0:
+                     prob_ax.scatter(actual_peak_markers, final_results_df_to_save.loc[actual_peak_markers, 'peak_probability'],
+                                    color='red', marker='^', s=60, zorder=5)
+            plot_prob_legend = True
+            
+        if 'valley_probability' in final_results_df_to_save.columns and final_results_df_to_save['valley_probability'].notna().any():
+            prob_ax.plot(final_results_df_to_save.index, final_results_df_to_save['valley_probability'], 'b-', alpha=0.7, label='Valley Probability')
+            prob_ax.axhline(y=valley_threshold, color='b', linestyle=':', alpha=0.5, label=f'Valley Thresh ({valley_threshold:.2f})')
+            if 'is_predicted_valley' in final_results_df_to_save.columns:
+                actual_valley_markers = final_results_df_to_save.index[final_results_df_to_save['is_predicted_valley'] == 1]
+                if len(actual_valley_markers) > 0:
+                    prob_ax.scatter(actual_valley_markers, final_results_df_to_save.loc[actual_valley_markers, 'valley_probability'],
+                                   color='blue', marker='v', s=60, zorder=5)
+            plot_prob_legend = True
+
+        prob_ax.set_ylabel('Probability')
+        prob_ax.set_ylim(0, 1)
+        prob_ax.grid(True, alpha=0.3, which='both', axis='y')
+        if plot_prob_legend:
+            prob_ax.legend(loc='best')
+        prob_ax.set_title('Peak and Valley Probabilities')
+
+    # --- IMPROVED X-AXIS AND DAILY SEPARATORS (applied to the last used axis) ---
+    # This should be price_ax if no prob_ax, or prob_ax if it exists (due to sharex)
+    active_xaxis = prob_ax if prob_ax is not None else price_ax
+    
+    import matplotlib.dates as mdates
+    active_xaxis.xaxis.set_major_locator(mdates.DayLocator())
+    active_xaxis.xaxis.set_major_formatter(mdates.DateFormatter('%a %d %b'))
+    
+    # Ensure results_df_for_plotting is not None and not empty before using its index
+    if results_df_for_plotting is not None and not results_df_for_plotting.empty:
+        active_xaxis.xaxis.set_minor_locator(mdates.HourLocator(interval=3)) # Minor ticks for hours (every 3h)
+        active_xaxis.xaxis.set_minor_formatter(mdates.DateFormatter('%Hh'))
+
+        # Add vertical lines for each day in the prediction period
+        min_date_plot = min(historical_subset.index.min() if not historical_subset.empty else results_df_for_plotting.index.min(), results_df_for_plotting.index.min())
+        max_date_plot = results_df_for_plotting.index.max()
+        
+        if pd.notna(min_date_plot) and pd.notna(max_date_plot):
+            all_days_in_plot = pd.date_range(start=min_date_plot.floor('D'), end=max_date_plot.ceil('D'), freq='D')
+            for day_tick in all_days_in_plot:
+                active_xaxis.axvline(day_tick, color='gray', linestyle=':', alpha=0.4, zorder=0)
+        
+    plt.setp(active_xaxis.get_xticklabels(minor=True), rotation=90, ha='center', fontsize=8)
+    plt.setp(active_xaxis.get_xticklabels(minor=False), rotation=30, ha='right') # Major tick labels (dates)
+    active_xaxis.set_xlabel('Date / Time')
+
+
+    fig.tight_layout() # Apply tight layout to the whole figure
+    
+    # Add overall title to the figure if there are subplots
+    if needs_probability_subplot:
+         fig.suptitle(f'Electricity Price & Event Probability Prediction - {horizon_days} Day Horizon ({model_type.capitalize()} Model)', fontsize=16, y=1.02)
+
 
     # Format plot
-    plt.title(f'Electricity Price Prediction - {horizon_days} Day Horizon ({model_type.capitalize()} Model)', fontsize=14)
-    plt.xlabel('Date', fontsize=12)
-    plt.ylabel('Price (öre/kWh)', fontsize=12)
-    plt.grid(True, alpha=0.3, which='both', axis='both')
-    plt.legend(loc='best')
-    timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_path = PREDICTIONS_DIR / f"prediction_{start_datetime.strftime('%Y%m%d')}_{horizon_days}days_{timestamp_str}.png"
+    # plt.title(f'Electricity Price Prediction - {horizon_days} Day Horizon ({model_type.capitalize()} Model)', fontsize=14)
+    # plt.xlabel('Date', fontsize=12)
+    # plt.ylabel('Price (öre/kWh)', fontsize=12)
+    # plt.grid(True, alpha=0.3, which='both', axis='both') # Already handled per-axis
+    # plt.legend(loc='best') # Already handled per-axis
+
+    timestamp_str = datetime.now().strftime('%Y%m%d_%H%M')
+    output_path = PREDICTIONS_DIR / f"{timestamp_str}" / f"prediction_{start_datetime.strftime('%Y%m%d')}_{horizon_days}days.png"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     logging.info(f"Saved prediction plot to {output_path}")
+
     # Save prediction data as CSV
-    if results_df is not None:
-        csv_path = PREDICTIONS_DIR / f"prediction_{start_datetime.strftime('%Y%m%d')}_{horizon_days}days_{timestamp_str}.csv"
-        results_df.to_csv(csv_path)
+    if final_results_df_to_save is not None:
+        csv_path = PREDICTIONS_DIR / f"{timestamp_str}" / f"prediction_{start_datetime.strftime('%Y%m%d')}_{horizon_days}days.csv"
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        final_results_df_to_save.to_csv(csv_path)
         logging.info(f"Saved prediction data to {csv_path}")
-    # Return the appropriate results
-    if model_type == 'trend' and trend_results is not None:
-        return trend_results
-    elif model_type == 'peak' and peak_results is not None:
-        return peak_results
-    elif model_type == 'valley' and valley_results is not None:
-        return valley_results
-    elif model_type == 'merged' and merged_results is not None:
-        return merged_results
-    else:
-        return None
+
+    # Return the appropriate results (using final_results_df_to_save)
+    return final_results_df_to_save
 
 def main():
     args = parse_arguments()

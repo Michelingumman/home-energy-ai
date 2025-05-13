@@ -26,7 +26,7 @@ RESOLUTION = "hourly"
 OUTPUT_FILE = "ActualSolarProductionData.csv"
 CURRENT_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(__file__).resolve().parents[4] / "data/HomeAssistant"
-DOWNLOAD_SCRIPT = Path(__file__).resolve().parents[3] / "download_entity_data_from_HA.py"
+DOWNLOAD_SCRIPT = Path(__file__).resolve().parents[3] / "downloadEntityData.py"
 
 def main():
     print(f"Starting merge process for {ENTITY_ID} data")

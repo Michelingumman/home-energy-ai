@@ -236,7 +236,7 @@ class ApplianceManager:
             name="floor_heating", 
             power_kw=4.5, 
             priority=8,
-            conflicts={"sauna"}
+            conflicts={"heat_pump"}
         ))
         
         self.add_appliance(Appliance(
@@ -251,7 +251,7 @@ class ApplianceManager:
             power_kw=9.0, 
             priority=3,
             max_runtime=3.0,
-            conflicts={"floor_heating", "ev_charger"}
+            conflicts={"floor_heating", "ev_charger", "heat_pump"}
         ))
         
         # Add more common appliances with lower power consumption

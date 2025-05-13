@@ -20,3 +20,5 @@ src/predictions/prices/models/trend_model/production_model/best_trend_model.pkl
 
 *.log
 
+.gitattributes
+.cache.sqlite

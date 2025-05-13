@@ -27,8 +27,7 @@ Select Allow the connection → Next
 5.
 Check Private (and Domain if you use a corporate domain) → Next
 
-6.
-Give it a name like “Prefect Orion UI” → Finish
+6.Give it a name like “Prefect UI” → Finish
 
 ```
 

@@ -19,6 +19,8 @@ Co2GasCoal_update_script = "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py"
 # Weather script to fetch the weather data from OpenMeteo API
 weather_updateData_script = "C:/_Projects/home-energy-ai/data/FetchWeatherData.py"
 
+
+
 # Log file paths
 log_file = "C:/_Projects/home-energy-ai/src/logs/Gather_Data_log.log"
 summary_log_file = "C:/_Projects/home-energy-ai/src/logs/Gather_Data_summary.log"

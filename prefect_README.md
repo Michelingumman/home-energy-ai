@@ -38,7 +38,7 @@ First save the prefect api url to work with the zerotier ip
 prefect config set PREFECT_API_URL="http://<Your-PC’s-ZeroTier-IP>:4200/api"
 ```
 ```bash
-prefect server start --host 0.0.0.0 --port 4200
+prefect server start --host <Your-PC’s-ZeroTier-IP> --port 4200
 ```
 
 ## Connect to Prefect

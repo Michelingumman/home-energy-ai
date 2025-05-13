@@ -46,9 +46,3 @@ Connect machine to zerotier then:
 
 ``http://<Your-PC’s-ZeroTier-IP>:4200``
 
-or locally on the pc with:
-```bash
-localhost:4200
--or
-<PC´s ip>:4200
-```

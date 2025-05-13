@@ -240,9 +240,10 @@ def update_grid_data():
             df = df[grid_cols]
             df.sort_index(inplace=True)
             
-            # Fill any missing values with 0
-            df = df.fillna(0)
-            
+            if df.isna().sum().any():
+                # Fill any missing values with 0
+                df = df.fillna(0)
+                print("Found missing values in grid data: ", df.isna().sum())
             # Merge with existing data if it exists and is not empty
             if grid_file_path.exists():
                 try:

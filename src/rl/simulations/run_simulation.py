@@ -1,320 +1,296 @@
 """
-Run a simulation of the hierarchical RL system.
+Run a simulation with a trained PPO RL agent.
 
-Loads trained agents and runs a week-long simulation with the hierarchical controller.
+Loads a PPO model and runs a simulation using HomeEnergyEnv.
 """
 import os
 import json
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from pathlib import Path
 import datetime
 import pandas as pd
+import sys
+import time
+import logging
 
 # Import our custom components
 from src.rl.custom_env import HomeEnergyEnv
-from src.rl.wrappers import LongTermEnv
-from src.rl.agent import HierarchicalController
+from src.rl import config as rl_config # Import the new config
 
+# Add project root for easier imports if script is moved
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-def load_config(config_path: str = "src/rl/rl_config.json") -> dict:
-    """
-    Load configuration from JSON file.
-    
-    Args:
-        config_path: Path to the config file
-        
-    Returns:
-        dict: Configuration dictionary
-    """
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-            print(f"Loaded configuration from {config_path}")
-            return config
-    except Exception as e:
-        print(f"Error loading config: {e}")
-        print("Using default configuration")
-        return {}
+# Set up logging more robustly
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(asctime)s: %(filename)s:%(lineno)d: %(message)s')
+logger = logging.getLogger(__name__)
 
-
-def run_simulation(config: dict, short_term_model_path: str, long_term_model_path: str) -> dict:
+def run_simulation(
+    model_path: str, 
+    num_episodes: int = 1, 
+    render: bool = False,
+    output_csv_path: str = None,
+    output_plot_path: str = None,
+    override_sim_days: int = None
+) -> dict:
     """
     Run a simulation with trained models.
     
     Args:
-        config: Configuration dictionary
-        short_term_model_path: Path to trained short-term model
-        long_term_model_path: Path to trained long-term model
+        model_path: Path to trained model
+        num_episodes: Number of episodes to run
+        render: Whether to render the environment
+        output_csv_path: Path to save CSV results
+        output_plot_path: Path to save plot results
+        override_sim_days: Override the default simulation days
         
     Returns:
         dict: Simulation results
     """
-    # Create the hierarchical controller
-    controller = HierarchicalController(
-        config=config,
-        short_term_model_path=short_term_model_path,
-        long_term_model_path=long_term_model_path
-    )
-    
-    # Run a single episode
-    print("Running simulation...")
-    
-    # Reset environments
-    short_term_obs, _ = controller.base_env.reset(seed=config.get("random_seed", 42))
-    long_term_obs, _ = controller.long_term_env.reset(seed=config.get("random_seed", 42))
-    
-    # Collect simulation data
-    soc_values = []
-    price_values = []
-    demand_values = []
-    solar_values = []
-    grid_costs = []
-    battery_costs = []
-    battery_actions = []
-    appliance_states = []
-    net_consumption = []
-    
-    # Step through the environment
-    total_reward = 0
-    done = False
-    info = None
-    
-    # Track time
-    start_datetime = controller.base_env.start_datetime
-    
-    while not done:
-        # Get long-term plan
-        long_term_action, _ = controller.long_term_agent.predict(long_term_obs, deterministic=True)
-        
-        # Execute long-term step (which handles 4 hours internally)
-        long_term_obs, reward, done, _, info = controller.long_term_env.step(long_term_action)
-        
-        # Record data from the info dictionary
-        for i in range(min(4, len(info.get("step_grid_costs", [])))):
-            current_hour = controller.base_env.current_hour - 4 + i
-            current_datetime = start_datetime + datetime.timedelta(hours=current_hour)
-            
-            # Record state of charge
-            soc_values.append({
-                "timestamp": current_datetime,
-                "value": controller.base_env.battery.soc
-            })
-            
-            # Record price, if available
-            if current_hour < len(controller.base_env.price_history):
-                price_values.append({
-                    "timestamp": current_datetime,
-                    "value": controller.base_env.price_history[current_hour]
-                })
-            
-            # Record grid costs
-            if i < len(info.get("step_grid_costs", [])):
-                grid_costs.append({
-                    "timestamp": current_datetime,
-                    "value": info["step_grid_costs"][i]
-                })
-            
-            # Record battery costs
-            if i < len(info.get("step_battery_costs", [])):
-                battery_costs.append({
-                    "timestamp": current_datetime,
-                    "value": info["step_battery_costs"][i]
-                })
-            
-            # Record solar production
-            if i < len(controller.base_env.solar_history) and current_hour < len(controller.base_env.solar_history):
-                solar_values.append({
-                    "timestamp": current_datetime,
-                    "value": controller.base_env.solar_history[current_hour]
-                })
-            
-            # Record net consumption
-            if "net_consumption" in info:
-                net_consumption.append({
-                    "timestamp": current_datetime,
-                    "value": info.get("net_consumption", 0)
-                })
-        
-        total_reward += reward
-        
-        # Print progress
-        print(f"Hour: {controller.base_env.current_hour}/{controller.base_env.simulation_hours}, " +
-              f"SoC: {controller.base_env.battery.soc:.2f}, " +
-              f"Cost: {controller.base_env.total_cost:.2f}")
-    
-    # Compile results
-    results = {
-        "total_reward": total_reward,
-        "total_cost": controller.base_env.total_cost,
-        "peak_power": controller.base_env.peak_power,
-        "soc_values": soc_values,
-        "price_values": price_values,
-        "grid_costs": grid_costs,
-        "battery_costs": battery_costs,
-        "solar_values": solar_values,
-        "net_consumption": net_consumption
+    logger.info(f"Starting simulation with model: {model_path}")
+
+    if not Path(model_path).exists():
+        logger.error(f"Model file not found: {model_path}")
+        return
+
+    # Load configuration using the new Python module
+    config_dict = rl_config.get_config_dict()
+    logger.info(f"Configuration loaded from {rl_config.__file__}")
+
+    if not config_dict:
+        logger.error("Failed to load configuration dictionary from rl_config. Aborting simulation.")
+        return
+
+    sim_days = config_dict.get("simulation_days_eval", config_dict.get("simulation_days", 7))
+    if override_sim_days is not None:
+        sim_days = override_sim_days
+        logger.info(f"Overriding simulation days to: {sim_days}")
+
+    env_config = {
+        "battery_capacity": config_dict.get("battery_capacity"),
+        "simulation_days": sim_days,
+        "peak_penalty_factor": config_dict.get("peak_penalty_factor"),
+        "use_price_predictions": config_dict.get("use_price_predictions_eval"),
+        "price_predictions_path": config_dict.get("price_predictions_path"),
+        "fixed_baseload_kw": config_dict.get("fixed_baseload_kw"),
+        "render_mode": "human" if render else None,
+        "time_step_minutes": config_dict.get("time_step_minutes"),
+        "use_variable_consumption": config_dict.get("use_variable_consumption"),
+        "consumption_data_path": config_dict.get("consumption_data_path"),
+        "battery_degradation_cost_per_kwh": config_dict.get("battery_degradation_cost_per_kwh"),
+        "use_solar_predictions": config_dict.get("use_solar_predictions_eval"),
+        "solar_data_path": config_dict.get("solar_data_path_eval"),
+        "config": config_dict
     }
-    
-    return results
 
+    for key in ["price_predictions_path", "consumption_data_path", "solar_data_path"]:
+        if env_config.get(key) and not os.path.isabs(env_config[key]):
+            abs_path = PROJECT_ROOT / env_config[key]
+            env_config[key] = str(abs_path)
+            logger.info(f"Adjusted path for {key} to absolute: {env_config[key]}")
+            if not abs_path.exists():
+                 logger.warning(f"Warning: Path for {key} does not exist: {abs_path}")
 
-def plot_results(results: dict, output_dir: str) -> None:
-    """
-    Plot and save simulation results.
-    
-    Args:
-        results: Simulation results dictionary
-        output_dir: Directory to save plots
-    """
-    # Create output directory
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    
-    # Convert lists of dictionaries to DataFrames for easier plotting
-    soc_df = pd.DataFrame(results["soc_values"])
-    price_df = pd.DataFrame(results["price_values"])
-    grid_costs_df = pd.DataFrame(results["grid_costs"])
-    battery_costs_df = pd.DataFrame(results["battery_costs"])
-    solar_df = pd.DataFrame(results["solar_values"])
-    net_consumption_df = pd.DataFrame(results["net_consumption"])
-    
-    # Plot 1: State of Charge
-    plt.figure(figsize=(12, 6))
-    plt.plot(soc_df["timestamp"], soc_df["value"], label="Battery SoC")
-    plt.fill_between(soc_df["timestamp"], 0.2, 0.9, alpha=0.2, color="green", label="Allowed SoC Range")
-    plt.title("Battery State of Charge")
-    plt.xlabel("Time")
-    plt.ylabel("SoC")
-    plt.ylim(0, 1.0)
-    plt.grid(True)
-    plt.legend()
-    plt.savefig(output_path / "battery_soc.png")
-    
-    # Plot 2: Electricity Price and Costs
-    fig, ax1 = plt.subplots(figsize=(12, 6))
-    
-    # Price on left axis
-    ax1.plot(price_df["timestamp"], price_df["value"], 'b-', label="Electricity Price")
-    ax1.set_xlabel("Time")
-    ax1.set_ylabel("Price (SEK/kWh)", color='b')
-    ax1.tick_params(axis='y', labelcolor='b')
-    
-    # Costs on right axis
-    ax2 = ax1.twinx()
-    ax2.plot(grid_costs_df["timestamp"], grid_costs_df["value"], 'r-', label="Grid Cost")
-    ax2.plot(battery_costs_df["timestamp"], battery_costs_df["value"], 'g-', label="Battery Degradation Cost")
-    ax2.set_ylabel("Cost (SEK)", color='r')
-    ax2.tick_params(axis='y', labelcolor='r')
-    
-    # Add legends
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right")
-    
-    plt.title("Electricity Price and Costs")
-    plt.grid(True)
-    plt.savefig(output_path / "costs.png")
-    
-    # Plot 3: Power Balance
-    plt.figure(figsize=(12, 6))
-    plt.plot(solar_df["timestamp"], solar_df["value"], 'y-', label="Solar Production")
-    plt.plot(net_consumption_df["timestamp"], net_consumption_df["value"], 'r-', label="Net Grid Consumption")
-    plt.axhline(y=0, color='k', linestyle='--')
-    plt.title("Power Balance")
-    plt.xlabel("Time")
-    plt.ylabel("Power (kW)")
-    plt.grid(True)
-    plt.legend()
-    plt.savefig(output_path / "power_balance.png")
-    
-    # Save summary data to text file
-    with open(output_path / "summary.txt", "w") as f:
-        f.write(f"Total Reward: {results['total_reward']:.2f}\n")
-        f.write(f"Total Cost: {results['total_cost']:.2f} SEK\n")
-        f.write(f"Peak Power: {results['peak_power']:.2f} kW\n")
+    try:
+        eval_env = HomeEnergyEnv(**env_config)
+    except Exception as e:
+        logger.error(f"Error creating HomeEnergyEnv: {e}", exc_info=True)
+        return
+
+    try:
+        model = PPO.load(model_path, env=eval_env) # Use eval_env here
+    except Exception as e:
+        logger.error(f"Error loading PPO model: {e}", exc_info=True)
+        # Attempting to load with a new env instance for diagnostics, if fails above
+        try:
+            logger.info("Attempting to load model with a fresh environment instance for PPO.load().")
+            fresh_env_for_load = HomeEnergyEnv(**env_config) # Create a new instance for loading
+            model = PPO.load(model_path, env=fresh_env_for_load)
+            logger.info("Model loaded successfully with a fresh environment instance.")
+            # If this succeeds, the issue might be with how eval_env was mutated or used before PPO.load
+            # We should still use the original eval_env for running the simulation if this was just for loading.
+            # However, PPO.load might modify the env. Best practice is to pass a non-modified env or allow PPO to create one.
+            # For now, we set the model's env to our main eval_env if loading succeeded this way.
+            model.set_env(eval_env)
+        except Exception as e2:
+            logger.error(f"Still failed to load PPO model with a fresh env: {e2}", exc_info=True)
+            return
+
+    all_episode_data_dfs = []
+    logger.info(f"Running {num_episodes} simulation episode(s)...")
+
+    for episode in range(num_episodes):
+        obs, info = eval_env.reset()
+        terminated = False
+        truncated = False
+        episode_reward_sum = 0
         
-        # Calculate average battery state of charge
-        avg_soc = np.mean(soc_df["value"])
-        f.write(f"Average Battery SoC: {avg_soc:.2f}\n")
-        
-        # Calculate average electricity price and costs
-        avg_price = np.mean(price_df["value"])
-        total_grid_cost = np.sum(grid_costs_df["value"])
-        total_battery_cost = np.sum(battery_costs_df["value"])
-        
-        f.write(f"Average Electricity Price: {avg_price:.2f} SEK/kWh\n")
-        f.write(f"Total Grid Cost: {total_grid_cost:.2f} SEK\n")
-        f.write(f"Total Battery Degradation Cost: {total_battery_cost:.2f} SEK\n")
-    
-    print(f"Results saved to {output_path}")
+        # This data collection needs to match what `evaluate_agent.py` does for consistency if plots are shared
+        episode_data = {
+            "timestamps": [], "soc": [], "price": [], "action_normalized": [],
+            "battery_power_kw": [], "grid_power_kw": [], "reward": [],
+            "total_cost_cumulative": [], "household_consumption_kw": [], 
+            "current_solar_production_kw": [], "reward_grid_cost": [], 
+            "reward_peak_penalty": [], "reward_battery_cost": [],
+            "reward_arbitrage_bonus": [], "reward_soc_action_penalty": []
+        }
 
+        for step_num in range(eval_env.simulation_steps):
+            action, _states = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = eval_env.step(action)
+            episode_reward_sum += reward
 
-def main(args):
-    """
-    Main function to run simulation.
-    
-    Args:
-        args: Command-line arguments
-    """
-    # Load configuration
-    config = load_config(args.config)
-    
-    # Override with command-line arguments if provided
-    short_term_model_path = args.short_term_model or config.get("short_term_model_path")
-    long_term_model_path = args.long_term_model or config.get("long_term_model_path")
-    
-    # Ensure model paths are valid
-    if not short_term_model_path or not os.path.exists(short_term_model_path):
-        print(f"Error: Short-term model not found at {short_term_model_path}")
+            current_sim_time = eval_env.start_datetime + pd.Timedelta(hours=eval_env.current_step * eval_env.time_step_hours)
+            
+            episode_data["timestamps"].append(current_sim_time)
+            episode_data["soc"].append(obs["soc"][0])
+            episode_data["price"].append(info.get("current_price", np.nan))
+            episode_data["action_normalized"].append(float(action[0] if isinstance(action, np.ndarray) and action.ndim > 0 else action))
+            episode_data["battery_power_kw"].append(-info.get("power_kw", np.nan)) # Inverted for plotting
+            episode_data["grid_power_kw"].append(info.get("grid_power_kw", np.nan))
+            episode_data["reward"].append(reward)
+            episode_data["total_cost_cumulative"].append(info.get("total_cost", np.nan))
+            episode_data["household_consumption_kw"].append(info.get("base_demand_kw", np.nan))
+            episode_data["current_solar_production_kw"].append(info.get("current_solar_production_kw", np.nan))
+            episode_data["reward_grid_cost"].append(info.get("reward_grid_cost", np.nan))
+            episode_data["reward_peak_penalty"].append(info.get("reward_peak_penalty", np.nan))
+            episode_data["reward_battery_cost"].append(info.get("reward_battery_cost", np.nan))
+            episode_data["reward_arbitrage_bonus"].append(info.get("reward_arbitrage_bonus", np.nan))
+            episode_data["reward_soc_action_penalty"].append(info.get("reward_soc_action_penalty", np.nan))
+
+            if render:
+                eval_env.render()
+                # time.sleep(0.1) # Optional delay for human viewing
+            
+            if terminated or truncated:
+                break
+        
+        all_episode_data_dfs.append(pd.DataFrame(episode_data))
+        logger.info(f"Episode {episode + 1} finished. Total reward: {episode_reward_sum:.2f}, Total cost: {info.get('total_cost', 0):.2f}")
+
+    if not all_episode_data_dfs:
+        logger.warning("No simulation data collected.")
         return
     
-    if not long_term_model_path or not os.path.exists(long_term_model_path):
-        print(f"Error: Long-term model not found at {long_term_model_path}")
-        return
-    
-    print(f"Using short-term model: {short_term_model_path}")
-    print(f"Using long-term model: {long_term_model_path}")
-    
-    # Run simulation
-    results = run_simulation(config, short_term_model_path, long_term_model_path)
-    
-    # Determine output directory
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = args.output_dir or f"src/rl/simulations/results/sim_{timestamp}"
-    
-    # Plot and save results
-    plot_results(results, output_dir)
+    # For simplicity, using data from the first episode for CSV and plot
+    df_to_process = all_episode_data_dfs[0]
 
+    if output_csv_path:
+        try:
+            csv_path = Path(output_csv_path)
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+            df_to_process.to_csv(csv_path, index=False)
+            logger.info(f"Simulation data saved to {csv_path}")
+        except Exception as e:
+            logger.error(f"Error saving simulation data to CSV {output_csv_path}: {e}")
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run simulation with trained models")
+    if output_plot_path:
+        try:
+            plot_path = Path(output_plot_path)
+            plot_path.parent.mkdir(parents=True, exist_ok=True)
+            # Simplified plot - customize as needed, mirroring evaluate_agent.py plotting if desired
+            fig, axs = plt.subplots(4, 1, figsize=(15, 20), sharex=True)
+            axs[0].step(df_to_process['timestamps'], df_to_process['soc'], label='SoC')
+            axs[0].set_ylabel('SoC')
+            ax0_twin = axs[0].twinx()
+            ax0_twin.step(df_to_process['timestamps'], df_to_process['price'], label='Price', color='orange', linestyle='--')
+            ax0_twin.set_ylabel('Price')
+            axs[0].legend(loc='upper left'); ax0_twin.legend(loc='upper right')
+
+            axs[1].step(df_to_process['timestamps'], df_to_process['battery_power_kw'], label='Battery Power (kW)')
+            axs[1].set_ylabel('Battery Power (kW)')
+            axs[1].legend()
+
+            axs[2].step(df_to_process['timestamps'], df_to_process['grid_power_kw'], label='Grid Power (kW)')
+            axs[2].step(df_to_process['timestamps'], df_to_process['household_consumption_kw'], label='Demand (kW)', linestyle=':')
+            axs[2].step(df_to_process['timestamps'], df_to_process['current_solar_production_kw'], label='Solar (kW)', linestyle=':')
+            axs[2].set_ylabel('Power (kW)')
+            axs[2].legend()
+            
+            axs[3].plot(df_to_process['timestamps'], df_to_process['reward'].cumsum(), label='Cumulative Reward')
+            axs[3].set_ylabel('Cumulative Reward')
+            axs[3].legend()
+
+            for ax in axs:
+                ax.grid(True)
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+                plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+            
+            fig.tight_layout()
+            plt.savefig(plot_path)
+            logger.info(f"Simulation plot saved to {plot_path}")
+            if render: # Show plot if rendering was also enabled for env steps
+                plt.show()
+        except Exception as e:
+            logger.error(f"Error saving simulation plot to {output_plot_path}: {e}")
     
+    logger.info("Simulation run completed.")
+    # Return the first episode's dataframe for potential further use
+    return df_to_process 
+
+def main():
+    parser = argparse.ArgumentParser(description="Run a simulation with a trained RL agent.")
+    parser.add_argument("--model_path", type=str, required=True, help="Path to the trained PPO model (.zip file).")
     parser.add_argument(
         "--config", 
         type=str, 
-        default="src/rl/rl_config.json",
-        help="Path to configuration file"
+        default="src/rl/config.py", 
+        help="Path to the RL Python configuration file (default: src/rl/config.py). This script imports src.rl.config directly."
     )
-    
-    parser.add_argument(
-        "--short_term_model", 
-        type=str, 
-        help="Path to trained short-term model"
-    )
-    
-    parser.add_argument(
-        "--long_term_model", 
-        type=str, 
-        help="Path to trained long-term model"
-    )
-    
-    parser.add_argument(
-        "--output_dir", 
-        type=str, 
-        help="Directory to save results"
-    )
-    
+    parser.add_argument("--episodes", type=int, default=1, help="Number of episodes to simulate.")
+    parser.add_argument("--sim_days", type=int, default=None, help="Override simulation days for this run.")
+    parser.add_argument("--render", action="store_true", help="Render the environment during simulation.")
+    parser.add_argument("--output_csv", type=str, default=None, help="Path to save simulation data as CSV.")
+    parser.add_argument("--output_plot", type=str, default=None, help="Path to save simulation plot as PNG.")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging from the environment.")
+
     args = parser.parse_args()
-    main(args) 
+
+    if args.verbose:
+        # You might need to adjust how logging is configured for the environment if it has its own logger
+        logging.getLogger("src.rl.custom_env").setLevel(logging.DEBUG) # Example
+        logger.info("Verbose logging enabled for custom_env.")
+
+    # Config path argument handling (for user awareness)
+    default_config_path_str = "src/rl/config.py"
+    if os.path.normpath(args.config) != os.path.normpath(default_config_path_str):
+        logger.warning(
+            f"The --config argument was set to '{args.config}', "
+            f"but this script directly imports configuration from '{default_config_path_str}'. "
+            f"The value of --config is currently not used to load an alternative Python config module."
+        )
+    
+    # Check existence of the standard config file we are importing
+    standard_config_module_path = PROJECT_ROOT / default_config_path_str
+    if not standard_config_module_path.exists():
+        logger.error(f"The standard configuration module {standard_config_module_path} was not found. Please ensure it exists.")
+        sys.exit(1)
+    logger.info(f"Using configuration imported from: {rl_config.__file__}")
+
+    abs_model_path = Path(args.model_path)
+    if not abs_model_path.is_absolute():
+        abs_model_path = PROJECT_ROOT / args.model_path
+
+    output_csv = args.output_csv
+    if output_csv and not Path(output_csv).is_absolute():
+        output_csv = PROJECT_ROOT / output_csv
+        
+    output_plot = args.output_plot
+    if output_plot and not Path(output_plot).is_absolute():
+        output_plot = PROJECT_ROOT / output_plot
+
+    run_simulation(
+        model_path=str(abs_model_path),
+        num_episodes=args.episodes,
+        render=args.render,
+        output_csv_path=str(output_csv) if output_csv else None,
+        output_plot_path=str(output_plot) if output_plot else None,
+        override_sim_days=args.sim_days
+    )
+
+if __name__ == "__main__":
+    main() 

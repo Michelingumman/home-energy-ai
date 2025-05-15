@@ -19,15 +19,16 @@ from pathlib import Path
 import time # Added for profiling
 import sys # Added for sys.exit
 
-from src.rl.components import Battery, ApplianceManager, SolarSystem
+from src.rl.components import Battery
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(asctime)s: %(message)s')
-logger = logging.getLogger(__name__)
+# Get a logger without re-configuring basicConfig
+logger = logging.getLogger("home_energy_env")
 
 # Default paths for prediction files
 PRICE_PREDICTIONS_PATH = "src/predictions/prices/plots/predictions/merged"
-# SOLAR_PREDICTIONS_PATH = "src/predictions/solar/forecasted_data/merged_predictions.csv" # Commented out
+
+# Default path for actual solar data
+ACTUAL_SOLAR_DATA_PATH = "src/predictions/solar/actual_data/ActualSolarProductionData.csv"
 
 class HomeEnergyEnv(gym.Env):
     """
@@ -38,6 +39,7 @@ class HomeEnergyEnv(gym.Env):
     - Battery state of charge
     - Time index (hour of day, minute of hour, day of week)
     - Price forecast for next 24 hours (from historical data)
+    - Solar forecast for the next 4 days (from solar data)
     
     Action space includes:
     - Battery charging/discharging rate (-1 to 1)
@@ -47,89 +49,100 @@ class HomeEnergyEnv(gym.Env):
     
     def __init__(
         self,
-        battery_capacity: float = 22.0,  # kWh
-        simulation_days: int = 7,
-        peak_penalty_factor: float = 5.0,
-        render_mode: Optional[str] = None,
-        use_price_predictions: bool = True, # Default to True, expecting historical data
-        price_predictions_path: str = PRICE_PREDICTIONS_PATH,
-        fixed_baseload_kw: float = 0.5,
-        time_step_minutes: int = 15,
-        use_variable_consumption: bool = False,
-        consumption_data_path: Optional[str] = None,
-        battery_degradation_cost_per_kwh: float = 45.0, # New parameter with default
-        config: Optional[Dict] = None # Add config dictionary
+        config: Optional[Dict] = None
     ):
         """
         Initialize the environment.
         
         Args:
-            battery_capacity: Battery capacity in kWh
-            simulation_days: Length of simulation in days
-            peak_penalty_factor: Penalty factor for peak loads
-            render_mode: Rendering mode
-            use_price_predictions: Must be True to use historical price predictions from CSV.
-                                   If False, a critical error will be logged as historical data is expected.
-            price_predictions_path: Path to price predictions CSV directory.
-            fixed_baseload_kw: Fixed household demand in kW. Only used if use_variable_consumption is False.
-            time_step_minutes: Time step in minutes.
-            use_variable_consumption: Whether to use a variable consumption profile from a CSV.
-            consumption_data_path: Path to the consumption data CSV file.
-            battery_degradation_cost_per_kwh: Cost of battery degradation per kWh of throughput.
-            config: Configuration dictionary, used for reward parameters.
+            config: Configuration dictionary containing all parameters.
+                   If None, default values will be used.
         """
         super().__init__()
-        self.config = config if config is not None else {} # Store the config
+        self.config = config if config is not None else {}
         
-        self.peak_penalty_factor = peak_penalty_factor
-        self.render_mode = render_mode
-        self.fixed_baseload_kw = fixed_baseload_kw # Remains for fallback or if variable is off
-        self.use_variable_consumption = use_variable_consumption
-        self.consumption_data_path = consumption_data_path
-        self.all_consumption_data_kw: Optional[pd.DataFrame] = None
-        self.episode_consumption_kw: Optional[np.ndarray] = None
+        # Set up logger level if specified in config
+        if self.config.get("log_level"):
+            log_level = self.config.get("log_level")
+            # Convert string level to actual logging level
+            numeric_level = getattr(logging, log_level.upper(), None)
+            if isinstance(numeric_level, int):
+                logger.setLevel(numeric_level)
+            else:
+                logger.warning(f"Invalid log level: {log_level}, using default")
+                
+        # Flag to enable/disable timestamp sanity check prints
+        self.debug_prints = self.config.get("debug_prints", False)
+                
+        logger.info("\n{:=^80}".format(" Initializing HomeEnergyEnv "))
 
-        # Define time_step_hours early as it's needed for data loading/resampling
-        self.time_step_minutes = time_step_minutes # Store for reference if needed
+        # Load parameters from config with defaults
+        self.battery_capacity = self.config.get("battery_capacity", 22.0)
+        self.simulation_days = self.config.get("simulation_days", 7)
+        self.peak_penalty_factor = self.config.get("peak_penalty_factor", 5.0)
+        self.render_mode = self.config.get("render_mode", None)
+        self.use_price_predictions = self.config.get("use_price_predictions", True)
+        self.price_predictions_path = self.config.get("price_predictions_path", PRICE_PREDICTIONS_PATH)
+        self.fixed_baseload_kw = self.config.get("fixed_baseload_kw", 0.5)
+        self.time_step_minutes = self.config.get("time_step_minutes", 15)
+        self.use_variable_consumption = self.config.get("use_variable_consumption", False)
+        self.consumption_data_path = self.config.get("consumption_data_path", None)
+        self.battery_degradation_cost_per_kwh = self.config.get("battery_degradation_cost_per_kwh", 45.0)
+        self.use_solar_predictions = self.config.get("use_solar_predictions", True)
+        self.solar_data_path = self.config.get("solar_data_path", ACTUAL_SOLAR_DATA_PATH)
+
+        # Additional variables setup
+        self.all_consumption_data_kw = None
+        self.episode_consumption_kw = None
+        self.all_solar_data_hourly_kw = None
+        self.solar_forecast_actual = None
+        self.solar_forecast_observed = None
+        self.min_solar_data_date = None
+        self.max_solar_data_date = None
         self.time_step_hours = self.time_step_minutes / 60.0
-        logger.info(f"Time step configured to: {self.time_step_hours} hours ({self.time_step_minutes} minutes).")
         
-        logger.info(f"HomeEnergyEnv initialized with:")
-        logger.info(f"  Battery Capacity: {battery_capacity} kWh")
-        logger.info(f"  Simulation Days: {simulation_days}")
-        logger.info(f"  Time Step Minutes: {time_step_minutes}")
-        logger.info(f"  Peak Penalty Factor: {peak_penalty_factor}")
-        logger.info(f"  Fixed Baseload: {fixed_baseload_kw} kW")
-        logger.info(f"  Use Price Predictions (CSV): {use_price_predictions}")
-        logger.info(f"  Price Predictions Path: {price_predictions_path}")
-        logger.info(f"  Use Variable Consumption: {self.use_variable_consumption}")
+        logger.info(f"Time step configured: {self.time_step_minutes} minutes ({self.time_step_hours:.2f} hours).")
+        
+        # Log key parameters in a more consolidated way
+        logger.info(
+            f"Env Params: Sim Days: {self.simulation_days}, Battery: {self.battery_capacity} kWh, "
+            f"Fixed Baseload: {self.fixed_baseload_kw} kW, Peak Penalty: {self.peak_penalty_factor}"
+        )
+        logger.info(
+            f"Price Data: Use Predictions (CSV): {self.use_price_predictions}, Path: {self.price_predictions_path}"
+        )
         if self.use_variable_consumption:
-            logger.info(f"  Consumption Data Path: {self.consumption_data_path}")
+            logger.info(f"Consumption Data: Variable, Path: {self.consumption_data_path}")
+        else:
+            logger.info("Consumption Data: Using fixed baseload.")
+        if self.use_solar_predictions:
+            logger.info(f"Solar Data: Use Predictions: {self.use_solar_predictions}, Path: {self.solar_data_path}")
+        else:
+            logger.info("Solar Data: Not using predictions.")
 
-        self.use_price_predictions = use_price_predictions
         if not self.use_price_predictions:
             logger.critical(
                 "CRITICAL: `use_price_predictions` is set to False, but this simplified environment "
                 "is designed to exclusively use historical price data. Ensure `use_price_predictions` is True "
                 "and a valid `price_predictions_path` is provided in the configuration. EXITING."
             )
-            sys.exit(1) # Exit if fundamental assumption is violated
-        self.price_predictions_path = price_predictions_path
+            sys.exit(1)
+            
         self.price_predictions_df = None # Loaded in _load_price_predictions
         
         # Time parameters
-        self.simulation_hours = simulation_days * 24
-        self.simulation_steps = int(self.simulation_hours / (time_step_minutes / 60.0))
+        self.simulation_hours = self.simulation_days * 24
+        self.simulation_steps = int(self.simulation_hours / self.time_step_hours)
         self.current_step = 0
         self.start_datetime = None
         self.last_action = None # For rendering
         
-        self.min_price_data_date: Optional[pd.Timestamp] = None
-        self.max_price_data_date: Optional[pd.Timestamp] = None
+        self.min_price_data_date = None
+        self.max_price_data_date = None
         
         self.battery = Battery(
-            capacity_kwh=battery_capacity, 
-            degradation_cost_per_kwh=battery_degradation_cost_per_kwh # Use passed parameter
+            capacity_kwh=self.battery_capacity, 
+            degradation_cost_per_kwh=self.battery_degradation_cost_per_kwh
         )
         
         self.action_space = spaces.Box(
@@ -145,6 +158,9 @@ class HomeEnergyEnv(gym.Env):
             ),
             "price_forecast": spaces.Box(
                 low=0.0, high=10.0, shape=(24,), dtype=np.float32 # Placeholder range, actual range depends on data
+            ),
+            "solar_forecast": spaces.Box( # 4 days * 24 hours
+                low=0.0, high=10.0, shape=(4 * 24,), dtype=np.float32 # Placeholder high, actual solar capacity
             )
         })
         
@@ -168,8 +184,8 @@ class HomeEnergyEnv(gym.Env):
                 sys.exit(1)
         
         # Initialize consumption data dates to None or to actuals if not using price predictions (for fallback range)
-        min_consum_date: Optional[pd.Timestamp] = None
-        max_consum_date: Optional[pd.Timestamp] = None
+        min_consum_date = None
+        max_consum_date = None
 
         if self.use_variable_consumption:
             self._load_consumption_data()
@@ -183,19 +199,40 @@ class HomeEnergyEnv(gym.Env):
                 min_consum_date = self.all_consumption_data_kw.index.min()
                 max_consum_date = self.all_consumption_data_kw.index.max()
 
-        self.time_step_hours = time_step_minutes / 60.0
-        logger.info(f"Time step configured to: {self.time_step_hours} hours ({time_step_minutes} minutes).")
+        if self.use_solar_predictions:
+            self._load_solar_data()
+            if self.all_solar_data_hourly_kw is None or self.all_solar_data_hourly_kw.empty:
+                logger.critical(
+                    "CRITICAL: Solar predictions are enabled, but solar data is missing or empty. "
+                    "Ensure `solar_data_path` is correct and the file is valid. EXITING."
+                )
+                sys.exit(1)
+            else:
+                self.min_solar_data_date = self.all_solar_data_hourly_kw.index.min()
+                self.max_solar_data_date = self.all_solar_data_hourly_kw.index.max()
+                # Adjust observation space for solar_forecast high value if possible
+                if 'solar_production_kw' in self.all_solar_data_hourly_kw.columns:
+                    max_solar_val = self.all_solar_data_hourly_kw['solar_production_kw'].max()
+                    if pd.notna(max_solar_val) and max_solar_val > 0:
+                        self.observation_space.spaces['solar_forecast'] = spaces.Box(
+                            low=0.0, high=float(max_solar_val * 1.1), # Add 10% buffer
+                            shape=(4*24,), dtype=np.float32
+                        )
+                        logger.info(f"Adjusted solar_forecast observation space high to: {max_solar_val * 1.1:.2f} kW")
+
+        logger.info("{:-^80}".format(" Environment Initialized "))
         
     def reset(self, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[Dict, Dict]:
         super().reset(seed=seed)
         if seed is not None:
             np.random.seed(seed)
+            logger.info(f"Random seed set to: {seed}")
         
         self.current_step = 0
 
         # Initialize consumption data dates
-        min_consum_date: Optional[pd.Timestamp] = None
-        max_consum_date: Optional[pd.Timestamp] = None
+        min_consum_date = None
+        max_consum_date = None
 
         if self.use_variable_consumption:
             # _load_consumption_data() is called in __init__ if use_variable_consumption is True.
@@ -213,6 +250,7 @@ class HomeEnergyEnv(gym.Env):
         effective_min_data_date = self.min_price_data_date 
         effective_max_data_date = self.max_price_data_date
 
+        # Factor in consumption data date range
         if self.use_variable_consumption and min_consum_date is not None and max_consum_date is not None:
             if effective_min_data_date is None: # If no price data, use consumption range
                 effective_min_data_date = min_consum_date
@@ -224,8 +262,20 @@ class HomeEnergyEnv(gym.Env):
                 else: # If price max date was None, use consumption max date
                      effective_max_data_date = max_consum_date
         
+        # Factor in solar data date range
+        if self.use_solar_predictions and self.min_solar_data_date is not None and self.max_solar_data_date is not None:
+            if effective_min_data_date is None: # If no price/consumption data, use solar range
+                effective_min_data_date = self.min_solar_data_date
+                effective_max_data_date = self.max_solar_data_date
+            else: # Intersect with existing effective range
+                effective_min_data_date = max(effective_min_data_date, self.min_solar_data_date)
+                if effective_max_data_date is not None:
+                    effective_max_data_date = min(effective_max_data_date, self.max_solar_data_date)
+                else: # If previous effective max date was None (e.g. only price min was set)
+                    effective_max_data_date = self.max_solar_data_date
+
         if effective_min_data_date is None or effective_max_data_date is None:
-            logger.critical("CRITICAL: No valid date range found from price/consumption data. Cannot set start_datetime. Exiting.")
+            logger.critical("CRITICAL: No valid date range found from price/consumption/solar data. Cannot set start_datetime. Exiting.")
             sys.exit(1)
 
         # Ensure dates are not None before proceeding
@@ -264,14 +314,14 @@ class HomeEnergyEnv(gym.Env):
             start_day_offset = np.random.randint(1, max_start_day_offset + 1) if max_start_day_offset > 0 else 0
             self.start_datetime = datetime.datetime(current_year, 1, 1) + datetime.timedelta(days=start_day_offset)
 
-        # logger.info(f"Resetting environment. Simulation start datetime: {self.start_datetime}")
-
         self.battery.reset()
         self.peak_power = 0.0
         self.total_cost = 0.0
         self.last_action = None
 
         self._initialize_forecasts()
+        if self.use_solar_predictions:
+            self._initialize_solar_forecasts()
         
         self.price_history = []
         self.grid_cost_history = []
@@ -317,7 +367,7 @@ class HomeEnergyEnv(gym.Env):
                 self.episode_consumption_kw = np.full(self.simulation_steps, self.fixed_baseload_kw) # Fallback
         else:
             self.episode_consumption_kw = np.full(self.simulation_steps, self.fixed_baseload_kw) # Fallback if not using variable
-            logger.info(f"Using fixed baseload of {self.fixed_baseload_kw} kW for episode.")
+            logger.info(f"Using fixed baseload of {self.fixed_baseload_kw} kW for this episode.")
 
         observation = self._get_observation()
         info = self._get_info()
@@ -331,21 +381,31 @@ class HomeEnergyEnv(gym.Env):
         self.last_action = battery_action
         logger.debug(f"  Action received: {battery_action:.4f}")
         
+        # SoC action penalties are no longer needed as we've implemented hard constraints
+        # in the _handle_battery_action method
         soc_action_penalty = 0.0
-        # Get soc_action_penalty_val from config, default to -100.0 if not found
-        soc_penalty_val = self.config.get("soc_action_penalty_val", -100.0)
-        if battery_action > 0 and self.battery.soc <= self.battery.min_soc: # Attempting to discharge when empty or at min
-            soc_action_penalty = soc_penalty_val
-            logger.debug(f"    Attempted to discharge below min_soc. Penalty: {soc_action_penalty}")
-        elif battery_action < 0 and self.battery.soc >= self.battery.max_soc: # Attempting to charge when full or at max
-            soc_action_penalty = soc_penalty_val
-            logger.debug(f"    Attempted to charge above max_soc. Penalty: {soc_action_penalty}")
 
         battery_info = self._handle_battery_action(battery_action)
         # battery_info already logs its details
         
+        # Re-implement penalty for attempted constraint violations
+        # Add the penalty if the agent attempted an invalid action (that required constraint enforcement)
+        if battery_info.get("constraint_applied", False):
+            soc_action_penalty_factor = self.config.get("soc_action_penalty_val", -500.0)
+            soc_action_penalty = soc_action_penalty_factor * abs(battery_action)
+            logger.debug(f"  Applied SoC action penalty: {soc_action_penalty:.4f} for attempted constraint violation")
+        else:
+            soc_action_penalty = 0.0
+
         current_price = self.price_forecast_actual[self.current_step]
         logger.debug(f"  Current Price: {current_price:.2f} öre/kWh")
+        
+        current_solar_production_kw = 0.0
+        if self.use_solar_predictions and self.solar_forecast_actual is not None:
+            current_solar_production_kw = self.solar_forecast_actual[self.current_step]
+            # Ensure solar production is not negative (can happen with faulty data or ffill at start)
+            current_solar_production_kw = max(0.0, current_solar_production_kw)
+        logger.debug(f"  Current Solar Production: {current_solar_production_kw:.2f} kW")
         
         if self.use_variable_consumption and self.episode_consumption_kw is not None:
             current_demand_kw = self.episode_consumption_kw[self.current_step]
@@ -353,9 +413,9 @@ class HomeEnergyEnv(gym.Env):
             current_demand_kw = self.fixed_baseload_kw
         
         base_demand_kw = current_demand_kw # For logging consistency and if needed elsewhere
-        net_load_before_battery = current_demand_kw # No solar
-        logger.debug(f"  Current Demand: {current_demand_kw:.2f} kW")
-        logger.debug(f"  Net Load Before Battery (Current Demand): {net_load_before_battery:.2f} kW")
+        net_load_before_battery = current_demand_kw - current_solar_production_kw # Subtract solar
+        logger.debug(f"  Current Demand (Gross): {current_demand_kw:.2f} kW")
+        logger.debug(f"  Net Load Before Battery (Demand - Solar): {net_load_before_battery:.2f} kW")
 
         battery_power_kw = battery_info["power_kw"]
         # Logged in _handle_battery_action, but good to see in context too
@@ -373,9 +433,10 @@ class HomeEnergyEnv(gym.Env):
         
         # Get peak_threshold_kw from config, default to 5.0
         peak_thresh_kw = self.config.get("peak_threshold_kw", 5.0)
+        peak_penalty_factor = self.config.get("peak_penalty_factor", 5.0)
         peak_penalty = 0
         if grid_power_kw > peak_thresh_kw:
-             peak_penalty = -self.peak_penalty_factor * (grid_power_kw - peak_thresh_kw) * self.time_step_hours # Use self.peak_penalty_factor from init
+             peak_penalty = -peak_penalty_factor * (grid_power_kw - peak_thresh_kw) * self.time_step_hours
         
         if grid_power_kw > self.peak_power:
             self.peak_power = grid_power_kw
@@ -397,6 +458,29 @@ class HomeEnergyEnv(gym.Env):
         discharge_thresh_high = self.config.get("discharge_bonus_threshold_price_high", 100.0)
         discharge_multiplier_high = self.config.get("discharge_bonus_multiplier_high", 25.0)
 
+        # === START DETAILED LOGGING FOR REWARD DEBUGGING ===
+        logger.debug(f"  REWARD_DEBUG: --- Config Values Used This Step ---")
+        logger.debug(f"  REWARD_DEBUG: charge_thresh_price: {charge_thresh_price}")
+        logger.debug(f"  REWARD_DEBUG: charge_multiplier: {charge_multiplier}")
+        logger.debug(f"  REWARD_DEBUG: discharge_thresh_moderate: {discharge_thresh_moderate}")
+        logger.debug(f"  REWARD_DEBUG: discharge_multiplier_moderate: {discharge_multiplier_moderate}")
+        logger.debug(f"  REWARD_DEBUG: discharge_thresh_high: {discharge_thresh_high}")
+        logger.debug(f"  REWARD_DEBUG: discharge_multiplier_high: {discharge_multiplier_high}")
+        logger.debug(f"  REWARD_DEBUG: battery_cost_scale_factor: {battery_cost_scale}")
+        logger.debug(f"  REWARD_DEBUG: peak_penalty_scale_factor: {peak_penalty_scale}")
+        logger.debug(f"  REWARD_DEBUG: peak_threshold_kw (config): {peak_thresh_kw}")
+        logger.debug(f"  REWARD_DEBUG: peak_penalty_factor (config): {peak_penalty_factor}")
+        logger.debug(f"  REWARD_DEBUG: battery_degradation_cost_per_kwh (battery init): {self.battery.degradation_cost_per_kwh}")
+        logger.debug(f"  REWARD_DEBUG: --- Intermediate Values ---")
+        logger.debug(f"  REWARD_DEBUG: current_price: {current_price:.4f}")
+        logger.debug(f"  REWARD_DEBUG: battery_power_kw: {battery_power_kw:.4f}")
+        logger.debug(f"  REWARD_DEBUG: grid_power_kw: {grid_power_kw:.4f}")
+        logger.debug(f"  REWARD_DEBUG: grid_energy_kwh: {grid_energy_kwh:.4f}")
+        logger.debug(f"  REWARD_DEBUG: raw_grid_cost: {grid_cost:.4f}")
+        logger.debug(f"  REWARD_DEBUG: raw_battery_cost (degradation): {battery_cost:.4f}")
+        logger.debug(f"  REWARD_DEBUG: raw_peak_penalty: {peak_penalty:.4f}")
+        # === END DETAILED LOGGING FOR REWARD DEBUGGING ===
+
         if battery_power_kw < 0 and current_price < charge_thresh_price:
             price_arbitrage_bonus = charge_multiplier * abs(battery_power_kw) * self.time_step_hours
         elif battery_power_kw > 0 and current_price > discharge_thresh_moderate:
@@ -404,6 +488,15 @@ class HomeEnergyEnv(gym.Env):
         if battery_power_kw > 0 and current_price > discharge_thresh_high: # Additional bonus for very high prices
              price_arbitrage_bonus += discharge_multiplier_high * battery_power_kw * self.time_step_hours # Note: This logic means high bonus can stack if > moderate & > high
         
+        # === DETAILED LOGGING FOR REWARD COMPONENTS ===
+        logger.debug(f"  REWARD_DEBUG: --- Final Reward Component Values ---")
+        logger.debug(f"  REWARD_DEBUG: Term (-grid_cost): {-grid_cost:.4f}")
+        logger.debug(f"  REWARD_DEBUG: Term (scaled_peak_penalty): {scaled_peak_penalty:.4f}")
+        logger.debug(f"  REWARD_DEBUG: Term (-scaled_battery_cost): {-scaled_battery_cost:.4f}")
+        logger.debug(f"  REWARD_DEBUG: Term (price_arbitrage_bonus): {price_arbitrage_bonus:.4f}")
+        logger.debug(f"  REWARD_DEBUG: Term (soc_action_penalty): {soc_action_penalty:.4f}")
+        # === END DETAILED LOGGING FOR REWARD COMPONENTS ===
+
         reward = -grid_cost + scaled_peak_penalty - scaled_battery_cost + price_arbitrage_bonus + soc_action_penalty
         logger.debug(f"  Reward Components: GridCostTerm ({-grid_cost:.4f}), PeakPenaltyTerm ({scaled_peak_penalty:.4f}), ScaledBatteryCostTerm ({-scaled_battery_cost:.4f}), ArbitrageBonus ({price_arbitrage_bonus:.4f}), SoCActionPenalty ({soc_action_penalty:.4f})")
         logger.debug(f"  Total Reward for step: {reward:.4f}")
@@ -424,6 +517,13 @@ class HomeEnergyEnv(gym.Env):
         info["grid_power_kw"] = grid_power_kw
         info["base_demand_kw"] = base_demand_kw
         info["battery_cost"] = battery_cost
+        info["current_solar_production_kw"] = current_solar_production_kw
+        
+        # Add night discount information for visualization
+        if hasattr(self, 'is_night_discount') and self.current_step < len(self.is_night_discount):
+            info["is_night_discount"] = self.is_night_discount[self.current_step]
+        else:
+            info["is_night_discount"] = False
         
         # Store individual reward components in info dict for logging/evaluation
         info["reward_grid_cost"] = -grid_cost
@@ -441,10 +541,43 @@ class HomeEnergyEnv(gym.Env):
         duration_hours = self.time_step_hours
         actual_power_kw = 0.0
         degradation_cost = 0.0
+        constraint_applied = False
 
         logger.debug(f"  _handle_battery_action: Input action: {battery_action:.4f}")
 
+        # Get current demand and solar production to calculate export constraints
+        if self.use_variable_consumption and self.episode_consumption_kw is not None:
+            current_demand_kw = self.episode_consumption_kw[self.current_step]
+        else:
+            current_demand_kw = self.fixed_baseload_kw
+        
+        if self.use_solar_predictions and self.solar_forecast_actual is not None:
+            current_solar_kw = max(0.0, self.solar_forecast_actual[self.current_step])
+        else:
+            current_solar_kw = 0.0
+        
+        net_load = current_demand_kw - current_solar_kw
+        
+        # Get export threshold from config or use default (use absolute value for clarity)
+        export_peak_thresh_kw = abs(self.config.get("export_peak_threshold_kw", 20.0))
+        
+        # Calculate maximum safe discharge to avoid overloading grid export
+        # If net_load is -10 (exporting 10kW solar) and threshold is 20kW, 
+        # we can safely discharge max 10kW more from battery
+        max_safe_discharge_kw = max(0.0, export_peak_thresh_kw + net_load)
+        
         if battery_action < 0:  # Charge
+            # Skip charging if battery is already at max_soc (hard constraint)
+            if self.battery.soc >= self.battery.max_soc:
+                logger.debug(f"    Battery already at max SoC ({self.battery.soc:.4f}). Charging request ignored.")
+                constraint_applied = True
+                return {
+                    "power_kw": 0.0,
+                    "degradation_cost": 0.0,
+                    "soc": self.battery.soc,
+                    "constraint_applied": constraint_applied
+                }
+                
             requested_charge_power_kw = -battery_action * self.battery.max_charge_rate
             logger.debug(f"    Attempting Charge: Requested Power = {requested_charge_power_kw:.2f} kW")
             requested_charge_energy_kwh = requested_charge_power_kw * duration_hours
@@ -452,10 +585,30 @@ class HomeEnergyEnv(gym.Env):
                 amount_kwh=requested_charge_energy_kwh, hours=duration_hours
             )
             actual_power_kw = -actual_charged_kwh / duration_hours
+            
         elif battery_action > 0:  # Discharge
+            # Skip discharging if battery is already at min_soc (hard constraint)
+            if self.battery.soc <= self.battery.min_soc:
+                logger.debug(f"    Battery already at min SoC ({self.battery.soc:.4f}). Discharge request ignored.")
+                constraint_applied = True
+                return {
+                    "power_kw": 0.0,
+                    "degradation_cost": 0.0,
+                    "soc": self.battery.soc,
+                    "constraint_applied": constraint_applied
+                }
+            
+            # Limit discharge based on grid export threshold
             requested_discharge_power_kw = battery_action * self.battery.max_discharge_rate
-            logger.debug(f"    Attempting Discharge: Requested Power = {requested_discharge_power_kw:.2f} kW")
-            requested_discharge_energy_kwh = requested_discharge_power_kw * duration_hours
+            # Apply grid export constraint - limit discharge to avoid overloading
+            constrained_discharge_power_kw = min(requested_discharge_power_kw, max_safe_discharge_kw)
+            
+            if constrained_discharge_power_kw < requested_discharge_power_kw:
+                logger.debug(f"    Grid export constraint applied: Reduced discharge from {requested_discharge_power_kw:.2f} kW to {constrained_discharge_power_kw:.2f} kW")
+                constraint_applied = True
+            
+            logger.debug(f"    Attempting Discharge: Requested Power = {constrained_discharge_power_kw:.2f} kW (original: {requested_discharge_power_kw:.2f} kW)")
+            requested_discharge_energy_kwh = constrained_discharge_power_kw * duration_hours
             actual_discharged_kwh, degradation_cost = self.battery.discharge(
                 amount_kwh=requested_discharge_energy_kwh, hours=duration_hours
             )
@@ -467,7 +620,8 @@ class HomeEnergyEnv(gym.Env):
         return {
             "power_kw": actual_power_kw,
             "degradation_cost": degradation_cost,
-            "soc": self.battery.soc
+            "soc": self.battery.soc,
+            "constraint_applied": constraint_applied
         }
     
     def _initialize_forecasts(self) -> None:
@@ -483,33 +637,20 @@ class HomeEnergyEnv(gym.Env):
                     "forecasts. Defaulting to a zero price forecast for actuals and observed. "
                     "This will likely lead to poor agent performance. EXITING INSTEAD OF DEFAULTING."
                 )
-                # self.price_forecast_actual = np.zeros(num_steps)
-                # self.price_forecast_observed = np.zeros((num_steps, 24))
                 sys.exit(1)
         else: # This case implies configuration error if historical data is solely expected
             logger.critical(
                 "CRITICAL: `use_price_predictions` is False. This environment requires historical "
                 "price data. Ensure `use_price_predictions` is True and data is available. EXITING."
             )
-            # self.price_forecast_actual = np.zeros(num_steps)
-            # self.price_forecast_observed = np.zeros((num_steps, 24))
             sys.exit(1)
             
-        # Solar and Demand forecasts are now effectively fixed/zero
-        # self.solar_forecast_actual = np.zeros(num_steps)
-        # self.solar_forecast_observed = np.zeros((num_steps, 24))
-        # self.demand_forecast_actual = np.full(num_steps, self.fixed_baseload_kw)
-        # self.demand_forecast_observed = np.array([np.full(24, self.fixed_baseload_kw) for _ in range(num_steps)])
-        
     def _initialize_price_forecasts_from_predictions(self) -> None:
         if self.price_predictions_df is None:
             logger.critical(
                 "CRITICAL: _initialize_price_forecasts_from_predictions called but "
                 "price_predictions_df is None. This indicates an issue in data loading or configuration. EXITING."
             )
-            # num_steps = self.simulation_steps
-            # self.price_forecast_actual = np.zeros(num_steps)
-            # self.price_forecast_observed = np.zeros((num_steps, 24))
             sys.exit(1)
             return # Should not be reached due to sys.exit()
 
@@ -535,8 +676,6 @@ class HomeEnergyEnv(gym.Env):
                     f"when `use_price_predictions` is True. Using available data and padding with the last known value. "
                     f"EXITING AS THIS IS NOT IDEAL."
                 )
-                # self.price_forecast_actual[:len(aligned_prices_np)] = aligned_prices_np
-                # self.price_forecast_actual[len(aligned_prices_np):] = aligned_prices_np[-1]
                 sys.exit(1)
             else:
                 logger.critical(
@@ -544,6 +683,9 @@ class HomeEnergyEnv(gym.Env):
                     "Cannot proceed without price data. EXITING."
                 )
                 sys.exit(1)
+        
+        # Apply Swedish night-time discount (50% reduction from 22:00 to 06:00)
+        self._apply_swedish_night_discount(sim_timestamps)
         
         self.price_forecast_observed = np.zeros((num_steps, 24))
         steps_per_hour = int(1 / self.time_step_hours)
@@ -555,6 +697,76 @@ class HomeEnergyEnv(gym.Env):
                 else:
                     self.price_forecast_observed[i, j] = self.price_forecast_actual[num_steps - 1]
     
+    def _apply_swedish_night_discount(self, timestamps):
+        """Apply Swedish night-time electricity discount (50% reduction from 22:00 to 06:00)"""
+        # Get whether to apply the discount from config, default to True
+        apply_night_discount = self.config.get("apply_swedish_night_discount", True)
+        
+        if not apply_night_discount:
+            logger.info("Swedish night-time discount is disabled in config.")
+            return
+            
+        night_discount_factor = self.config.get("night_discount_factor", 0.5)  # 50% discount by default
+        logger.info(f"Applying Swedish night-time discount: {(1-night_discount_factor)*100}% off between 22:00-06:00")
+        
+        for i, timestamp in enumerate(timestamps):
+            hour = timestamp.hour
+            # Check if time is between 22:00 and 06:00
+            if hour >= 22 or hour < 6:
+                self.price_forecast_actual[i] *= night_discount_factor
+                # Add a flag to indicate this is a discounted price (useful for visualization)
+                if not hasattr(self, 'is_night_discount'):
+                    self.is_night_discount = np.zeros(len(self.price_forecast_actual), dtype=bool)
+                self.is_night_discount[i] = True
+    
+    def _initialize_solar_forecasts(self) -> None:
+        """Initializes actual solar production for each simulation step and the 4-day hourly forecast."""
+        num_steps = self.simulation_steps
+        sim_timestamps = pd.to_datetime([self.start_datetime + datetime.timedelta(hours=i * self.time_step_hours) for i in range(num_steps)])
+
+        if not self.use_solar_predictions or self.all_solar_data_hourly_kw is None or self.all_solar_data_hourly_kw.empty:
+            logger.warning("Solar predictions disabled or no solar data loaded. Solar production will be zero.")
+            self.solar_forecast_actual = np.zeros(num_steps)
+            self.solar_forecast_observed = np.zeros((num_steps, 4 * 24)) # 4 days * 24 hours
+            return
+
+        # 1. Initialize solar_forecast_actual (solar production at simulation step frequency)
+        # Reindex the hourly solar data to simulation timestamps, forward-filling
+        aligned_solar_kw_actual_df = self.all_solar_data_hourly_kw['solar_production_kw'].reindex(
+            sim_timestamps, method='ffill'
+        )
+        # Backward fill any remaining NaNs at the beginning
+        aligned_solar_kw_actual_df = aligned_solar_kw_actual_df.bfill()
+        
+        # If there are still NaNs (e.g., simulation range is outside data range entirely), fill with 0
+        aligned_solar_kw_actual_df = aligned_solar_kw_actual_df.fillna(0)
+        
+        self.solar_forecast_actual = aligned_solar_kw_actual_df.values
+        if len(self.solar_forecast_actual) < num_steps: # Should not happen if fillna(0) is used
+             logger.error(f"Solar actual forecast length ({len(self.solar_forecast_actual)}) is less than num_steps ({num_steps}). Padding with zeros.")
+             self.solar_forecast_actual = np.pad(self.solar_forecast_actual, (0, num_steps - len(self.solar_forecast_actual)), 'constant')
+
+
+        # 2. Initialize solar_forecast_observed (4-day hourly forecast for the agent)
+        # Each row `i` in solar_forecast_observed contains 96 hourly values for the 4 days
+        # starting from the hour of sim_timestamps[i].
+        self.solar_forecast_observed = np.zeros((num_steps, 4 * 24))
+        
+        for i in range(num_steps):
+            forecast_start_time = sim_timestamps[i]
+            # Create 96 hourly timestamps for the forecast
+            hourly_forecast_timestamps = pd.date_range(start=forecast_start_time, periods=(4 * 24), freq='h')
+            
+            # Reindex the original hourly solar data to these forecast timestamps
+            observed_forecast_series = self.all_solar_data_hourly_kw['solar_production_kw'].reindex(
+                hourly_forecast_timestamps, method='ffill' # Use ffill to carry last known value if forecast extends beyond data
+            )
+            # Fill any remaining NaNs (e.g., if forecast starts before data or extends far beyond) with 0
+            observed_forecast_series = observed_forecast_series.fillna(0)
+            
+            self.solar_forecast_observed[i, :] = observed_forecast_series.values
+        
+
     def _get_observation(self) -> Dict:
         current_dt = self.start_datetime + datetime.timedelta(hours=self.current_step * self.time_step_hours)
         hour_of_day = current_dt.hour
@@ -566,10 +778,20 @@ class HomeEnergyEnv(gym.Env):
         current_step_idx = min(self.current_step, self.price_forecast_observed.shape[0] - 1)
         price_fc = self.price_forecast_observed[current_step_idx, :]
 
+        solar_fc = np.zeros(4 * 24) # Default to zeros
+        if self.use_solar_predictions and self.solar_forecast_observed is not None:
+            current_solar_step_idx = min(self.current_step, self.solar_forecast_observed.shape[0] - 1)
+            if current_solar_step_idx < self.solar_forecast_observed.shape[0]:
+                 solar_fc = self.solar_forecast_observed[current_solar_step_idx, :]
+            else:
+                 logger.warning(f"Current step {self.current_step} is out of bounds for solar_forecast_observed shape {self.solar_forecast_observed.shape}. Using zeros.")
+
+
         return {
             "soc": np.array([self.battery.soc], dtype=np.float32),
             "time_idx": time_idx,
-            "price_forecast": price_fc.astype(np.float32)
+            "price_forecast": price_fc.astype(np.float32),
+            "solar_forecast": solar_fc.astype(np.float32)
         }
     
     def _get_info(self) -> Dict:
@@ -620,133 +842,39 @@ class HomeEnergyEnv(gym.Env):
             file_path_to_load = Path(file_path_to_load)
 
         # Enhanced file existence checking with detailed logging
-        logger.info(f"Attempting to load price predictions from: {file_path_to_load}")
-        if not file_path_to_load.exists():
-            logger.error(f"Price prediction file does not exist: {file_path_to_load}")
-            # Try to list parent directory contents for debugging
-            parent_dir = file_path_to_load.parent
-            if parent_dir.exists():
-                logger.info(f"Files in parent directory ({parent_dir}):")
-                for f in parent_dir.iterdir():
-                    logger.info(f"  {f.name}")
-            else:
-                logger.error(f"Parent directory does not exist: {parent_dir}")
-            self.price_predictions_df = None
-            return
-        
-        if not file_path_to_load.is_file():
-            logger.error(f"Path exists but is not a file: {file_path_to_load}")
-            self.price_predictions_df = None
-            return
+        logger.info(f"Attempting to load price data from: {file_path_to_load}")
 
         try:
-            # First check file size and preview content for debugging
-            file_size = file_path_to_load.stat().st_size
-            logger.info(f"Price predictions file size: {file_size} bytes")
-            
-            if file_size == 0:
-                logger.error("Price predictions file is empty (0 bytes)")
-                self.price_predictions_df = None
-                return
-            
-            # Preview first few lines of file for debugging
-            try:
-                with open(file_path_to_load, 'r') as f:
-                    head = ''.join([next(f) for _ in range(5)])
-                logger.info(f"Price predictions file first 5 lines:\n{head}")
-            except Exception as e:
-                logger.warning(f"Could not preview file contents: {e}")
-            
             # Try to load the file with various possible formats
             try:
-                logger.info("Attempting to load price predictions with 'HourSE' as index column")
                 self.price_predictions_df = pd.read_csv(
                     file_path_to_load, 
                     index_col='HourSE', 
                     parse_dates=True
                 )
-            except Exception as first_error:
-                logger.warning(f"Failed to load with 'HourSE' as index: {first_error}")
-                
-                # Try alternate column names for the timestamp
-                for timestamp_col in ['timestamp', 'datetime', 'date', 'time', 'hour']:
-                    try:
-                        logger.info(f"Attempting to load with '{timestamp_col}' as index column")
-                        self.price_predictions_df = pd.read_csv(
-                            file_path_to_load, 
-                            index_col=timestamp_col, 
-                            parse_dates=True
-                        )
-                        break  # Successfully loaded
-                    except Exception as e:
-                        logger.warning(f"Failed with '{timestamp_col}' as index: {e}")
-                
-                # If all attempts fail, try reading without specifying an index column
-                if self.price_predictions_df is None:
-                    logger.info("Attempting to load without specifying index column")
-                    try:
-                        df_temp = pd.read_csv(file_path_to_load)
-                        logger.info(f"Available columns: {df_temp.columns.tolist()}")
-                        
-                        # Look for timestamp-like columns
-                        for col in df_temp.columns:
-                            if any(time_keyword in col.lower() for time_keyword in ['hour', 'time', 'date', 'timestamp']):
-                                logger.info(f"Found potential timestamp column: {col}")
-                                try:
-                                    df_temp[col] = pd.to_datetime(df_temp[col])
-                                    df_temp.set_index(col, inplace=True)
-                                    self.price_predictions_df = df_temp
-                                    logger.info(f"Successfully set {col} as index")
-                                    break
-                                except Exception as e:
-                                    logger.warning(f"Failed to convert {col} to datetime: {e}")
-                    except Exception as e:
-                        logger.error(f"Failed to load CSV without index: {e}")
+            except Exception as e:
+                logger.error(f"Error loading price predictions from {file_path_to_load}: {e}")
+                sys.exit(1)
+
+            # Print timestamp sanity check if debug_prints is enabled
+            if self.debug_prints and self.price_predictions_df is not None:
+                print("---PRICE DATA BEFORE PROCESSING---")
+                print(self.price_predictions_df.iloc[:, 0].tail(1)) # Show only the last timestamp, not all columns
+                print("-----------------------")
 
             # If the dataframe was successfully loaded, process it
             if self.price_predictions_df is not None and not self.price_predictions_df.empty:
-                print("Price predictions index before any conversion (loaded naive from CSV):\\n", self.price_predictions_df.head()) # Show head for early dates
-                print("Price predictions index tail before any conversion (loaded naive from CSV):\\n", self.price_predictions_df.tail())
-                
-                # Check if the expected 'SE3_price_ore' column exists
-                if 'SE3_price_ore' in self.price_predictions_df.columns:
-                    self.price_predictions_df['price'] = self.price_predictions_df['SE3_price_ore']
-                else:
-                    # Try to find a suitable price column
-                    logger.warning("'SE3_price_ore' column not found. Available columns: " + 
-                                  str(self.price_predictions_df.columns.tolist()))
-                    
-                    # Look for columns that might contain price data
-                    price_columns = [col for col in self.price_predictions_df.columns if 
-                                    any(price_term in col.lower() for price_term in ['price', 'cost', 'ore', 'öre'])]
-                    
-                    if price_columns:
-                        # Use the first matching column
-                        logger.info(f"Using '{price_columns[0]}' as price column")
-                        self.price_predictions_df['price'] = self.price_predictions_df[price_columns[0]]
-                    else:
-                        logger.error("No suitable price column found. Price data will be unavailable.")
-                        self.price_predictions_df = None
-                        return
-                
-                logger.info("SIMPLIFIED APPROACH: Treating price timestamps directly as Swedish time (Europe/Stockholm)")
-                
+                self.price_predictions_df['price'] = self.price_predictions_df['SE3_price_ore']
+
                 # 1. Ensure we have a DatetimeIndex (should be true from parse_dates, but double-check)
                 if not isinstance(self.price_predictions_df.index, pd.DatetimeIndex):
-                    logger.info("Converting price data index to DatetimeIndex (keeping original times).")
                     self.price_predictions_df.index = pd.to_datetime(self.price_predictions_df.index)
                 
                 # 2. Handle the problematic DST date/hour before attaching timezone
                 if self.price_predictions_df.index.tzinfo is None:
-                    # Enhanced logging to debug the problematic timestamps
-                    logger.info(f"Price data index range: {self.price_predictions_df.index.min()} to {self.price_predictions_df.index.max()}")
-                    
-                    # Instead of handling just one specific DST date, use the ambiguous parameter for all localizations
-                    logger.info("Attaching 'Europe/Stockholm' timezone info to price timestamps with ambiguous='NaT' for DST transitions")
                     try:
                         # Use ambiguous='NaT' to mark ambiguous times as Not-a-Time rather than failing
-                        self.price_predictions_df.index = self.price_predictions_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT')
-                        
+                        self.price_predictions_df.index = self.price_predictions_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
                         # Check if we have any NaT values after localization
                         nat_mask = pd.isna(self.price_predictions_df.index)
                         if nat_mask.any():
@@ -772,14 +900,93 @@ class HomeEnergyEnv(gym.Env):
                     logger.warning(f"Price timestamps already had timezone info ({self.price_predictions_df.index.tzinfo}). Not expected from CSV data.")
                 
                 if self.price_predictions_df is not None and not self.price_predictions_df.empty:
-                    print("Final price data with timezone info:\n", self.price_predictions_df.tail())
-                    logger.info(f"Successfully loaded {len(self.price_predictions_df)} price data points with timezone info")
+                    logger.info(f"Successfully loaded {len(self.price_predictions_df)} price data points. Path: {file_path_to_load}")
+                    
+                    # Print timestamp sanity check after processing if debug_prints is enabled
+                    if self.debug_prints:
+                        print("---PRICE DATA AFTER PROCESSING---")
+                        print(self.price_predictions_df.iloc[:, 0].tail(1)) # Show only the last timestamp
+                        print("-----------------------")
             else:
-                logger.error("Failed to load price predictions data")
+                logger.error(f"Failed to load price predictions data from {file_path_to_load}")
                 self.price_predictions_df = None
         except Exception as e:
             logger.error(f"Error loading price predictions from {file_path_to_load}: {e}. Historical data will be unavailable.")
             self.price_predictions_df = None
+
+    def _load_solar_data(self) -> None:
+        """Loads solar production data from the specified CSV file."""
+        if not self.solar_data_path:
+            logger.error("`use_solar_predictions` is True, but `solar_data_path` is not set.")
+            self.all_solar_data_hourly_kw = None
+            return
+
+        file_path_to_load = self.solar_data_path
+        if not os.path.isabs(file_path_to_load):
+            project_root = Path(__file__).resolve().parent.parent.parent 
+            file_path_to_load = project_root / file_path_to_load
+        else:
+            file_path_to_load = Path(file_path_to_load)
+
+        logger.info(f"Attempting to load solar production data from: {file_path_to_load}")
+        if not file_path_to_load.exists() or not file_path_to_load.is_file():
+            logger.error(f"Solar data file does not exist or is not a file: {file_path_to_load}")
+            self.all_solar_data_hourly_kw = None
+            return
+
+        try:
+            df = pd.read_csv(file_path_to_load, parse_dates=['Timestamp'])
+            if 'Timestamp' not in df.columns or 'solar_production_kwh' not in df.columns:
+                logger.error(f"Solar data CSV must contain 'Timestamp' and 'solar_production_kwh' columns. Found: {df.columns.tolist()}")
+                self.all_solar_data_hourly_kw = None
+                return
+
+            df.set_index('Timestamp', inplace=True)
+            
+            # Print timestamp sanity check if debug_prints is enabled
+            if self.debug_prints:
+                print("---SOLAR DATA BEFORE PROCESSING---")
+                print(df.iloc[:, 0].tail(1))
+                print("-----------------------")
+                
+            # Timestamps are UTC (due to 'Z' in example "2023-03-13T10:00:00.000Z")
+            # If index is not timezone-aware, make it UTC. If it is, ensure it's UTC.
+            if df.index.tzinfo is None:
+                df.index = df.index.tz_localize('UTC')
+            else:
+                df.index = df.index.tz_convert('UTC')
+            
+            # Convert to 'Europe/Stockholm'
+            df.index = df.index.tz_convert('Europe/Stockholm')
+            
+            # 'solar_production_kwh' for an hour is numerically equal to average kW for that hour
+            df.rename(columns={'solar_production_kwh': 'solar_production_kw'}, inplace=True)
+            
+            # Ensure no negative solar production (can happen with bad data)
+            df['solar_production_kw'] = df['solar_production_kw'].clip(lower=0)
+
+            self.all_solar_data_hourly_kw = df[['solar_production_kw']]
+            
+            # Sort index to be sure
+            self.all_solar_data_hourly_kw.sort_index(inplace=True)
+
+            # Remove duplicate indices, keeping the first entry
+            if self.all_solar_data_hourly_kw.index.duplicated().any():
+                logger.warning("Duplicate timestamps found in solar data. Keeping first entry.")
+                self.all_solar_data_hourly_kw = self.all_solar_data_hourly_kw[~self.all_solar_data_hourly_kw.index.duplicated(keep='first')]
+
+            logger.info(f"Successfully loaded {self.all_solar_data_hourly_kw.shape[0]} solar data points. Path: {file_path_to_load}")
+
+            # Print timestamp sanity check after processing if debug_prints is enabled
+            if self.debug_prints:
+                print("---SOLAR DATA AFTER PROCESSING---")
+                print(self.all_solar_data_hourly_kw.iloc[:,0].tail(1))
+                print("-----------------------")
+
+        except Exception as e:
+            logger.error(f"Error loading or processing solar data from {file_path_to_load}: {e}")
+            self.all_solar_data_hourly_kw = None
+
 
     def _load_consumption_data(self) -> None:
         if not self.consumption_data_path:
@@ -795,15 +1002,16 @@ class HomeEnergyEnv(gym.Env):
             file_path_to_load = Path(file_path_to_load)
 
         if file_path_to_load.exists() and file_path_to_load.is_file():
+            logger.info(f"Attempting to load consumption data from: {file_path_to_load}") # Added log
             try:
                 df = pd.read_csv(file_path_to_load, parse_dates=['timestamp'], index_col='timestamp')
-                print("Raw consumption data from CSV (with original offsets):\\n", df.head()) 
-                print("Raw consumption data tail from CSV (with original offsets):\\n", df.tail()) 
                 
-                # Debug print to understand the index type
-                print(f"Consumption index type after initial load: {type(df.index)}")
-                print(f"Is timezone-aware: {df.index.tzinfo is not None}")
-                
+                # Print timestamp sanity check if debug_prints is enabled
+                if self.debug_prints:
+                    print("---CONSUMPTION DATA BEFORE PROCESSING---")
+                    print(df.iloc[:,0].tail(1))
+                    print("-----------------------")
+                    
                 # Drop extra columns
                 df.drop(columns=['cost', 'unit_price', 'unit_price_vat', 'unit'], inplace=True)
 
@@ -824,7 +1032,6 @@ class HomeEnergyEnv(gym.Env):
                     logger.warning("Consumption data index is timezone-naive after loading. This is unexpected if CSV has timezone offsets.")
                     # Try to preserve the original timezone information if possible
                     # Use a fallback approach - assume the timestamps were intended as 'Europe/Stockholm'
-                    logger.info("Localizing naive consumption data to 'Europe/Stockholm' with DST handling.")
                     try:
                         # Use 'NaT' for ambiguous times and handle them
                         df.index = df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
@@ -851,20 +1058,24 @@ class HomeEnergyEnv(gym.Env):
                     # Convert from whatever timezone to Stockholm time
                     try:
                         df.index = df.index.tz_convert('Europe/Stockholm')
+                        logger.info(f"Consumption data index after tz_convert to Europe/Stockholm: {df.index.min()} to {df.index.max()} (tz: {df.index.tzinfo})")
                     except Exception as e:
                         logger.error(f"Error converting consumption timestamps to Stockholm time: {e}")
                         self.all_consumption_data_kw = None
-                        return
                 
                 # Handle duplicates after getting timezone right
                 if df.index.duplicated().any():
-                    print("Duplicated indices found in consumption data after timezone conversion. Dropping duplicates, keeping first instance.")
+                    logger.info("Duplicated indices found in consumption data after timezone conversion. Dropping duplicates, keeping first instance.")
                     df = df[~df.index.duplicated(keep='first')] 
                 
-                print("Consumption data index after conversion to Europe/Stockholm and dropping duplicates:\\n", df.head()) 
-                print("Consumption data index after conversion to Europe/Stockholm and dropping duplicates:\\n", df.tail()) 
-                # At this point, df.index should be a DatetimeIndex with 'Europe/Stockholm' timezone
+                logger.info(f"Final consumption data index range (Europe/Stockholm, duplicates dropped): {df.index.min()} to {df.index.max()}")
                 
+                # Print timestamp sanity check after processing if debug_prints is enabled
+                if self.debug_prints:
+                    print("---CONSUMPTION DATA AFTER PROCESSING---")
+                    print(df.iloc[:,0].tail(1))
+                    print("-----------------------")    
+                    
                 # Consumption is in kWh per hour. This value is directly average kW for that hour.
                 # Resample this to our time_step_minutes.
                 resample_freq = f"{int(self.time_step_hours * 60)}min"
@@ -878,7 +1089,7 @@ class HomeEnergyEnv(gym.Env):
                 self.all_consumption_data_kw = df[['consumption']].rename(columns={'consumption': 'consumption_kw'})
                 self.all_consumption_data_kw = self.all_consumption_data_kw.resample(resample_freq).ffill().bfill()
 
-                logger.info(f"Successfully loaded and resampled consumption data from {file_path_to_load}. Shape: {self.all_consumption_data_kw.shape}")
+                logger.info(f"Successfully loaded and resampled {len(self.all_consumption_data_kw)} consumption data points. Path: {file_path_to_load}")
                 if self.all_consumption_data_kw.isnull().any().any():
                     logger.warning(f"NaN values found in resampled consumption data. Check resampling or source data. Filling with 0 for safety.")
                     self.all_consumption_data_kw = self.all_consumption_data_kw.fillna(0)
@@ -921,5 +1132,4 @@ if __name__ == "__main__":
     print(f"Total reward over episode: {total_reward_sum:.2f}")
     print(f"Final Total Cost: {env.total_cost:.2f}")
     print(f"Peak Power Seen: {env.peak_power:.2f} kW")
-    env.close() 
     env.close() 

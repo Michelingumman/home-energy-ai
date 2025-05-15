@@ -11,7 +11,10 @@ src/rl/
 ├ wrappers.py            # LongTermEnv (aggregates 4 h → 1 step)  
 ├ agent.py               # ShortTermAgent, LongTermAgent, HierarchicalController  
 ├ train.py               # loads demand/price models, trains agents  
-├ rl_config.json         # default hyper-params  
+├ config.py            # Python-based configuration for RL training and environment
+├ evaluate_agent.py    # Script to evaluate a trained agent and visualize performance
+├ saved_models/        # Directory for storing trained model files (e.g., .zip)
+├ logs/                # Directory for TensorBoard logs and other training logs
 └ simulations/
     ├ run_simulation.py  # roll out a week with saved models
     └ results/           # saved simulation results
@@ -38,45 +41,49 @@ pip install gymnasium stable-baselines3 numpy pandas matplotlib tensorflow
 
 ## Usage
 
+### Configuration
+
+Key parameters for the RL environment, training, and agent behavior are managed in `src/rl/config.py`.
+This Python file allows for detailed configuration with comments and type hints.
+
+Previously, configuration was in `rl_config.json`. This has been replaced by `config.py`.
+
 ### Training
 
-To train the hierarchical RL system:
+To train an agent (currently focused on a short-term PPO agent):
 
 ```bash
-python src/rl/train.py
+python src/rl/train.py --model_name my_agent_v1 
+# Optionally, specify a config (though the script imports src.rl.config by default):
+# python src/rl/train.py --config src/rl/config.py --model_name my_agent_v1
 ```
 
-Options:
-- `--config PATH`: Specify a custom config file (default: src/models/rl/rl_config.json)
-- `--mode MODE`: Training mode: 'hierarchical', 'short_term_only', or 'long_term_only'
-- `--short_term_model PATH`: Path to pre-trained short-term model
-- `--long_term_model PATH`: Path to pre-trained long-term model
-- `--evaluate`: Evaluate the trained model after training
+- The script will use parameters defined in `src/rl/config.py`.
+- Trained models will be saved in `src/rl/saved_models/`.
+- TensorBoard logs will be in `src/rl/logs/`.
 
-Example:
+### Evaluating a Trained Agent
+
+To evaluate a trained agent and generate performance plots:
+
 ```bash
-python src/rl/train.py --mode short_term_only --evaluate
+python src/rl/evaluate_agent.py --model_path src/rl/saved_models/short_term_agent_final.zip 
+# Optionally, specify a config (though the script imports src.rl.config by default):
+# python src/rl/evaluate_agent.py --model_path src/rl/saved_models/short_term_agent_final.zip --config src/rl/config.py
 ```
 
-### Running Simulations
+- This will run the agent in the evaluation environment (configured via `src/rl/config.py` for evaluation settings).
+- Detailed data will be saved as a CSV and a performance plot will be generated in `src/rl/simulations/results/`.
 
-To run a simulation with trained models:
+### Running a Simulation (Example)
+
+To run a simulation with a trained agent (similar to evaluation but can be more flexible for specific scenarios):
 
 ```bash
-python src/rl/simulations/run_simulation.py --short_term_model PATH --long_term_model PATH
-```
-
-Options:
-- `--config PATH`: Specify a custom config file
-- `--short_term_model PATH`: Path to trained short-term model (required)
-- `--long_term_model PATH`: Path to trained long-term model (required)
-- `--output_dir PATH`: Directory to save simulation results
-
-Example:
-```bash
-python src/rl/simulations/run_simulation.py \
-    --short_term_model src/models/rl/saved_models/short_term_agent_latest \
-    --long_term_model src/rl/saved_models/long_term_agent_latest
+python src/rl/simulations/run_simulation.py --model_path src/rl/saved_models/short_term_agent_final.zip
+# To render the simulation (if supported by the environment's render mode):
+# python src/rl/simulations/run_simulation.py --model_path src/rl/saved_models/short_term_agent_final.zip --render
+# The script uses settings from src/rl/config.py by default.
 ```
 
 ## Features
@@ -102,8 +109,10 @@ python src/rl/simulations/run_simulation.py \
 
 ## Customization
 
-Adjust parameters in `rl_config.json` to customize:
-- Battery capacity and constraints
+- **Environment Parameters**: Adjust settings in `src/rl/config.py` (e.g., `battery_capacity`, `simulation_days`, data paths).
+- **Reward Function**: Modify reward components and their scaling factors in `src/rl/config.py` (e.g., `peak_penalty_factor`, `charge_bonus_multiplier`). These are used by `custom_env.py`.
+- **Agent Hyperparameters**: Tune PPO agent parameters (e.g., `short_term_learning_rate`, `short_term_n_steps`) in `src/rl/config.py` for the `train.py` script.
+- **Battery capacity and constraints**: Adjust parameters in `rl_config.json` to customize:
 - Training parameters (learning rates, episode length, etc.)
 - Penalty factors for peak loads
 - Reward factors for comfort 

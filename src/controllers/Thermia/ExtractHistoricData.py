@@ -93,7 +93,7 @@ def plot_power_input(file_to_plot):
     df = df.sort_values('timestamp')
 
     plt.figure(figsize=(15, 7))
-    plt.plot(df['timestamp'], df['power_input_kw'], label='Estimated Power Input (kW)', color='blue', linewidth=1)
+    plt.step(df['timestamp'], df['power_input_kw'], label='Estimated Power Input (kW)', color='blue', linewidth=1)
     
     plt.xlabel('Time')
     plt.ylabel('Estimated Power Input (kW)')
@@ -273,7 +273,7 @@ def main():
     resampled_df = resampled_df[final_columns]
 
     # --- Save to CSV ---
-    output_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data', 'processed', 'villamichelin')
+    output_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data', 'processed', 'villamichelin', 'Thermia')
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate filename based on actual data range if possible

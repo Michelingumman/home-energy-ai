@@ -40,7 +40,7 @@ This script connects to the Thermia Online API, fetches historical data for a sp
 
     The .csv file will be generated placed in:
     
-    `data/processed/villamichelin/heat_pump_power_15min_{date-range}.csv`
+    `data/processed/villamichelin/Thermia/heat_pump_power_15min_{date-range}.csv`
     
 
 -   Fetch data for the last 30 days and display a plot:

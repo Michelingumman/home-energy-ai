@@ -22,3 +22,6 @@ src/predictions/prices/models/trend_model/production_model/best_trend_model.pkl
 
 .gitattributes
 .cache.sqlite
+
+__pycache__/
+

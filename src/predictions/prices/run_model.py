@@ -3,11 +3,11 @@
 Simplified evaluation script for electricity price prediction models.
 Currently focuses on valley detection with proper validation split.
 
-Usage:
-    python evaluate.py --model valley  # Only valley implemented for now
-    python evaluate.py --model peak    
-    python evaluate.py --model trend   
-    python evaluate.py --model merged  # merged model implements prediction of trend, peaks and valleys
+Usage: refers to the README.md file for more information
+General examples:
+
+--model merged --production-mode --start 2025-05-10 --horizon 5 --peak-threshold 0.7 --valley-threshold 0.6
+--model valley --test-data --valley-threshold 0.6
 """
 
 import os

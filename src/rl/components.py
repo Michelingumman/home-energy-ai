@@ -17,10 +17,10 @@ class Battery:
     def __init__(
         self, 
         capacity_kwh: float = 22.0,
-        min_soc: float = 0.2,
+        min_soc: float = 0.1,
         max_soc: float = 0.9,
         max_cycles: int = 10000,
-        degradation_cost_per_kwh: float = 0.45,
+        degradation_cost_per_kwh: float = 45.0,  # Was 45.0, originally 0.45 (öre/kWh)
         max_charge_rate: float = 5.0,  # kW
         max_discharge_rate: float = 5.0,  # kW
         efficiency: float = 0.95
@@ -219,45 +219,47 @@ class ApplianceManager:
     
     def __init__(self):
         """Initialize the appliance manager."""
+        # Simplified: No appliances
         self.appliances: Dict[str, Appliance] = {}
-        self.setup_appliances()
+        # self.setup_appliances() # Commented out to have no appliances by default
     
     def setup_appliances(self) -> None:
         """Set up default appliances for the household."""
-        # Create common household appliances with realistic power values
-        self.add_appliance(Appliance(
-            name="heat_pump", 
-            power_kw=3.0, 
-            priority=9,
-            min_runtime=0.5
-        ))
-        
-        self.add_appliance(Appliance(
-            name="floor_heating", 
-            power_kw=4.5, 
-            priority=8,
-            conflicts={"heat_pump"}
-        ))
-        
-        self.add_appliance(Appliance(
-            name="ev_charger", 
-            power_kw=11.0, 
-            priority=5,
-            conflicts={"sauna"}
-        ))
-        
-        self.add_appliance(Appliance(
-            name="sauna", 
-            power_kw=9.0, 
-            priority=3,
-            max_runtime=3.0,
-            conflicts={"floor_heating", "ev_charger", "heat_pump"}
-        ))
-        
-        # Add more common appliances with lower power consumption
-        self.add_appliance(Appliance(name="dishwasher", power_kw=1.2, priority=4, min_runtime=1.0))
-        self.add_appliance(Appliance(name="washing_machine", power_kw=1.5, priority=4, min_runtime=1.0))
-        self.add_appliance(Appliance(name="dryer", power_kw=2.5, priority=2, min_runtime=0.5))
+        # Commented out all appliance creation for simplification
+        # self.add_appliance(Appliance(
+        #     name="heat_pump", 
+        #     power_kw=3.0, 
+        #     priority=9,
+        #     min_runtime=0.5
+        # ))
+        # 
+        # self.add_appliance(Appliance(
+        #     name="floor_heating", 
+        #     power_kw=4.5, 
+        #     priority=8,
+        #     conflicts={"heat_pump"}
+        # ))
+        # 
+        # self.add_appliance(Appliance(
+        #     name="ev_charger", 
+        #     power_kw=11.0, 
+        #     priority=5,
+        #     conflicts={"sauna"}
+        # ))
+        # 
+        # self.add_appliance(Appliance(
+        #     name="sauna", 
+        #     power_kw=9.0, 
+        #     priority=3,
+        #     max_runtime=3.0,
+        #     conflicts={"floor_heating", "ev_charger", "heat_pump"}
+        # ))
+        # 
+        # # Add more common appliances with lower power consumption
+        # self.add_appliance(Appliance(name="dishwasher", power_kw=1.2, priority=4, min_runtime=1.0))
+        # self.add_appliance(Appliance(name="washing_machine", power_kw=1.5, priority=4, min_runtime=1.0))
+        # self.add_appliance(Appliance(name="dryer", power_kw=2.5, priority=2, min_runtime=0.5))
+        pass # No appliances in simplified version
     
     def add_appliance(self, appliance: Appliance) -> None:
         """Add an appliance to the manager.
@@ -277,19 +279,17 @@ class ApplianceManager:
         Returns:
             bool: True if successful, False if constraints prevent the change
         """
-        if appliance_name not in self.appliances:
-            return False
-        
-        appliance = self.appliances[appliance_name]
-        
-        if state:  # Turning on
-            # Check if turning on would create conflicts
-            if self._has_conflicts(appliance_name):
-                return False
-            
-            return appliance.turn_on()
-        else:  # Turning off
-            return appliance.turn_off()
+        # Simplified: Always return False as there are no appliances to control
+        # if appliance_name in self.appliances:
+        #     app = self.appliances[appliance_name]
+        #     if state:
+        #         # Check for conflicts before turning on
+        #         if self._has_conflicts(appliance_name):
+        #             return False
+        #         return app.turn_on()
+        #     else:
+        #         return app.turn_off()
+        return False
     
     def _has_conflicts(self, appliance_name: str) -> bool:
         """Check if turning on an appliance would create conflicts.
@@ -300,17 +300,13 @@ class ApplianceManager:
         Returns:
             bool: True if there are conflicts, False otherwise
         """
-        appliance = self.appliances[appliance_name]
-        
-        for conflict in appliance.conflicts:
-            if conflict in self.appliances and self.appliances[conflict].is_on:
-                return True
-                
-        # Check if other running appliances conflict with this one
-        for name, other in self.appliances.items():
-            if other.is_on and appliance_name in other.conflicts:
-                return True
-                
+        # Simplified: Always return False as there are no appliances to conflict with
+        # if appliance_name not in self.appliances or not self.appliances[appliance_name].conflicts:
+        #     return False
+        # 
+        # for conflict_name in self.appliances[appliance_name].conflicts:
+        #     if conflict_name in self.appliances and self.appliances[conflict_name].is_on:
+        #         return True
         return False
     
     def get_state_vector(self) -> np.ndarray:
@@ -319,9 +315,10 @@ class ApplianceManager:
         Returns:
             np.ndarray: Vector of appliance states (0 = off, 1 = on)
         """
-        # Sort by name for consistent ordering
-        names = sorted(self.appliances.keys())
-        return np.array([float(self.appliances[name].is_on) for name in names])
+        # Simplified: Return empty array as there are no appliances
+        # states = [int(app.is_on) for app in self.appliances.values()]
+        # return np.array(states, dtype=np.int8)
+        return np.array([], dtype=np.int8)
     
     def get_power_consumption(self) -> float:
         """Calculate the total power consumption of all running appliances.
@@ -329,14 +326,19 @@ class ApplianceManager:
         Returns:
             float: Total power consumption in kW
         """
-        return sum(app.power_kw for app in self.appliances.values() if app.is_on)
+        # Simplified: Always return 0 as there are no appliances
+        # total_power = sum(app.power_kw for app in self.appliances.values() if app.is_on)
+        # return total_power
+        return 0.0
     
     def reset(self) -> None:
         """Reset all appliances to their default state."""
-        for appliance in self.appliances.values():
-            appliance.is_on = False
-            appliance.runtime = 0.0
-            appliance.pending_request = False
+        # Simplified: If self.appliances is empty, this loop does nothing.
+        for app in self.appliances.values():
+            app.is_on = False
+            app.runtime = 0.0
+            app.pending_request = False
+        # Or simply: pass
     
     def update(self, hours: float = 1.0) -> None:
         """Update all appliances for the given time period.
@@ -344,104 +346,69 @@ class ApplianceManager:
         Args:
             hours: Time period in hours
         """
-        for appliance in self.appliances.values():
-            appliance.update(hours)
+        # Simplified: If self.appliances is empty, this loop does nothing.
+        for app in self.appliances.values():
+            app.update(hours)
+        # Or simply: pass
 
 
 class SolarSystem:
-    """Represents a solar panel system with production capabilities."""
+    """Represents the solar panel system."""
     
-    def __init__(
-        self, 
-        capacity_kw: float = 10.0,
-        latitude: float = 59.33,  # Stockholm latitude
-        efficiency: float = 0.85
-    ):
-        """Initialize the solar system.
-        
-        Args:
-            capacity_kw: Maximum capacity in kW
-            latitude: Geographical latitude for solar calculations
-            efficiency: System efficiency
-        """
-        self.capacity_kw = capacity_kw
-        self.latitude = latitude
+    def __init__(self, peak_capacity_kw: float = 5.0, efficiency: float = 0.9):
+        self.peak_capacity_kw = peak_capacity_kw
         self.efficiency = efficiency
+        # self.current_weather_factor = 1.0 # Commented out, not used in simplified version
+
+    def reset(self):
+        # self.current_weather_factor = np.random.uniform(0.7, 1.0) # Commented out
+        pass # No specific state to reset for always-zero production
+
+    def current_production(
+        self,
+        hour: int = 0,          # Default values added for simplified interface
+        month: int = 1,         # Default values added for simplified interface
+        weather_factor: Optional[float] = None # Kept for interface compatibility
+    ) -> float:
+        """Calculate current solar production in kW."""
+        # Simplified to always return 0 for the basic environment
+        return 0.0
         
-        # Simple solar model parameters
-        self._hour_weights = np.zeros(24)
-        self._setup_hour_weights()
+        # # More complex model (commented out for simplification):
+        # if weather_factor is None:
+        #     # If no specific weather factor is given, use a random one for variability
+        #     weather_factor = np.random.uniform(0.3, 1.0) # Simulate cloud cover, etc.
         
-        # Season weights (approximate for Northern Europe)
-        self._month_weights = {
-            1: 0.2,   # January
-            2: 0.3,   # February
-            3: 0.5,   # March
-            4: 0.7,   # April
-            5: 0.85,  # May
-            6: 0.95,  # June
-            7: 0.9,   # July
-            8: 0.8,   # August
-            9: 0.6,   # September
-            10: 0.4,  # October
-            11: 0.25, # November
-            12: 0.15  # December
-        }
+        # # Basic sinusoidal model for daily production
+        # # No sun at night (adjust hours for your location/season)
+        # if not (6 <= hour <= 18):
+        #     return 0.0
         
-        # Internal state for weather variations
-        self._weather_factor = 1.0  # Will vary to simulate weather
+        # # Normalized time from sunrise (e.g., 6 AM) to sunset (e.g., 6 PM)
+        # t_norm = (hour - 6) / 12.0 # Assuming a 12-hour solar day for simplicity
         
-    def _setup_hour_weights(self) -> None:
-        """Set up hourly production weights based on time of day."""
-        # Simple bell curve centered at noon
-        for h in range(24):
-            if 5 <= h <= 21:  # Daylight hours (simplified)
-                # Use a bell curve centered at 13 (1 PM)
-                self._hour_weights[h] = np.exp(-0.5 * ((h - 13) / 3.5) ** 2)
-            else:
-                self._hour_weights[h] = 0.0
-    
-    def current_production(self, hour: int, month: int, weather_factor: Optional[float] = None) -> float:
-        """Calculate the current solar production.
+        # # Sinusoidal production curve peaking at noon
+        # base_production = self.peak_capacity_kw * np.sin(t_norm * np.pi)
         
-        Args:
-            hour: Hour of the day (0-23)
-            month: Month of the year (1-12)
-            weather_factor: Weather influence factor (0.0-1.0)
+        # # Seasonal adjustment (very rough example)
+        # seasonal_factor = 1.0
+        # if month in [12, 1, 2]: # Winter
+        #     seasonal_factor = 0.4
+        # elif month in [6, 7, 8]: # Summer
+        #     seasonal_factor = 1.0 # Peak production
+        # elif month in [3, 4, 5]: # Spring
+        #     seasonal_factor = 0.8
+        # else: # Autumn
+        #     seasonal_factor = 0.6
             
-        Returns:
-            float: Current production in kW
-        """
-        if weather_factor is not None:
-            self._weather_factor = max(0.0, min(1.0, weather_factor))
-        
-        hour_factor = self._hour_weights[hour % 24]
-        month_factor = self._month_weights.get(month, 0.5)
-        
-        production = self.capacity_kw * hour_factor * month_factor * self._weather_factor
-        return production * self.efficiency
-    
-    def predict_production(self, hours: List[int], months: List[int], 
-                           weather_factors: Optional[List[float]] = None) -> List[float]:
-        """Predict solar production for multiple timepoints.
-        
-        Args:
-            hours: List of hours (0-23)
-            months: List of months (1-12)
-            weather_factors: Optional list of weather factors
-            
-        Returns:
-            List[float]: Predicted production in kW for each timepoint
-        """
-        if weather_factors is None:
-            # Generate random weather factors with some correlation
-            base = np.random.normal(0.8, 0.2)
-            weather_factors = [max(0.1, min(1.0, base + np.random.normal(0, 0.1))) 
-                              for _ in range(len(hours))]
-        
-        return [self.current_production(h, m, w) 
-                for h, m, w in zip(hours, months, weather_factors)]
-    
-    def reset(self) -> None:
-        """Reset the solar system's internal state."""
-        self._weather_factor = 1.0 
+        # production = base_production * seasonal_factor * weather_factor * self.efficiency
+        # return max(0, production) # Ensure production is not negative
+
+# Remove duplicate class definitions that start here (IF THEY EXISTED - this is a safeguard)
+# # class Appliance:
+# #     \"\"\"Represents a household appliance with power requirements and constraints.\"\"\"
+# #     ...
+# # 
+# # class ApplianceManager:
+# #     \"\"\"Manages multiple appliances, their states, and power consumption.\"\"\"
+# #     ... 

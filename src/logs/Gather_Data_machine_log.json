@@ -158,5 +158,285 @@
     "return_code": 0,
     "stdout": "SE3Prices index name: HourSE\nLatest timestamp with complete commodity data: 2025-05-12 06:00:00\nLatest date: 2025-05-12, time: 06:00\nNeed to update commodity prices from 2025-05-12 onwards\nFetching new data from 2025-05-12 to 2025-05-13\nYF.download() has changed argument auto_adjust default to True\nGas data points: 1\nCoal data points: 1\nCO2 data points: 1\nDownloaded new price data:\nNew energy prices data dates: 2025-05-12 00:00:00 to 2025-05-12 00:00:00\nColumns available in new data: CO2_Price, Gas_Price, Coal_Price\nSE3Prices is hourly data, forward-filling daily commodity prices\nUpdated 24 hours for 2025-05-12 with CO2_Price: 29.649999618530273\nUpdated 24 hours for 2025-05-12 with Gas_Price: 3.680999994277954\nUpdated 24 hours for 2025-05-12 with Coal_Price: 14.609999656677246\nTotal updated hours: 72\nUpdated C:\\_Projects\\home-energy-ai\\data\\processed\\SE3prices.csv with new energy commodity prices\nVerified file was saved with columns: HourSE, PriceArea, SE3_price_ore, price_24h_avg, price_168h_avg, price_24h_std, hour_avg_price, price_vs_hour_avg, Gas_Price, Coal_Price, CO2_Price",
     "stderr": "[*********************100%***********************]  1 of 1 completed\n\n[*********************100%***********************]  1 of 1 completed\n\n[*********************100%***********************]  1 of 1 completed"
+  },
+  {
+    "script": "Solar Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/solar/actual_data/FetchSolarProductionData.py",
+    "start_time": "2025-05-13 21:51:07",
+    "end_time": "2025-05-13 21:51:15",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Starting merge process for sensor.solar_generated_power_2 data\nLatest data timestamp: 2025-05-13 23:00:00+00:00\nDays since latest data: 0\nFetching 1 days of new data\nRunning download command: C:\\Users\\adamm\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe C:\\_Projects\\home-energy-ai\\src\\downloadEntityData.py --entity sensor.solar_generated_power_2 --days 1 --res hourly\nDownload script output:\nSystem time check: Current date and time is 2025-05-13 21:51:12.682932\nWARNING: Your system clock appears to be set to a future date!\nCurrent year is set to 2025, which is likely incorrect.\nThis will affect timestamp handling in the script.\nConsider correcting your system time before continuing.\nDebug - Current time: 2025-05-13 21:51:12.684936\nDebug - Start date: 2025-05-12 00:00:00\nDebug - End date: 2025-05-13 23:59:59.999999\nCurrent date and time: 2025-05-13 21:51:12\nRequesting data for: 1 days (from 2025-05-12 to 2025-05-13)\nEntity: sensor.solar_generated_power_2\nResolution: hourly\nRequest URL: http://192.168.192.35:8123/api/history/period/2025-05-12T00:00:00?end_time=2025-05-13T23:59:59&filter_entity_id=sensor.solar_generated_power_2&minimal_response=false&significant_changes_only=false\nSending API request...\nAPI response status code: 200\nAPI returned data of type: <class 'list'>\nAPI data length: 1\nProcessing data...\nFirst data item type: <class 'list'>\nFound list-of-lists format with 1 items\nUsing item 0 with 22296 records\nRaw DataFrame created with 22296 rows\nColumns: ['entity_id', 'state', 'attributes', 'last_changed', 'last_updated']\nProcessing hourly data...\n\nDEBUG INFO - Original timestamps:\nFirst timestamp: 2025-05-11 22:00:00+00:00\nTimestamp timezone info: UTC\nCurrent system time: 2025-05-13 21:51:13.281412\nCurrent system timezone: W. Europe Summer Time\nDropped 2 rows with non-numeric values\nConverting timezone-aware timestamps to naive datetimes\nTimestamps converted to Europe/Stockholm timezone before stripping timezone info\nHourly data has 48 data points\nTime range: 2025-05-12 00:00:00 to 2025-05-13 23:00:00\nFinal timestamp range: 2025-05-12 00:00:00 to 2025-05-13 23:00:00\nSample timestamps: [Timestamp('2025-05-12 00:00:00'), Timestamp('2025-05-12 01:00:00'), Timestamp('2025-05-12 02:00:00')]\nSaved 48 rows to Data\\HomeAssistant\\solar_generated_power_2_hourly.csv\n\nTimestamps already timezone-naive, no conversion needed\nLoaded and transformed 48 rows of new data\nConverted existing data timestamps to timezone-naive\nLoaded 1872 rows of existing data\nSaved 1872 rows of merged data\nData range: 2025-02-25T00:00:00.000Z to 2025-05-13T23:00:00.000Z\nData successfully merged and saved to C:\\_Projects\\home-energy-ai\\src\\predictions\\solar\\actual_data\\ActualSolarProductionData.csv",
+    "stderr": ""
+  },
+  {
+    "script": "Price Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py",
+    "start_time": "2025-05-13 21:51:15",
+    "end_time": "2025-05-13 21:51:18",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Updating price data...\nContinuing from latest timestamp in file: 2025-05-13 13:00:00\nSuccessfully added 9 missing hourly price records and updated features.\n\nUpdating grid data...\nUpdated grid data with 24 new records.\n\nData update complete.",
+    "stderr": ""
+  },
+  {
+    "script": "CO2, Gas and Coal Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py",
+    "start_time": "2025-05-13 21:51:18",
+    "end_time": "2025-05-13 21:51:21",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "SE3Prices index name: HourSE\nLatest timestamp with complete commodity data: 2025-05-13 01:00:00\nLatest date: 2025-05-13, time: 01:00\nNeed to update commodity prices from 2025-05-13 onwards\nFetching new data from 2025-05-13 to 2025-05-13\nYF.download() has changed argument auto_adjust default to True\nGas data points: 0\nCoal data points: 0\nCO2 data points: 0\nNo data available for the specified date range from any source",
+    "stderr": "[*********************100%***********************]  1 of 1 completed\n\n[*********************100%***********************]  1 of 1 completed\n\n1 Failed download:\n['BTU']: YFPricesMissingError('possibly delisted; no price data found  (1d 2025-05-13 -> 2025-05-13)')\n\n[*********************100%***********************]  1 of 1 completed\n\n1 Failed download:\n['KRBN']: YFPricesMissingError('possibly delisted; no price data found  (1d 2025-05-13 -> 2025-05-13)')"
+  },
+  {
+    "script": "Weather Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchWeatherData.py",
+    "start_time": "2025-05-13 21:51:21",
+    "end_time": "2025-05-13 21:51:23",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "",
+    "stderr": "2025-05-13 21:51:22,713 - INFO - Found existing data up to 2025-05-12. Starting from 2025-05-13.\n2025-05-13 21:51:22,714 - INFO - Starting main weather data update process (historical and current forecast).\n2025-05-13 21:51:22,835 - INFO - Found existing data up to 2025-05-12. Fetching new data from 2025-05-13.\n2025-05-13 21:51:22,835 - INFO - Fetching standard forecast data from Forecast API (today and future for main update)\n2025-05-13 21:51:22,848 - INFO - Standard forecast data fetch complete. Total hourly chunks: 1, Total daily chunks: 1\n2025-05-13 21:51:23,389 - INFO - Successfully updated weather data at C:\\_Projects\\home-energy-ai\\data\\processed\\weather_data.csv. New data from 2025-05-13 was processed.\n2025-05-13 21:51:23,389 - INFO - Main weather data update process completed. Range processed started from: 2025-05-13 up to latest forecast."
+  },
+  {
+    "script": "Solar Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/solar/actual_data/FetchSolarProductionData.py",
+    "start_time": "2025-05-14 11:29:13",
+    "end_time": "2025-05-14 11:29:23",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Starting merge process for sensor.solar_generated_power_2 data\nLatest data timestamp: 2025-05-13 23:00:00+00:00\nDays since latest data: 1\nFetching 1 days of new data\nRunning download command: C:\\Users\\adamm\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe C:\\_Projects\\home-energy-ai\\src\\downloadEntityData.py --entity sensor.solar_generated_power_2 --days 1 --res hourly\nDownload script output:\nSystem time check: Current date and time is 2025-05-14 11:29:20.009674\nWARNING: Your system clock appears to be set to a future date!\nCurrent year is set to 2025, which is likely incorrect.\nThis will affect timestamp handling in the script.\nConsider correcting your system time before continuing.\nDebug - Current time: 2025-05-14 11:29:20.018291\nDebug - Start date: 2025-05-13 00:00:00\nDebug - End date: 2025-05-14 23:59:59.999999\nCurrent date and time: 2025-05-14 11:29:20\nRequesting data for: 1 days (from 2025-05-13 to 2025-05-14)\nEntity: sensor.solar_generated_power_2\nResolution: hourly\nRequest URL: http://192.168.192.35:8123/api/history/period/2025-05-13T00:00:00?end_time=2025-05-14T23:59:59&filter_entity_id=sensor.solar_generated_power_2&minimal_response=false&significant_changes_only=false\nSending API request...\nAPI response status code: 200\nAPI returned data of type: <class 'list'>\nAPI data length: 1\nProcessing data...\nFirst data item type: <class 'list'>\nFound list-of-lists format with 1 items\nUsing item 0 with 15941 records\nRaw DataFrame created with 15941 rows\nColumns: ['entity_id', 'state', 'attributes', 'last_changed', 'last_updated']\nProcessing hourly data...\n\nDEBUG INFO - Original timestamps:\nFirst timestamp: 2025-05-12 22:00:00+00:00\nTimestamp timezone info: UTC\nCurrent system time: 2025-05-14 11:29:20.490860\nCurrent system timezone: W. Europe Summer Time\nDropped 2 rows with non-numeric values\nConverting timezone-aware timestamps to naive datetimes\nTimestamps converted to Europe/Stockholm timezone before stripping timezone info\nHourly data has 48 data points\nTime range: 2025-05-13 00:00:00 to 2025-05-14 23:00:00\nFinal timestamp range: 2025-05-13 00:00:00 to 2025-05-14 23:00:00\nSample timestamps: [Timestamp('2025-05-13 00:00:00'), Timestamp('2025-05-13 01:00:00'), Timestamp('2025-05-13 02:00:00')]\nSaved 48 rows to Data\\HomeAssistant\\solar_generated_power_2_hourly.csv\n\nTimestamps already timezone-naive, no conversion needed\nLoaded and transformed 48 rows of new data\nConverted existing data timestamps to timezone-naive\nLoaded 1872 rows of existing data\nSaved 1896 rows of merged data\nData range: 2025-02-25T00:00:00.000Z to 2025-05-14T23:00:00.000Z\nData successfully merged and saved to C:\\_Projects\\home-energy-ai\\src\\predictions\\solar\\actual_data\\ActualSolarProductionData.csv",
+    "stderr": ""
+  },
+  {
+    "script": "Price Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py",
+    "start_time": "2025-05-14 11:29:23",
+    "end_time": "2025-05-14 11:29:30",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Updating price data...\nContinuing from latest timestamp in file: 2025-05-13 01:00:00\nSuccessfully added 35 missing hourly price records and updated features.\n\nUpdating grid data...\nUpdated grid data with 24 new records.\n\nData update complete.",
+    "stderr": ""
+  },
+  {
+    "script": "CO2, Gas and Coal Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py",
+    "start_time": "2025-05-14 11:29:30",
+    "end_time": "2025-05-14 11:29:33",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "SE3Prices index name: HourSE\nLatest timestamp with complete commodity data: 2025-05-13 01:00:00\nLatest date: 2025-05-13, time: 01:00\nNeed to update commodity prices from 2025-05-13 onwards\nFetching new data from 2025-05-13 to 2025-05-14\nYF.download() has changed argument auto_adjust default to True\nGas data points: 1\nCoal data points: 1\nCO2 data points: 1\nDownloaded new price data:\nNew energy prices data dates: 2025-05-13 00:00:00 to 2025-05-13 00:00:00\nColumns available in new data: CO2_Price, Gas_Price, Coal_Price\nSE3Prices is hourly data, forward-filling daily commodity prices\nUpdated 24 hours for 2025-05-13 with CO2_Price: 29.600000381469727\nUpdated 24 hours for 2025-05-13 with Gas_Price: 3.6470000743865967\nUpdated 24 hours for 2025-05-13 with Coal_Price: 15.279999732971191\nTotal updated hours: 72\nUpdated C:\\_Projects\\home-energy-ai\\data\\processed\\SE3prices.csv with new energy commodity prices\nVerified file was saved with columns: HourSE, PriceArea, SE3_price_ore, price_24h_avg, price_168h_avg, price_24h_std, hour_avg_price, price_vs_hour_avg, Gas_Price, Coal_Price, CO2_Price",
+    "stderr": "[*********************100%***********************]  1 of 1 completed\n\n[*********************100%***********************]  1 of 1 completed\n\n[*********************100%***********************]  1 of 1 completed"
+  },
+  {
+    "script": "Weather Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchWeatherData.py",
+    "start_time": "2025-05-14 11:29:33",
+    "end_time": "2025-05-14 11:29:35",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "",
+    "stderr": "2025-05-14 11:29:34,313 - INFO - Found existing data up to 2025-05-12. Starting from 2025-05-13.\n2025-05-14 11:29:34,313 - INFO - Starting main weather data update process (historical and current forecast).\n2025-05-14 11:29:34,427 - INFO - Found existing data up to 2025-05-12. Fetching new data from 2025-05-13.\n2025-05-14 11:29:34,427 - INFO - Fetching historical data from Archive API (2025-05-13 to 2025-05-13)\n2025-05-14 11:29:34,691 - INFO - Archive data fetch complete. Hourly chunks: 1, Daily chunks: 1\n2025-05-14 11:29:34,691 - INFO - Fetching standard forecast data from Forecast API (today and future for main update)\n2025-05-14 11:29:34,695 - INFO - Standard forecast data fetch complete. Total hourly chunks: 2, Total daily chunks: 2\n2025-05-14 11:29:35,220 - INFO - Successfully updated weather data at C:\\_Projects\\home-energy-ai\\data\\processed\\weather_data.csv. New data from 2025-05-13 was processed.\n2025-05-14 11:29:35,220 - INFO - Main weather data update process completed. Range processed started from: 2025-05-13 up to latest forecast."
+  },
+  {
+    "script": "Solar Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/solar/actual_data/FetchSolarProductionData.py",
+    "start_time": "2025-05-14 22:39:10",
+    "end_time": "2025-05-14 22:39:18",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Starting merge process for sensor.solar_generated_power_2 data\nLatest data timestamp: 2025-05-14 23:00:00+00:00\nDays since latest data: 0\nFetching 1 days of new data\nRunning download command: C:\\Users\\adamm\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe C:\\_Projects\\home-energy-ai\\src\\downloadEntityData.py --entity sensor.solar_generated_power_2 --days 1 --res hourly\nDownload script output:\nSystem time check: Current date and time is 2025-05-14 22:39:15.826520\nWARNING: Your system clock appears to be set to a future date!\nCurrent year is set to 2025, which is likely incorrect.\nThis will affect timestamp handling in the script.\nConsider correcting your system time before continuing.\nDebug - Current time: 2025-05-14 22:39:15.828911\nDebug - Start date: 2025-05-13 00:00:00\nDebug - End date: 2025-05-14 23:59:59.999999\nCurrent date and time: 2025-05-14 22:39:15\nRequesting data for: 1 days (from 2025-05-13 to 2025-05-14)\nEntity: sensor.solar_generated_power_2\nResolution: hourly\nRequest URL: http://192.168.192.35:8123/api/history/period/2025-05-13T00:00:00?end_time=2025-05-14T23:59:59&filter_entity_id=sensor.solar_generated_power_2&minimal_response=false&significant_changes_only=false\nSending API request...\nAPI response status code: 200\nAPI returned data of type: <class 'list'>\nAPI data length: 1\nProcessing data...\nFirst data item type: <class 'list'>\nFound list-of-lists format with 1 items\nUsing item 0 with 22436 records\nRaw DataFrame created with 22436 rows\nColumns: ['entity_id', 'state', 'attributes', 'last_changed', 'last_updated']\nProcessing hourly data...\n\nDEBUG INFO - Original timestamps:\nFirst timestamp: 2025-05-12 22:00:00+00:00\nTimestamp timezone info: UTC\nCurrent system time: 2025-05-14 22:39:16.417586\nCurrent system timezone: W. Europe Summer Time\nDropped 2 rows with non-numeric values\nConverting timezone-aware timestamps to naive datetimes\nTimestamps converted to Europe/Stockholm timezone before stripping timezone info\nHourly data has 48 data points\nTime range: 2025-05-13 00:00:00 to 2025-05-14 23:00:00\nFinal timestamp range: 2025-05-13 00:00:00 to 2025-05-14 23:00:00\nSample timestamps: [Timestamp('2025-05-13 00:00:00'), Timestamp('2025-05-13 01:00:00'), Timestamp('2025-05-13 02:00:00')]\nSaved 48 rows to Data\\HomeAssistant\\solar_generated_power_2_hourly.csv\n\nTimestamps already timezone-naive, no conversion needed\nLoaded and transformed 48 rows of new data\nConverted existing data timestamps to timezone-naive\nLoaded 1896 rows of existing data\nSaved 1896 rows of merged data\nData range: 2025-02-25T00:00:00.000Z to 2025-05-14T23:00:00.000Z\nData successfully merged and saved to C:\\_Projects\\home-energy-ai\\src\\predictions\\solar\\actual_data\\ActualSolarProductionData.csv",
+    "stderr": ""
+  },
+  {
+    "script": "Price Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py",
+    "start_time": "2025-05-14 22:39:18",
+    "end_time": "2025-05-14 22:39:22",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Updating price data...\nContinuing from latest timestamp in file: 2025-05-14 12:00:00\nSuccessfully added 11 missing hourly price records and updated features.\n\nUpdating grid data...\nUpdated grid data with 24 new records.\n\nData update complete.",
+    "stderr": ""
+  },
+  {
+    "script": "CO2, Gas and Coal Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py",
+    "start_time": "2025-05-14 22:39:22",
+    "end_time": "2025-05-14 22:39:25",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "SE3Prices index name: HourSE\nLatest timestamp with complete commodity data: 2025-05-14 12:00:00\nLatest date: 2025-05-14, time: 12:00\nNeed to update commodity prices from 2025-05-14 onwards\nFetching new data from 2025-05-14 to 2025-05-14\nYF.download() has changed argument auto_adjust default to True\nGas data points: 0\nCoal data points: 0\nCO2 data points: 0\nNo data available for the specified date range from any source",
+    "stderr": "[*********************100%***********************]  1 of 1 completed\n\n[*********************100%***********************]  1 of 1 completed\n\n1 Failed download:\n['BTU']: YFPricesMissingError('possibly delisted; no price data found  (1d 2025-05-14 -> 2025-05-14)')\n\n[*********************100%***********************]  1 of 1 completed\n\n1 Failed download:\n['KRBN']: YFPricesMissingError('possibly delisted; no price data found  (1d 2025-05-14 -> 2025-05-14)')"
+  },
+  {
+    "script": "Weather Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchWeatherData.py",
+    "start_time": "2025-05-14 22:39:25",
+    "end_time": "2025-05-14 22:39:27",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "",
+    "stderr": "2025-05-14 22:39:26,595 - INFO - Found existing data up to 2025-05-13. Starting from 2025-05-14.\n2025-05-14 22:39:26,596 - INFO - Starting main weather data update process (historical and current forecast).\n2025-05-14 22:39:26,713 - INFO - Found existing data up to 2025-05-13. Fetching new data from 2025-05-14.\n2025-05-14 22:39:26,714 - INFO - Fetching standard forecast data from Forecast API (today and future for main update)\n2025-05-14 22:39:26,723 - INFO - Standard forecast data fetch complete. Total hourly chunks: 1, Total daily chunks: 1\n2025-05-14 22:39:27,256 - INFO - Successfully updated weather data at C:\\_Projects\\home-energy-ai\\data\\processed\\weather_data.csv. New data from 2025-05-14 was processed.\n2025-05-14 22:39:27,256 - INFO - Main weather data update process completed. Range processed started from: 2025-05-14 up to latest forecast."
+  },
+  {
+    "script": "Consumption Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/demand/FetchConsumptionData.py",
+    "start_time": "2025-05-14 22:39:27",
+    "end_time": "2025-05-14 22:39:39",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "2025-05-14 22:39:28,024 - __main__ - INFO - Starting to fetch consumption data from Tibber API\n2025-05-14 22:39:28,024 - __main__ - INFO - Reading existing consumption data\n2025-05-14 22:39:28,069 - __main__ - INFO - Latest timestamp in existing data: 2025-05-14 18:00:00+00:00\n2025-05-14 22:39:28,069 - __main__ - INFO - Fetching new data since: 2025-05-14 19:00:00+0000\n2025-05-14 22:39:28,069 - __main__ - INFO - PHASE 1: Skipping through older data to find recent records...\n2025-05-14 22:39:39,383 - __main__ - INFO - Found transition page 32 with some records after target date.\n2025-05-14 22:39:39,383 - __main__ - INFO - Fetched a total of 1 new records\n2025-05-14 22:39:39,385 - __main__ - INFO - New data covers period: 2025-05-14 21:00:00+02:00 to 2025-05-14 21:00:00+02:00\n2025-05-14 22:39:39,385 - __main__ - INFO - Adding 1 new data points\n2025-05-14 22:39:39,545 - __main__ - INFO - Updated consumption data saved to data/processed/villamichelin/VillamichelinConsumption.csv\n2025-05-14 22:39:39,546 - __main__ - INFO - Total records in the updated file: 23468\n2025-05-14 22:39:39,549 - __main__ - INFO - Data now covers: 2022-09-09 22:00:00+00:00 to 2025-05-14 21:00:00+02:00",
+    "stderr": ""
+  },
+  {
+    "script": "Solar Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/solar/actual_data/FetchSolarProductionData.py",
+    "start_time": "2025-05-14 23:03:55",
+    "end_time": "2025-05-14 23:03:57",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Starting merge process for sensor.solar_generated_power_2 data\nLatest data timestamp: 2025-05-14 23:00:00+00:00\nDays since latest data: 1\nFetching 1 days of new data\nRunning download command: C:\\Users\\adamm\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe C:\\_Projects\\home-energy-ai\\src\\downloadEntityData.py --entity sensor.solar_generated_power_2 --days 1 --res hourly\nDownload script output:\nSystem time check: Current date and time is 2025-05-14 23:03:56.305335\nWARNING: Your system clock appears to be set to a future date!\nCurrent year is set to 2025, which is likely incorrect.\nThis will affect timestamp handling in the script.\nConsider correcting your system time before continuing.\nDebug - Current time: 2025-05-14 23:03:56.307555\nDebug - Start date: 2025-05-13 00:00:00\nDebug - End date: 2025-05-14 23:59:59.999999\nCurrent date and time: 2025-05-14 23:03:56\nRequesting data for: 1 days (from 2025-05-13 to 2025-05-14)\nEntity: sensor.solar_generated_power_2\nResolution: hourly\nRequest URL: http://192.168.192.35:8123/api/history/period/2025-05-13T00:00:00?end_time=2025-05-14T23:59:59&filter_entity_id=sensor.solar_generated_power_2&minimal_response=false&significant_changes_only=false\nSending API request...\nAPI response status code: 200\nAPI returned data of type: <class 'list'>\nAPI data length: 1\nProcessing data...\nFirst data item type: <class 'list'>\nFound list-of-lists format with 1 items\nUsing item 0 with 22436 records\nRaw DataFrame created with 22436 rows\nColumns: ['entity_id', 'state', 'attributes', 'last_changed', 'last_updated']\nProcessing hourly data...\n\nDEBUG INFO - Original timestamps:\nFirst timestamp: 2025-05-12 22:00:00+00:00\nTimestamp timezone info: UTC\nCurrent system time: 2025-05-14 23:03:56.920644\nCurrent system timezone: W. Europe Summer Time\nDropped 2 rows with non-numeric values\nConverting timezone-aware timestamps to naive datetimes\nTimestamps converted to Europe/Stockholm timezone before stripping timezone info\nHourly data has 48 data points\nTime range: 2025-05-13 00:00:00 to 2025-05-14 23:00:00\nFinal timestamp range: 2025-05-13 00:00:00 to 2025-05-14 23:00:00\nSample timestamps: [Timestamp('2025-05-13 00:00:00'), Timestamp('2025-05-13 01:00:00'), Timestamp('2025-05-13 02:00:00')]\nSaved 48 rows to Data\\HomeAssistant\\solar_generated_power_2_hourly.csv\n\nTimestamps already timezone-naive, no conversion needed\nLoaded and transformed 48 rows of new data\nConverted existing data timestamps to timezone-naive\nLoaded 1896 rows of existing data\nSaved 1896 rows of merged data\nData range: 2025-02-25T00:00:00.000Z to 2025-05-14T23:00:00.000Z\nData successfully merged and saved to C:\\_Projects\\home-energy-ai\\src\\predictions\\solar\\actual_data\\ActualSolarProductionData.csv",
+    "stderr": ""
+  },
+  {
+    "script": "Price Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py",
+    "start_time": "2025-05-14 23:03:57",
+    "end_time": "2025-05-14 23:03:59",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Updating price data...\nContinuing from latest timestamp in file: 2025-05-14 23:00:00\nSuccessfully added 1 missing hourly price records and updated features.\n\nUpdating grid data...\nUpdated grid data with 24 new records.\n\nData update complete.",
+    "stderr": ""
+  },
+  {
+    "script": "CO2, Gas and Coal Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py",
+    "start_time": "2025-05-14 23:03:59",
+    "end_time": "2025-05-14 23:04:02",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "SE3Prices index name: HourSE\nLatest timestamp with complete commodity data: 2025-05-14 12:00:00\nLatest date: 2025-05-14, time: 12:00\nNeed to update commodity prices from 2025-05-14 onwards\nFetching new data from 2025-05-14 to 2025-05-14\nYF.download() has changed argument auto_adjust default to True\nGas data points: 0\nCoal data points: 0\nCO2 data points: 0\nNo data available for the specified date range from any source",
+    "stderr": "[*********************100%***********************]  1 of 1 completed\n\n[*********************100%***********************]  1 of 1 completed\n\n1 Failed download:\n['BTU']: YFPricesMissingError('possibly delisted; no price data found  (1d 2025-05-14 -> 2025-05-14)')\n\n[*********************100%***********************]  1 of 1 completed\n\n1 Failed download:\n['KRBN']: YFPricesMissingError('possibly delisted; no price data found  (1d 2025-05-14 -> 2025-05-14)')"
+  },
+  {
+    "script": "Weather Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchWeatherData.py",
+    "start_time": "2025-05-14 23:04:02",
+    "end_time": "2025-05-14 23:04:04",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "",
+    "stderr": "2025-05-14 23:04:03,318 - INFO - Found existing data up to 2025-05-13. Starting from 2025-05-14.\n2025-05-14 23:04:03,319 - INFO - Starting main weather data update process (historical and current forecast).\n2025-05-14 23:04:03,440 - INFO - Found existing data up to 2025-05-13. Fetching new data from 2025-05-14.\n2025-05-14 23:04:03,440 - INFO - Fetching standard forecast data from Forecast API (today and future for main update)\n2025-05-14 23:04:03,451 - INFO - Standard forecast data fetch complete. Total hourly chunks: 1, Total daily chunks: 1\n2025-05-14 23:04:04,027 - INFO - Successfully updated weather data at C:\\_Projects\\home-energy-ai\\data\\processed\\weather_data.csv. New data from 2025-05-14 was processed.\n2025-05-14 23:04:04,027 - INFO - Main weather data update process completed. Range processed started from: 2025-05-14 up to latest forecast."
+  },
+  {
+    "script": "Consumption Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/demand/FetchConsumptionData.py",
+    "start_time": "2025-05-14 23:04:04",
+    "end_time": "2025-05-14 23:04:17",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "2025-05-14 23:04:04,890 - __main__ - INFO - Starting to fetch consumption data from Tibber API\n2025-05-14 23:04:04,890 - __main__ - INFO - Reading existing consumption data\n2025-05-14 23:04:04,929 - __main__ - INFO - Latest timestamp in existing data: 2025-05-10 23:00:00+00:00\n2025-05-14 23:04:04,929 - __main__ - INFO - Fetching new data since: 2025-05-11 00:00:00+0000\n2025-05-14 23:04:04,929 - __main__ - INFO - PHASE 1: Skipping through older data to find recent records...\n2025-05-14 23:04:16,854 - __main__ - INFO - Found transition page 32 with some records after target date.\n2025-05-14 23:04:16,854 - __main__ - INFO - Fetched a total of 93 new records\n2025-05-14 23:04:16,857 - __main__ - INFO - New data covers period: 2025-05-11 02:00:00+02:00 to 2025-05-14 22:00:00+02:00\n2025-05-14 23:04:16,857 - __main__ - INFO - Adding 93 new data points\n2025-05-14 23:04:16,986 - __main__ - INFO - Updated consumption data saved to data/processed/villamichelin/VillamichelinConsumption.csv\n2025-05-14 23:04:16,986 - __main__ - INFO - Total records in the updated file: 23469\n2025-05-14 23:04:16,989 - __main__ - INFO - Data now covers: 2022-09-09 22:00:00+00:00 to 2025-05-14 22:00:00+02:00",
+    "stderr": ""
+  },
+  {
+    "script": "Solar Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/solar/actual_data/FetchSolarProductionData.py",
+    "start_time": "2025-05-15 00:30:05",
+    "end_time": "2025-05-15 00:30:07",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Starting merge process for sensor.solar_generated_power_2 data\nLatest data timestamp: 2025-05-14 23:00:00+00:00\nDays since latest data: 1\nFetching 1 days of new data\nRunning download command: C:\\Users\\adamm\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe C:\\_Projects\\home-energy-ai\\src\\downloadEntityData.py --entity sensor.solar_generated_power_2 --days 1 --res hourly\nDownload script output:\nSystem time check: Current date and time is 2025-05-15 00:30:06.640056\nWARNING: Your system clock appears to be set to a future date!\nCurrent year is set to 2025, which is likely incorrect.\nThis will affect timestamp handling in the script.\nConsider correcting your system time before continuing.\nDebug - Current time: 2025-05-15 00:30:06.643670\nDebug - Start date: 2025-05-14 00:00:00\nDebug - End date: 2025-05-15 23:59:59.999999\nCurrent date and time: 2025-05-15 00:30:06\nRequesting data for: 1 days (from 2025-05-14 to 2025-05-15)\nEntity: sensor.solar_generated_power_2\nResolution: hourly\nRequest URL: http://192.168.192.35:8123/api/history/period/2025-05-14T00:00:00?end_time=2025-05-15T23:59:59&filter_entity_id=sensor.solar_generated_power_2&minimal_response=false&significant_changes_only=false\nSending API request...\nAPI response status code: 200\nAPI returned data of type: <class 'list'>\nAPI data length: 1\nProcessing data...\nFirst data item type: <class 'list'>\nFound list-of-lists format with 1 items\nUsing item 0 with 11232 records\nRaw DataFrame created with 11232 rows\nColumns: ['entity_id', 'state', 'attributes', 'last_changed', 'last_updated']\nProcessing hourly data...\n\nDEBUG INFO - Original timestamps:\nFirst timestamp: 2025-05-13 22:00:00+00:00\nTimestamp timezone info: UTC\nCurrent system time: 2025-05-15 00:30:07.030046\nCurrent system timezone: W. Europe Summer Time\nConverting timezone-aware timestamps to naive datetimes\nTimestamps converted to Europe/Stockholm timezone before stripping timezone info\nHourly data has 48 data points\nTime range: 2025-05-14 00:00:00 to 2025-05-15 23:00:00\nFinal timestamp range: 2025-05-14 00:00:00 to 2025-05-15 23:00:00\nSample timestamps: [Timestamp('2025-05-14 00:00:00'), Timestamp('2025-05-14 01:00:00'), Timestamp('2025-05-14 02:00:00')]\nSaved 48 rows to Data\\HomeAssistant\\solar_generated_power_2_hourly.csv\n\nTimestamps already timezone-naive, no conversion needed\nLoaded and transformed 48 rows of new data\nConverted existing data timestamps to timezone-naive\nLoaded 1896 rows of existing data\nSaved 1920 rows of merged data\nData range: 2025-02-25T00:00:00.000Z to 2025-05-15T23:00:00.000Z\nData successfully merged and saved to C:\\_Projects\\home-energy-ai\\src\\predictions\\solar\\actual_data\\ActualSolarProductionData.csv",
+    "stderr": ""
+  },
+  {
+    "script": "Price Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py",
+    "start_time": "2025-05-15 00:30:07",
+    "end_time": "2025-05-15 00:30:09",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Updating price data...\nContinuing from latest timestamp in file: 2025-05-15 00:00:00\nSuccessfully added 1 missing hourly price records and updated features.\n\nUpdating grid data...\nUpdated grid data with 24 new records.\n\nData update complete.",
+    "stderr": ""
+  },
+  {
+    "script": "CO2, Gas and Coal Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py",
+    "start_time": "2025-05-15 00:30:09",
+    "end_time": "2025-05-15 00:30:12",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "SE3Prices index name: HourSE\nLatest timestamp with complete commodity data: 2025-05-14 12:00:00\nLatest date: 2025-05-14, time: 12:00\nNeed to update commodity prices from 2025-05-14 onwards\nFetching new data from 2025-05-14 to 2025-05-15\nYF.download() has changed argument auto_adjust default to True\nGas data points: 1\nCoal data points: 1\nCO2 data points: 1\nDownloaded new price data:\nNew energy prices data dates: 2025-05-14 00:00:00 to 2025-05-14 00:00:00\nColumns available in new data: CO2_Price, Gas_Price, Coal_Price\nSE3Prices is hourly data, forward-filling daily commodity prices\nUpdated 24 hours for 2025-05-14 with CO2_Price: 29.329999923706055\nUpdated 24 hours for 2025-05-14 with Gas_Price: 3.4700000286102295\nUpdated 24 hours for 2025-05-14 with Coal_Price: 14.680000305175781\nTotal updated hours: 72\nUpdated C:\\_Projects\\home-energy-ai\\data\\processed\\SE3prices.csv with new energy commodity prices\nVerified file was saved with columns: HourSE, PriceArea, SE3_price_ore, price_24h_avg, price_168h_avg, price_24h_std, hour_avg_price, price_vs_hour_avg, Gas_Price, Coal_Price, CO2_Price",
+    "stderr": "[*********************100%***********************]  1 of 1 completed\n\n[*********************100%***********************]  1 of 1 completed\n\n[*********************100%***********************]  1 of 1 completed"
+  },
+  {
+    "script": "Weather Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchWeatherData.py",
+    "start_time": "2025-05-15 00:30:12",
+    "end_time": "2025-05-15 00:30:14",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "",
+    "stderr": "2025-05-15 00:30:13,556 - INFO - Found existing data up to 2025-05-13. Starting from 2025-05-14.\n2025-05-15 00:30:13,557 - INFO - Starting main weather data update process (historical and current forecast).\n2025-05-15 00:30:13,673 - INFO - Found existing data up to 2025-05-13. Fetching new data from 2025-05-14.\n2025-05-15 00:30:13,673 - INFO - Fetching historical data from Archive API (2025-05-14 to 2025-05-14)\n2025-05-15 00:30:13,928 - INFO - Archive data fetch complete. Hourly chunks: 1, Daily chunks: 1\n2025-05-15 00:30:13,928 - INFO - Fetching standard forecast data from Forecast API (today and future for main update)\n2025-05-15 00:30:13,933 - INFO - Standard forecast data fetch complete. Total hourly chunks: 2, Total daily chunks: 2\n2025-05-15 00:30:14,649 - INFO - Successfully updated weather data at C:\\_Projects\\home-energy-ai\\data\\processed\\weather_data.csv. New data from 2025-05-14 was processed.\n2025-05-15 00:30:14,649 - INFO - Main weather data update process completed. Range processed started from: 2025-05-14 up to latest forecast."
+  },
+  {
+    "script": "Consumption Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/demand/FetchConsumptionData.py",
+    "start_time": "2025-05-15 00:30:14",
+    "end_time": "2025-05-15 00:30:28",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "2025-05-15 00:30:15,833 - __main__ - INFO - Starting to fetch consumption data from Tibber API\n2025-05-15 00:30:15,833 - __main__ - INFO - Reading existing consumption data\n2025-05-15 00:30:15,875 - __main__ - INFO - Latest timestamp in existing data: 2025-05-13 23:00:00+00:00\n2025-05-15 00:30:15,875 - __main__ - INFO - Fetching new data since: 2025-05-14 00:00:00+0000\n2025-05-15 00:30:15,875 - __main__ - INFO - PHASE 1: Skipping through older data to find recent records...\n2025-05-15 00:30:27,871 - __main__ - INFO - Found transition page 32 with some records after target date.\n2025-05-15 00:30:27,872 - __main__ - INFO - Fetched a total of 22 new records\n2025-05-15 00:30:27,875 - __main__ - INFO - New data covers period: 2025-05-14 02:00:00+02:00 to 2025-05-14 23:00:00+02:00\n2025-05-15 00:30:27,875 - __main__ - INFO - Adding 22 new data points\n2025-05-15 00:30:28,005 - __main__ - INFO - Updated consumption data saved to data/processed/villamichelin/VillamichelinConsumption.csv\n2025-05-15 00:30:28,005 - __main__ - INFO - Total records in the updated file: 23470\n2025-05-15 00:30:28,008 - __main__ - INFO - Data now covers: 2022-09-09 22:00:00+00:00 to 2025-05-14 23:00:00+02:00",
+    "stderr": ""
+  },
+  {
+    "script": "Solar Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/solar/actual_data/FetchSolarProductionData.py",
+    "start_time": "2025-05-15 00:42:07",
+    "end_time": "2025-05-15 00:42:09",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Starting merge process for sensor.solar_generated_power_2 data\nLatest data timestamp: 2025-05-15 23:00:00+00:00\nDays since latest data: 0\nFetching 1 days of new data\nRunning download command: C:\\Users\\adamm\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe C:\\_Projects\\home-energy-ai\\src\\downloadEntityData.py --entity sensor.solar_generated_power_2 --days 1 --res hourly\nDownload script output:\nSystem time check: Current date and time is 2025-05-15 00:42:08.909259\nWARNING: Your system clock appears to be set to a future date!\nCurrent year is set to 2025, which is likely incorrect.\nThis will affect timestamp handling in the script.\nConsider correcting your system time before continuing.\nDebug - Current time: 2025-05-15 00:42:08.910821\nDebug - Start date: 2025-05-14 00:00:00\nDebug - End date: 2025-05-15 23:59:59.999999\nCurrent date and time: 2025-05-15 00:42:08\nRequesting data for: 1 days (from 2025-05-14 to 2025-05-15)\nEntity: sensor.solar_generated_power_2\nResolution: hourly\nRequest URL: http://192.168.192.35:8123/api/history/period/2025-05-14T00:00:00?end_time=2025-05-15T23:59:59&filter_entity_id=sensor.solar_generated_power_2&minimal_response=false&significant_changes_only=false\nSending API request...\nAPI response status code: 200\nAPI returned data of type: <class 'list'>\nAPI data length: 1\nProcessing data...\nFirst data item type: <class 'list'>\nFound list-of-lists format with 1 items\nUsing item 0 with 11232 records\nRaw DataFrame created with 11232 rows\nColumns: ['entity_id', 'state', 'attributes', 'last_changed', 'last_updated']\nProcessing hourly data...\n\nDEBUG INFO - Original timestamps:\nFirst timestamp: 2025-05-13 22:00:00+00:00\nTimestamp timezone info: UTC\nCurrent system time: 2025-05-15 00:42:09.252170\nCurrent system timezone: W. Europe Summer Time\nConverting timezone-aware timestamps to naive datetimes\nTimestamps converted to Europe/Stockholm timezone before stripping timezone info\nHourly data has 48 data points\nTime range: 2025-05-14 00:00:00 to 2025-05-15 23:00:00\nFinal timestamp range: 2025-05-14 00:00:00 to 2025-05-15 23:00:00\nSample timestamps: [Timestamp('2025-05-14 00:00:00'), Timestamp('2025-05-14 01:00:00'), Timestamp('2025-05-14 02:00:00')]\nSaved 48 rows to Data\\HomeAssistant\\solar_generated_power_2_hourly.csv\n\nTimestamps already timezone-naive, no conversion needed\nLoaded and transformed 48 rows of new data\nConverted existing data timestamps to timezone-naive\nLoaded 1920 rows of existing data\nSaved 1920 rows of merged data\nData range: 2025-02-25T00:00:00.000Z to 2025-05-15T23:00:00.000Z\nData successfully merged and saved to C:\\_Projects\\home-energy-ai\\src\\predictions\\solar\\actual_data\\ActualSolarProductionData.csv",
+    "stderr": ""
+  },
+  {
+    "script": "Price Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py",
+    "start_time": "2025-05-15 00:42:09",
+    "end_time": "2025-05-15 00:42:10",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "Updating price data...\nContinuing from latest timestamp in file: 2025-05-15 01:00:00\nPrice data is already up-to-date.\n\nUpdating grid data...\nUpdated grid data with 24 new records.\n\nData update complete.",
+    "stderr": ""
+  },
+  {
+    "script": "CO2, Gas and Coal Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py",
+    "start_time": "2025-05-15 00:42:10",
+    "end_time": "2025-05-15 00:42:17",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "SE3Prices index name: HourSE\nLatest timestamp with complete commodity data: 2025-05-15 01:00:00\nLatest date: 2025-05-15, time: 01:00\nNeed to update commodity prices from 2025-05-15 onwards\nFetching new data from 2025-05-15 to 2025-05-15\nYF.download() has changed argument auto_adjust default to True\nGas data points: 0\nCoal data points: 0\nCO2 data points: 0\nNo data available for the specified date range from any source",
+    "stderr": "[*********************100%***********************]  1 of 1 completed\n\n1 Failed download:\n['NG=F']: YFPricesMissingError('possibly delisted; no price data found  (1d 2025-05-15 -> 2025-05-15) (Yahoo error = \"Data doesn\\'t exist for startDate = 1747281600, endDate = 1747281600\")')\n\n[*********************100%***********************]  1 of 1 completed\n\n1 Failed download:\n['BTU']: YFPricesMissingError('possibly delisted; no price data found  (1d 2025-05-15 -> 2025-05-15) (Yahoo error = \"Data doesn\\'t exist for startDate = 1747281600, endDate = 1747281600\")')\n\n[*********************100%***********************]  1 of 1 completed\n\n1 Failed download:\n['KRBN']: YFPricesMissingError('possibly delisted; no price data found  (1d 2025-05-15 -> 2025-05-15) (Yahoo error = \"Data doesn\\'t exist for startDate = 1747281600, endDate = 1747281600\")')"
+  },
+  {
+    "script": "Weather Data Update",
+    "path": "C:/_Projects/home-energy-ai/data/FetchWeatherData.py",
+    "start_time": "2025-05-15 00:42:17",
+    "end_time": "2025-05-15 00:42:19",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "",
+    "stderr": "2025-05-15 00:42:18,477 - INFO - Found existing data up to 2025-05-14. Starting from 2025-05-15.\n2025-05-15 00:42:18,478 - INFO - Starting main weather data update process (historical and current forecast).\n2025-05-15 00:42:18,591 - INFO - Found existing data up to 2025-05-14. Fetching new data from 2025-05-15.\n2025-05-15 00:42:18,591 - INFO - Fetching standard forecast data from Forecast API (today and future for main update)\n2025-05-15 00:42:18,600 - INFO - Standard forecast data fetch complete. Total hourly chunks: 1, Total daily chunks: 1\n2025-05-15 00:42:19,127 - INFO - Successfully updated weather data at C:\\_Projects\\home-energy-ai\\data\\processed\\weather_data.csv. New data from 2025-05-15 was processed.\n2025-05-15 00:42:19,128 - INFO - Main weather data update process completed. Range processed started from: 2025-05-15 up to latest forecast."
+  },
+  {
+    "script": "Consumption Data Update",
+    "path": "C:/_Projects/home-energy-ai/src/predictions/demand/FetchConsumptionData.py",
+    "start_time": "2025-05-15 00:42:19",
+    "end_time": "2025-05-15 00:42:30",
+    "status": "SUCCESS",
+    "return_code": 0,
+    "stdout": "2025-05-15 00:42:19,985 - __main__ - INFO - Starting to fetch consumption data from Tibber API\n2025-05-15 00:42:19,985 - __main__ - INFO - No existing data found. Fetching all available consumption data\n2025-05-15 00:42:19,985 - __main__ - INFO - Fetching all available historical consumption data\n2025-05-15 00:42:19,985 - __main__ - INFO - Fetching page 1 of consumption data...\n2025-05-15 00:42:20,314 - __main__ - INFO - Retrieved 744 records on page 1\n2025-05-15 00:42:20,314 - __main__ - INFO - Total records so far: 744\n2025-05-15 00:42:20,315 - __main__ - INFO - Fetching page 2 of consumption data...\n2025-05-15 00:42:20,659 - __main__ - INFO - Retrieved 744 records on page 2\n2025-05-15 00:42:20,659 - __main__ - INFO - Total records so far: 1488\n2025-05-15 00:42:20,659 - __main__ - INFO - Fetching page 3 of consumption data...\n2025-05-15 00:42:20,952 - __main__ - INFO - Retrieved 744 records on page 3\n2025-05-15 00:42:20,953 - __main__ - INFO - Total records so far: 2232\n2025-05-15 00:42:20,953 - __main__ - INFO - Fetching page 4 of consumption data...\n2025-05-15 00:42:21,297 - __main__ - INFO - Retrieved 744 records on page 4\n2025-05-15 00:42:21,297 - __main__ - INFO - Total records so far: 2976\n2025-05-15 00:42:21,297 - __main__ - INFO - Fetching page 5 of consumption data...\n2025-05-15 00:42:21,658 - __main__ - INFO - Retrieved 744 records on page 5\n2025-05-15 00:42:21,658 - __main__ - INFO - Total records so far: 3720\n2025-05-15 00:42:21,658 - __main__ - INFO - Fetching page 6 of consumption data...\n2025-05-15 00:42:21,934 - __main__ - INFO - Retrieved 744 records on page 6\n2025-05-15 00:42:21,934 - __main__ - INFO - Total records so far: 4464\n2025-05-15 00:42:21,934 - __main__ - INFO - Fetching page 7 of consumption data...\n2025-05-15 00:42:22,214 - __main__ - INFO - Retrieved 744 records on page 7\n2025-05-15 00:42:22,214 - __main__ - INFO - Total records so far: 5208\n2025-05-15 00:42:22,214 - __main__ - INFO - Fetching page 8 of consumption data...\n2025-05-15 00:42:22,500 - __main__ - INFO - Retrieved 744 records on page 8\n2025-05-15 00:42:22,500 - __main__ - INFO - Total records so far: 5952\n2025-05-15 00:42:22,500 - __main__ - INFO - Fetching page 9 of consumption data...\n2025-05-15 00:42:22,843 - __main__ - INFO - Retrieved 744 records on page 9\n2025-05-15 00:42:22,843 - __main__ - INFO - Total records so far: 6696\n2025-05-15 00:42:22,843 - __main__ - INFO - Fetching page 10 of consumption data...\n2025-05-15 00:42:23,127 - __main__ - INFO - Retrieved 744 records on page 10\n2025-05-15 00:42:23,127 - __main__ - INFO - Total records so far: 7440\n2025-05-15 00:42:23,127 - __main__ - INFO - Fetching page 11 of consumption data...\n2025-05-15 00:42:23,423 - __main__ - INFO - Retrieved 744 records on page 11\n2025-05-15 00:42:23,423 - __main__ - INFO - Total records so far: 8184\n2025-05-15 00:42:23,423 - __main__ - INFO - Fetching page 12 of consumption data...\n2025-05-15 00:42:23,707 - __main__ - INFO - Retrieved 744 records on page 12\n2025-05-15 00:42:23,707 - __main__ - INFO - Total records so far: 8928\n2025-05-15 00:42:23,707 - __main__ - INFO - Fetching page 13 of consumption data...\n2025-05-15 00:42:23,989 - __main__ - INFO - Retrieved 744 records on page 13\n2025-05-15 00:42:23,989 - __main__ - INFO - Total records so far: 9672\n2025-05-15 00:42:23,989 - __main__ - INFO - Fetching page 14 of consumption data...\n2025-05-15 00:42:24,304 - __main__ - INFO - Retrieved 744 records on page 14\n2025-05-15 00:42:24,304 - __main__ - INFO - Total records so far: 10416\n2025-05-15 00:42:24,304 - __main__ - INFO - Fetching page 15 of consumption data...\n2025-05-15 00:42:24,601 - __main__ - INFO - Retrieved 744 records on page 15\n2025-05-15 00:42:24,601 - __main__ - INFO - Total records so far: 11160\n2025-05-15 00:42:24,601 - __main__ - INFO - Fetching page 16 of consumption data...\n2025-05-15 00:42:25,137 - __main__ - INFO - Retrieved 744 records on page 16\n2025-05-15 00:42:25,137 - __main__ - INFO - Total records so far: 11904\n2025-05-15 00:42:25,137 - __main__ - INFO - Fetching page 17 of consumption data...\n2025-05-15 00:42:25,445 - __main__ - INFO - Retrieved 744 records on page 17\n2025-05-15 00:42:25,445 - __main__ - INFO - Total records so far: 12648\n2025-05-15 00:42:25,445 - __main__ - INFO - Fetching page 18 of consumption data...\n2025-05-15 00:42:25,728 - __main__ - INFO - Retrieved 744 records on page 18\n2025-05-15 00:42:25,728 - __main__ - INFO - Total records so far: 13392\n2025-05-15 00:42:25,728 - __main__ - INFO - Fetching page 19 of consumption data...\n2025-05-15 00:42:26,017 - __main__ - INFO - Retrieved 744 records on page 19\n2025-05-15 00:42:26,017 - __main__ - INFO - Total records so far: 14136\n2025-05-15 00:42:26,017 - __main__ - INFO - Fetching page 20 of consumption data...\n2025-05-15 00:42:26,316 - __main__ - INFO - Retrieved 744 records on page 20\n2025-05-15 00:42:26,316 - __main__ - INFO - Total records so far: 14880\n2025-05-15 00:42:26,316 - __main__ - INFO - Fetching page 21 of consumption data...\n2025-05-15 00:42:26,615 - __main__ - INFO - Retrieved 744 records on page 21\n2025-05-15 00:42:26,616 - __main__ - INFO - Total records so far: 15624\n2025-05-15 00:42:26,616 - __main__ - INFO - Fetching page 22 of consumption data...\n2025-05-15 00:42:26,902 - __main__ - INFO - Retrieved 744 records on page 22\n2025-05-15 00:42:26,902 - __main__ - INFO - Total records so far: 16368\n2025-05-15 00:42:26,902 - __main__ - INFO - Fetching page 23 of consumption data...\n2025-05-15 00:42:27,198 - __main__ - INFO - Retrieved 744 records on page 23\n2025-05-15 00:42:27,198 - __main__ - INFO - Total records so far: 17112\n2025-05-15 00:42:27,198 - __main__ - INFO - Fetching page 24 of consumption data...\n2025-05-15 00:42:27,541 - __main__ - INFO - Retrieved 744 records on page 24\n2025-05-15 00:42:27,541 - __main__ - INFO - Total records so far: 17856\n2025-05-15 00:42:27,541 - __main__ - INFO - Fetching page 25 of consumption data...\n2025-05-15 00:42:27,828 - __main__ - INFO - Retrieved 744 records on page 25\n2025-05-15 00:42:27,828 - __main__ - INFO - Total records so far: 18600\n2025-05-15 00:42:27,828 - __main__ - INFO - Fetching page 26 of consumption data...\n2025-05-15 00:42:28,111 - __main__ - INFO - Retrieved 744 records on page 26\n2025-05-15 00:42:28,111 - __main__ - INFO - Total records so far: 19344\n2025-05-15 00:42:28,111 - __main__ - INFO - Fetching page 27 of consumption data...\n2025-05-15 00:42:28,394 - __main__ - INFO - Retrieved 744 records on page 27\n2025-05-15 00:42:28,394 - __main__ - INFO - Total records so far: 20088\n2025-05-15 00:42:28,394 - __main__ - INFO - Fetching page 28 of consumption data...\n2025-05-15 00:42:28,691 - __main__ - INFO - Retrieved 744 records on page 28\n2025-05-15 00:42:28,692 - __main__ - INFO - Total records so far: 20832\n2025-05-15 00:42:28,692 - __main__ - INFO - Fetching page 29 of consumption data...\n2025-05-15 00:42:28,976 - __main__ - INFO - Retrieved 744 records on page 29\n2025-05-15 00:42:28,976 - __main__ - INFO - Total records so far: 21576\n2025-05-15 00:42:28,976 - __main__ - INFO - Fetching page 30 of consumption data...\n2025-05-15 00:42:29,259 - __main__ - INFO - Retrieved 744 records on page 30\n2025-05-15 00:42:29,259 - __main__ - INFO - Total records so far: 22320\n2025-05-15 00:42:29,259 - __main__ - INFO - Fetching page 31 of consumption data...\n2025-05-15 00:42:29,537 - __main__ - INFO - Retrieved 744 records on page 31\n2025-05-15 00:42:29,537 - __main__ - INFO - Total records so far: 23064\n2025-05-15 00:42:29,537 - __main__ - INFO - Fetching page 32 of consumption data...\n2025-05-15 00:42:29,805 - __main__ - INFO - Retrieved 439 records on page 32\n2025-05-15 00:42:29,805 - __main__ - INFO - Total records so far: 23503\n2025-05-15 00:42:29,805 - __main__ - INFO - Fetched a total of 23503 records from 32 pages\n2025-05-15 00:42:29,997 - __main__ - INFO - Consumption data saved to data/processed/villamichelin/VillamichelinConsumption.csv\n2025-05-15 00:42:29,997 - __main__ - INFO - Total records: 23503\n2025-05-15 00:42:30,015 - __main__ - INFO - Data covers period: 2022-09-10 00:00:00+02:00 to 2025-05-14 23:00:00+02:00",
+    "stderr": ""
   }
 ]

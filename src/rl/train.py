@@ -10,16 +10,23 @@ import datetime
 from pathlib import Path
 import numpy as np
 import tensorflow as tf  # For loading keras models
-
+import sys
+import time
 # Import stable-baselines3 components
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.monitor import Monitor
 
+
+# Add the project root directory (one level up from 'src') to sys.path
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')) 
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+    
 # Import our custom components
 from src.rl.custom_env import HomeEnergyEnv
-from src.rl.wrappers import LongTermEnv
-from src.rl.agent import ShortTermAgent, LongTermAgent, HierarchicalController
+# from src.rl.wrappers import LongTermEnv # Commented out for simplification
+from src.rl.agent import ShortTermAgent # Removed LongTermAgent, HierarchicalController
 
 
 def load_config(config_path: str = "src/rl/rl_config.json") -> dict:
@@ -102,192 +109,172 @@ def setup_callbacks(config: dict) -> dict:
     # Create timestamped folders
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     short_term_log_dir = log_dir / f"short_term_{timestamp}"
-    long_term_log_dir = log_dir / f"long_term_{timestamp}"
+    # long_term_log_dir = log_dir / f"long_term_{timestamp}" # Commented out
     
     # Configure TensorBoard loggers
     short_term_logger = configure(str(short_term_log_dir), ["stdout", "tensorboard"])
-    long_term_logger = configure(str(long_term_log_dir), ["stdout", "tensorboard"])
+    # long_term_logger = configure(str(long_term_log_dir), [\\"stdout\\", \\"tensorboard\\"]) # Commented out
     
     # Create callbacks
     checkpoint_freq = config.get("checkpoint_freq", 25000)
-    
+    eval_freq = config.get("eval_freq", checkpoint_freq) 
+
     # Short-term checkpoint callback
-    short_term_callback = CheckpointCallback(
+    short_term_checkpoint_callback = CheckpointCallback(
         save_freq=checkpoint_freq,
         save_path=str(model_dir / "short_term_checkpoints"),
         name_prefix="short_term_model",
-        verbose=1
+        save_replay_buffer=True, 
+        save_vecnormalize=True, 
+        verbose=0
     )
     
-    # Long-term checkpoint callback
-    long_term_callback = CheckpointCallback(
-        save_freq=checkpoint_freq // 2,  # More frequent checkpoints for long-term
-        save_path=str(model_dir / "long_term_checkpoints"),
-        name_prefix="long_term_model",
-        verbose=1
+    # Evaluation callback for the short-term agent
+    # It will save the best model found during evaluation
+    # Create a new HomeEnergyEnv instance for evaluation
+    eval_env_config = {
+        "battery_capacity": config.get("battery_capacity", 22.0),
+        "simulation_days": config.get("simulation_days_eval", 3), # Potentially shorter for eval
+        "peak_penalty_factor": config.get("peak_penalty_factor", 10.0),
+        "use_price_predictions": config.get("use_price_predictions_eval", False),
+        "price_predictions_path": config.get("price_predictions_path", "data/processed/SE3prices.csv"), # Adjusted default
+        "fixed_baseload_kw": config.get("fixed_baseload_kw", 0.5),
+        "time_step_minutes": config.get("time_step_minutes", 15),
+        "use_variable_consumption": config.get("use_variable_consumption", False),
+        "consumption_data_path": config.get("consumption_data_path", None),
+        "battery_degradation_cost_per_kwh": config.get("battery_degradation_cost_per_kwh", 45.0),
+        "config": config # Pass the main config dict
+    }
+    # Check if price_model should be passed to eval_env
+    # For simplicity, let's assume eval_env uses simple prices or CSV if use_price_predictions_eval is True
+    # and doesn't rely on a passed price_model object for now.
+    short_term_eval_env = Monitor(HomeEnergyEnv(**eval_env_config))
+
+
+    short_term_eval_callback = EvalCallback(
+        short_term_eval_env,
+        best_model_save_path=str(model_dir / "best_short_term_model"),
+        log_path=str(short_term_log_dir / "evaluations"),
+        eval_freq=eval_freq, 
+        n_eval_episodes=config.get("eval_episodes", 5),
+        deterministic=True,
+        render=False,
+        callback_on_new_best=None, 
+        callback_after_eval=None 
     )
-    
-    # Placeholder for joint training callback (if needed)
-    joint_callback = None
+
+    short_term_callbacks = [short_term_checkpoint_callback, short_term_eval_callback]
+
+    # long_term_callback = CheckpointCallback( # Commented out
+    #     save_freq=checkpoint_freq // 2,
+    #     save_path=str(model_dir / \\"long_term_checkpoints\\"),
+    #     name_prefix=\\"long_term_model\\",
+    #     verbose=1
+    # )
     
     return {
-        "short_term": short_term_callback,
-        "long_term": long_term_callback,
-        "joint": joint_callback
+        "short_term": short_term_callbacks,
+        # "long_term": long_term_callback, # Commented out
+        # "joint": None # Commented out
     }
 
 
-def create_environments(config: dict, demand_model=None, price_model=None) -> tuple:
+def create_environments(config: dict) -> HomeEnergyEnv:
     """
-    Create environments for training.
+    Create base environment for training the ShortTermAgent.
     
     Args:
         config: Configuration dictionary
-        demand_model: Pre-trained demand prediction model
-        price_model: Pre-trained price prediction model
         
     Returns:
-        tuple: (base_env, long_term_env)
+        HomeEnergyEnv: The base environment for the short-term agent, wrapped in Monitor.
     """
-    # Create base environment
-    base_env = HomeEnergyEnv(
-        price_model=price_model,
-        demand_model=demand_model,
-        use_price_model=price_model is not None,
-        use_demand_model=demand_model is not None,
-        battery_capacity=config.get("battery_capacity", 22.0),
-        simulation_days=config.get("simulation_days", 7),
-        peak_penalty_factor=config.get("peak_penalty_factor", 10.0),
-        comfort_bonus_factor=config.get("comfort_bonus_factor", 2.0),
-        random_weather=config.get("random_weather", True)
-    )
+    env_config = {
+        "battery_capacity": config.get("battery_capacity", 22.0),
+        "simulation_days": config.get("simulation_days", 7),
+        "peak_penalty_factor": config.get("peak_penalty_factor", 10.0),
+        "use_price_predictions": config.get("use_price_predictions_train", True),
+        "price_predictions_path": config.get("price_predictions_path", "data/processed/SE3prices.csv"), # Adjusted default
+        "fixed_baseload_kw": config.get("fixed_baseload_kw", 0.5),
+        "time_step_minutes": config.get("time_step_minutes", 15),
+        "use_variable_consumption": config.get("use_variable_consumption", False),
+        "consumption_data_path": config.get("consumption_data_path", None),
+        "battery_degradation_cost_per_kwh": config.get("battery_degradation_cost_per_kwh", 45.0),
+        "config": config # Pass the main config dict
+    }
+    # Ensure time_step_minutes is present, add if not in config for safety, though it should be.
+    if "time_step_minutes" not in env_config:
+        env_config["time_step_minutes"] = config.get("time_step_minutes", 15) # Default if not in config for some reason
+
+    base_env = HomeEnergyEnv(**env_config)
+    base_env = Monitor(base_env) # Wrap in Monitor for logging
     
-    # Wrap in Monitor for logging
-    base_env = Monitor(base_env)
+    # long_term_env = LongTermEnv( # Commented out
+    #     env=base_env,
+    #     steps_per_action=config.get(\\"steps_per_action\\", 4),
+    #     corridor_width=config.get(\\"corridor_width\\\", 0.1),
+    #     planning_horizon=config.get(\\"planning_horizon\\\", 42)
+    # )
     
-    # Create long-term environment
-    long_term_env = LongTermEnv(
-        env=base_env,
-        steps_per_action=config.get("steps_per_action", 4),
-        corridor_width=config.get("corridor_width", 0.1),
-        planning_horizon=config.get("planning_horizon", 42)
-    )
-    
-    return base_env, long_term_env
+    return base_env
 
 
 def main(args):
     """
     Main training function.
-    
-    Args:
-        args: Command-line arguments
     """
-    # Load configuration
     config = load_config(args.config)
     
-    # Override config with command-line arguments
-    if args.mode:
-        config["training_mode"] = args.mode
-    
+    # Override/set training_mode to short_term_only
+    config["training_mode"] = "short_term_only" 
+    print(f"Forcing training mode to: {config['training_mode']}")
+
     if args.short_term_model:
         config["short_term_model_path"] = args.short_term_model
     
-    if args.long_term_model:
-        config["long_term_model_path"] = args.long_term_model
+    # if args.long_term_model: # Commented out
+    #     config["long_term_model_path"] = args.long_term_model
     
-    # Print training configuration
     print("\n===== Training Configuration =====")
-    print(f"Training mode: {config.get('training_mode', 'hierarchical')}")
+    print(f"Training mode: {config.get('training_mode')}")
     print(f"Short-term timesteps: {config.get('short_term_timesteps', 500000)}")
-    print(f"Long-term timesteps: {config.get('long_term_timesteps', 200000)}")
-    print(f"Joint timesteps: {config.get('joint_timesteps', 100000)}")
     print("==================================\n")
     
-    # Load prediction models
-    demand_model, price_model = load_prediction_models(config)
+    # Load prediction models (only price_model might be used) - REMOVED
+    # demand_model, price_model = load_prediction_models(config) # demand_model is loaded but not used by simplified env
     
-    # Create environments
-    base_env, long_term_env = create_environments(config, demand_model, price_model)
+    base_env = create_environments(config)
     
-    # Set up callbacks
-    callbacks = setup_callbacks(config)
+    callbacks_dict = setup_callbacks(config)
     
-    # Determine training mode
-    training_mode = config.get("training_mode", "hierarchical")
+    short_term_agent = ShortTermAgent(
+        env=base_env,
+        model_path=config.get("short_term_model_path"),
+        config=config
+    )
     
-    if training_mode == "short_term_only":
-        # Train only the short-term agent
-        short_term_agent = ShortTermAgent(
-            env=base_env,
-            model_path=config.get("short_term_model_path"),
-            config=config
-        )
+    print("\n===== Training Short-Term Agent Only =====")
+    short_term_agent.train(
+        total_timesteps=config.get("short_term_timesteps", 500000),
+        callback=callbacks_dict["short_term"] # Pass the list of callbacks
+    )
+    
+    model_dir = Path(config.get("model_dir", "src/rl/saved_models"))
+    short_term_agent.save(str(model_dir / "short_term_agent_final"))
         
-        print("\n===== Training Short-Term Agent Only =====")
-        short_term_agent.train(
-            total_timesteps=config.get("short_term_timesteps", 500000),
-            callback=callbacks["short_term"]
-        )
-        
-        # Save the final model
-        model_dir = Path(config.get("model_dir", "src/rl/saved_models"))
-        short_term_agent.save(str(model_dir / "short_term_agent_final"))
-        
-    elif training_mode == "long_term_only":
-        # Train only the long-term agent
-        # Load a pre-trained short-term agent if available
-        short_term_model_path = config.get("short_term_model_path")
-        
-        if short_term_model_path and os.path.exists(short_term_model_path):
-            print(f"Using pre-trained short-term agent from {short_term_model_path}")
-            # In a full implementation, we'd use this agent inside the LongTermEnv
-        else:
-            print("Warning: Training long-term agent without a pre-trained short-term agent")
-        
-        long_term_agent = LongTermAgent(
-            env=long_term_env,
-            model_path=config.get("long_term_model_path"),
-            config=config
-        )
-        
-        print("\n===== Training Long-Term Agent Only =====")
-        long_term_agent.train(
-            total_timesteps=config.get("long_term_timesteps", 200000),
-            callback=callbacks["long_term"]
-        )
-        
-        # Save the final model
-        model_dir = Path(config.get("model_dir", "src/rl/saved_models"))
-        long_term_agent.save(str(model_dir / "long_term_agent_final"))
-        
-    else:  # hierarchical (default)
-        # Train the hierarchical system
-        controller = HierarchicalController(
-            config=config,
-            base_env=base_env,
-            short_term_model_path=config.get("short_term_model_path"),
-            long_term_model_path=config.get("long_term_model_path")
-        )
-        
-        print("\n===== Training Hierarchical System =====")
-        controller.train(callbacks=callbacks)
-        
-        # Save the final models
-        controller.save()
-        
-        # Evaluate the trained system
-        if args.evaluate:
-            print("\n===== Evaluating Trained System =====")
-            results = controller.evaluate(num_episodes=5)
-            
-            print("\nEvaluation Results:")
-            for key, value in results.items():
-                print(f"{key}: {value:.4f}")
+    # Hierarchical/Long-term agent training and evaluation sections are removed.
+    # The EvalCallback within short_term_callbacks will handle evaluation of the short-term agent.
+
+    # if args.evaluate: # Commented out, EvalCallback handles this
+    #     print("\n===== Evaluating Trained System =====")
+    #     # Evaluation logic for hierarchical controller was here.
+    #     # For short-term agent, evaluation is part of the EvalCallback.
+    #     # We can print a message about where to find best model.
+    #     print(f"Evaluation performed during training. Best model saved to: {model_dir / 'best_short_term_model'}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train the hierarchical RL system")
+    parser = argparse.ArgumentParser(description="Train the RL system (Simplified: Short-Term Agent Only)")
     
     parser.add_argument(
         "--config", 
@@ -296,30 +283,30 @@ if __name__ == "__main__":
         help="Path to configuration file"
     )
     
-    parser.add_argument(
-        "--mode", 
-        type=str, 
-        choices=["hierarchical", "short_term_only", "long_term_only"],
-        help="Training mode"
-    )
+    # parser.add_argument( # Commented out mode, as it's forced to short_term_only
+    #     "--mode", 
+    #     type=str, 
+    #     choices=["hierarchical", "short_term_only", "long_term_only"],
+    #     help="Training mode (currently forced to short_term_only)"
+    # )
     
     parser.add_argument(
         "--short_term_model", 
         type=str, 
-        help="Path to pre-trained short-term model"
+        help="Path to pre-trained short-term model to continue training"
     )
     
-    parser.add_argument(
-        "--long_term_model", 
-        type=str, 
-        help="Path to pre-trained long-term model"
-    )
+    # parser.add_argument( # Commented out long_term_model argument
+    #     "--long_term_model", 
+    #     type=str, 
+    #     help="Path to pre-trained long-term model"
+    # )
     
-    parser.add_argument(
-        "--evaluate", 
-        action="store_true",
-        help="Evaluate the trained model after training"
-    )
+    # parser.add_argument( # Commented out evaluate, as EvalCallback handles it
+    #     "--evaluate", 
+    #     action="store_true",
+    #     help="Evaluate the trained model after training (handled by EvalCallback)"
+    # )
     
     args = parser.parse_args()
     main(args) 

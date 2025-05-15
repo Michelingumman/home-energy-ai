@@ -100,7 +100,6 @@ Examples:
     python downloadEntityData.py --entity sensor.solar_power_hourly_average --days 1
     python downloadEntityData.py --entity sensor.electricity_consumption --days 7 --res hourly
     python downloadEntityData.py --entity binary_sensor.water_consumption --days 30 --res daily
-    python downloadEntityData.py --entity device_tracker.temperature --days 14
     """
 )
 parser.add_argument('--entity', type=str, default='sensor.solar_power_hourly_average',

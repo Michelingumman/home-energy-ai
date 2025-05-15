@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import logging
 import sys
+from dateutil.parser import parse
 
 # Set up logging
 logging.basicConfig(
@@ -23,8 +24,8 @@ if not TIBBER_TOKEN:
     logger.error("TIBBER_TOKEN not found in api.env file!")
     sys.exit(1)
 
-# CSV file path
-CSV_FILE_PATH = 'data/processed/VillamichelinConsumption.csv'
+# File paths
+CSV_FILE_PATH = 'data/processed/villamichelin/VillamichelinConsumption.csv'
 
 def fetch_tibber_data_paginated(after=None, first=1000):
     """
@@ -188,26 +189,63 @@ def fetch_all_tibber_data():
     logger.info(f"Fetched a total of {len(all_consumption_nodes)} records from {page_count} pages")
     return all_consumption_nodes
 
+def parse_timestamp_strip_timezone(timestamp_str):
+    """
+    Parse a timestamp string to a datetime object, converting to local time (UTC+2) and removing timezone info
+    
+    Args:
+        timestamp_str (str): Timestamp string to parse
+        
+    Returns:
+        datetime: Naive datetime (no timezone) or None on error
+    """
+    if not timestamp_str:
+        logger.error("Received empty timestamp string")
+        return None
+        
+    try:
+        # Parse with dateutil into a Python datetime
+        dt = parse(timestamp_str)
+        
+        # If no timezone, assume UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+            
+        # Convert to local time (UTC+2 for CEST)
+        local_tz = timezone(timedelta(hours=2))
+        dt_local = dt.astimezone(local_tz)
+            
+        # Then remove timezone info completely
+        dt_naive = dt_local.replace(tzinfo=None)
+        
+        return dt_naive
+        
+    except Exception as e:
+        logger.error(f"Failed to parse timestamp '{timestamp_str}': {e}")
+        return None
+
 def fetch_recent_tibber_data(from_datetime):
     """
     Fetch only recent data from a certain point in time
     Uses an optimized approach to avoid fetching all historical data
     
     Args:
-        from_datetime (datetime): Datetime to fetch data from
+        from_datetime (datetime): Datetime to fetch data from (naive)
     
     Returns:
         list: List of consumption data points
     """
+    # Convert to UTC for API request (required for comparison with API data)
+    from_datetime_utc = from_datetime.replace(tzinfo=timezone.utc)
+        
     # Convert to string for logging
-    from_date_str = from_datetime.strftime('%Y-%m-%d %H:%M:%S%z')
+    from_date_str = from_datetime.strftime('%Y-%m-%d %H:%M:%S')
     logger.info(f"Fetching new data since: {from_date_str}")
     
     # Target date (used for checking when to start collecting)
-    target_date = from_datetime.replace(tzinfo=timezone.utc)
+    target_date = from_datetime
     
     # Initialize variables
-    latest_found = None
     new_consumption_nodes = []
     after_cursor = None
     has_more_pages = True
@@ -243,9 +281,16 @@ def fetch_recent_tibber_data(from_datetime):
         first_node = consumption_nodes[0]
         last_node = consumption_nodes[-1]
         
-        first_date = datetime.fromisoformat(first_node['from'].replace('Z', '+00:00'))
-        last_date = datetime.fromisoformat(last_node['from'].replace('Z', '+00:00'))
+        # Parse dates, stripping timezone info
+        first_date = parse_timestamp_strip_timezone(first_node['from'])
+        last_date = parse_timestamp_strip_timezone(last_node['from'])
         
+        # Skip this page if we couldn't parse the dates
+        if first_date is None or last_date is None:
+            logger.warning(f"Skipping page {page_count} due to unparseable dates")
+            after_cursor = end_cursor
+            has_more_pages = has_next_page
+            continue
         
         # If last record is still before our target date, continue skipping
         if last_date < target_date:
@@ -263,8 +308,9 @@ def fetch_recent_tibber_data(from_datetime):
             # Filter and keep only records that are >= target date
             logger.info(f"Found transition page {page_count} with some records after target date.")
             for node in consumption_nodes:
-                node_date = datetime.fromisoformat(node['from'].replace('Z', '+00:00'))
-                if node_date >= target_date:
+                # Parse timestamp, strip timezone
+                node_date = parse_timestamp_strip_timezone(node['from'])
+                if node_date is not None and node_date >= target_date:
                     new_consumption_nodes.append(node)
             found_new_data = True
         
@@ -329,8 +375,14 @@ def process_consumption_data(consumption_data):
     for item in consumption_data:
         if item and 'from' in item and 'consumption' in item:
             try:
+                # Parse timestamp and strip timezone
+                dt = parse_timestamp_strip_timezone(item['from'])
+                if dt is None:
+                    logger.warning(f"Skipping data point with invalid timestamp: {item['from']}")
+                    continue
+                
                 data_list.append({
-                    'timestamp': datetime.fromisoformat(item['from'].replace('Z', '+00:00')),
+                    'timestamp': dt,
                     'consumption': float(item.get('consumption', 0)),
                     'cost': float(item.get('cost', 0)),
                     'unit_price': float(item.get('unitPrice', 0)),
@@ -344,6 +396,15 @@ def process_consumption_data(consumption_data):
         return pd.DataFrame()
         
     df = pd.DataFrame(data_list)
+    
+    # Remove duplicates here before sorting
+    before_dedup = len(df)
+    df.drop_duplicates(subset=['timestamp'], keep='last', inplace=True)
+    after_dedup = len(df)
+    if before_dedup != after_dedup:
+        logger.info(f"Removed {before_dedup - after_dedup} duplicate entries during processing")
+    
+    # Sort by timestamp
     df.sort_values('timestamp', inplace=True)
     return df
 
@@ -358,9 +419,9 @@ def format_datetime_for_tibber(dt):
     Returns:
         str: Formatted date string
     """
-    # If the datetime doesn't have a timezone, assume local and convert to UTC
+    # If the datetime doesn't have a timezone, assume UTC
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)  # Assume it's already UTC if no timezone
+        dt = dt.replace(tzinfo=timezone.utc)
     else:
         # Otherwise, convert to UTC
         dt = dt.astimezone(timezone.utc)
@@ -368,8 +429,60 @@ def format_datetime_for_tibber(dt):
     # Format as ISO with Z (Zulu time / UTC)
     return dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
+def check_data_quality(df):
+    """
+    Check data quality for duplicates and NaN values
+    
+    Args:
+        df (pd.DataFrame): DataFrame to check
+    """
+    logger.info("Checking data quality...")
+    
+    # Check for duplicates
+    duplicates = df.duplicated(subset=['timestamp']).sum()
+    if duplicates > 0:
+        logger.warning(f"Found {duplicates} duplicate timestamps in the data")
+    else:
+        logger.info("No duplicate timestamps found")
+    
+    # Check for NaN values
+    nan_counts = df.isna().sum()
+    total_rows = len(df)
+    
+    for column, nan_count in nan_counts.items():
+        if nan_count > 0:
+            percent = (nan_count / total_rows) * 100
+            logger.warning(f"Column '{column}' has {nan_count} NaN values ({percent:.2f}%)")
+    
+    if nan_counts.sum() == 0:
+        logger.info("No NaN values found in the data")
+    
+    # Check for zero consumption values (could indicate data issues)
+    zero_consumption = (df['consumption'] == 0).sum()
+    if zero_consumption > 0:
+        percent = (zero_consumption / total_rows) * 100
+        logger.info(f"Found {zero_consumption} records with zero consumption ({percent:.2f}%)")
+    
+    # Check for missing hours (gaps in time series)
+    df_sorted = df.sort_values('timestamp')
+    time_diffs = df_sorted['timestamp'].diff().dropna()
+    
+    # Expected difference for hourly data is 1 hour
+    expected_diff = pd.Timedelta(hours=1)
+    gaps = time_diffs[time_diffs > expected_diff]
+    
+    if len(gaps) > 0:
+        logger.warning(f"Found {len(gaps)} gaps in the time series data")
+        for i in range(len(gaps)):
+            idx = gaps.index[i]
+            prev_time = df_sorted.loc[idx-1, 'timestamp']
+            curr_time = df_sorted.loc[idx, 'timestamp']
+            gap_size = curr_time - prev_time
+            logger.warning(f"Gap of {gap_size} between {prev_time} and {curr_time}")
+
 def main():
     logger.info("Starting to fetch consumption data from Tibber API")
+    logger.warning("Using simple approach: timestamps stored without timezone information")
     
     try:
         # Check if the CSV file exists and has data
@@ -378,8 +491,8 @@ def main():
             logger.info("Reading existing consumption data")
             existing_data = pd.read_csv(CSV_FILE_PATH)
             
-            # Convert timestamp to datetime with utc=True to prevent warnings
-            existing_data['timestamp'] = pd.to_datetime(existing_data['timestamp'], utc=True)
+            # Convert timestamp to datetime without timezone
+            existing_data['timestamp'] = pd.to_datetime(existing_data['timestamp'])
             
             # Get the latest timestamp and add 1 hour to avoid duplicates
             latest_timestamp = existing_data['timestamp'].max()
@@ -427,6 +540,9 @@ def main():
             logger.info(f"Total records in the updated file: {len(combined_df)}")
             logger.info(f"Data now covers: {combined_df['timestamp'].min()} to {combined_df['timestamp'].max()}")
             
+            # Check for data quality issues
+            check_data_quality(combined_df)
+            
         else:
             # Fetch all available data
             logger.info("No existing data found. Fetching all available consumption data")
@@ -451,6 +567,9 @@ def main():
             logger.info(f"Consumption data saved to {CSV_FILE_PATH}")
             logger.info(f"Total records: {len(data_df)}")
             logger.info(f"Data covers period: {data_df['timestamp'].min()} to {data_df['timestamp'].max()}")
+            
+            # Check for data quality issues
+            check_data_quality(data_df)
             
     except Exception as e:
         logger.error(f"An error occurred: {e}")

@@ -10,6 +10,7 @@ from pathlib import Path
 # This script fetches the actual solar production data from Home Assistant and merged with the previous data in "ActualSolarProductionData.csv"
 solar_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/solar/actual_data/FetchSolarProductionData.py" 
 
+solar_predictions_script = "C:\_Projects\home-energy-ai\src\predictions\solar\makeSolarPrediction.py"
 # This script fetches the price related data from ElectricityMaps API (grid features) and mgrey.se/espot API (current e-spot price)
 price_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py"
 
@@ -115,6 +116,7 @@ log_message(f"################################## START OF SCRIPT {datetime.datet
 log_summary(f"################################## START OF SCRIPT {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ##################################")
 
 run_script(solar_updateData_script, "Solar Data Update")
+run_script(solar_predictions_script, "Solar Prediction Update")
 run_script(price_updateData_script, "Price Data Update")
 run_script(Co2GasCoal_update_script, "CO2, Gas and Coal Data Update")
 run_script(weather_updateData_script, "Weather Data Update")

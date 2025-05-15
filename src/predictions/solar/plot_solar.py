@@ -33,83 +33,143 @@ def load_single_csv(folder_path: Path) -> pd.DataFrame:
     # Find CSV files directly in the folder. glob without ** won't enter subdirs.
     csv_files = list(folder_path.glob('*.csv'))
 
-    if len(csv_files) == 0:
+    # Prefer 'ActualSolarProductionData.csv' if it's in the list
+    preferred_actual_file_name = "ActualSolarProductionData.csv"
+    preferred_file = next((f for f in csv_files if f.name == preferred_actual_file_name), None)
+
+    if preferred_file:
+        print(f"Found preferred actual data file: {preferred_file.name}")
+        target_file = preferred_file
+    elif len(csv_files) == 0:
         print(f"Info: No CSV file found directly in {folder_path}")
         return None
     elif len(csv_files) > 1:
         # Try to find a file with 'merged' in the name if multiple exist
         merged_files = [f for f in csv_files if 'merged' in f.name.lower()]
         if len(merged_files) == 1:
-            print(f"Found multiple CSV files, using '{merged_files[0].name}' based on name.")
+            print(f"Found multiple CSV files, using '{merged_files[0].name}' based on 'merged' in name.")
             target_file = merged_files[0]
         else:
-            print(f"Warning: Found multiple CSV files directly in {folder_path}. Using the first one found: {csv_files[0].name}")
+            print(f"Warning: Found multiple CSV files in {folder_path}. No '{preferred_actual_file_name}' or single 'merged' file. Using the first one found: {csv_files[0].name}")
             target_file = csv_files[0]
-    else:
+    else: # Only one CSV file
         target_file = csv_files[0]
 
     print(f"Loading data from: {target_file}")
 
     try:
         df = pd.read_csv(target_file)
+        df.columns = df.columns.str.strip() # Clean column names
 
-        # Robustly find timestamp and value columns
-        df.columns = df.columns.str.strip()
-        time_col = next((col for col in df.columns if 'timestamp' in col.lower() or 'time' in col.lower() or 'changed' in col.lower()), None)
-        # Prioritize 'kilowatt_hours', then 'state', then others
-        value_col_options = ['kilowatt_hours', 'kwh', 'state', 'watt_hours', 'value', 'effekt']
-        value_col = None
-        unit_is_watts = False
-        for option in value_col_options:
-            found_col = next((col for col in df.columns if option in col.lower()), None)
+        # Time column detection: Prioritize 'Timestamp', then common variants
+        time_col_candidates = ['Timestamp', 'timestamp', 'time', 'last_changed', 'changed', 'timestamp_utc']
+        time_col = None
+        for candidate in time_col_candidates:
+            if candidate in df.columns: # Check for exact match first (good for 'Timestamp')
+                 time_col = candidate
+                 break
+        if not time_col: # Fallback to case-insensitive substring match if no exact match
+            for candidate in time_col_candidates:
+                found_col_insensitive = next((col for col in df.columns if candidate.lower() in col.lower()), None)
+                if found_col_insensitive:
+                    time_col = found_col_insensitive
+                    break
+        
+        # New strategy for value column:
+        value_col = None # This will be the original name of the column we pick
+        final_value_column_name = 'kilowatt_hours' # Internal name we want to use
+
+        # Attempt 1: Direct kWh columns (solar_production_kwh, kilowatt_hours, kwh)
+        # These are already in kWh and just need to be standardized to `final_value_column_name`
+        direct_kwh_options = ['solar_production_kwh', 'kilowatt_hours', 'kwh']
+        for option in direct_kwh_options:
+            found_col = next((col for col in df.columns if option.lower() == col.lower()), None)
             if found_col:
                 value_col = found_col
-                # Check if the found column implies Watts (needs conversion)
-                if option in ['state', 'watt_hours', 'effekt']:
-                     # Exception: if 'watt_hours' is found but 'kilowatt_hours' also exists, prefer kwh
-                     kwh_col_exists = any('kilowatt_hours' in col.lower() or 'kwh' in col.lower() for col in df.columns)
-                     if option == 'watt_hours' and kwh_col_exists:
-                         continue # Skip watt_hours if kwh exists
-                     unit_is_watts = (option != 'watt_hours') # watt_hours column is usually already energy, 'state'/'effekt' are power (Watts)
-                break # Stop searching once a primary candidate is found
+                print(f"Found direct kWh column: '{value_col}'. Standardizing to '{final_value_column_name}'.")
+                if value_col != final_value_column_name: # Rename if not already the target name
+                    df.rename(columns={value_col: final_value_column_name}, inplace=True)
+                # Ensure value_col reflects the new, standardized name for subsequent operations
+                value_col = final_value_column_name 
+                break
+        
+        # Attempt 2: Power columns (Watts) that need conversion (state, effekt, value)
+        if not value_col: # Only if we haven't found a direct kWh column
+            power_options = ['state', 'effekt', 'value'] 
+            for option in power_options:
+                found_col = next((col for col in df.columns if option.lower() == col.lower()), None)
+                if found_col:
+                    raw_power_col = found_col
+                    print(f"Found power column (Watts): '{raw_power_col}'. Converting to '{final_value_column_name}'.")
+                    df[final_value_column_name] = pd.to_numeric(df[raw_power_col], errors='coerce') / 1000.0
+                    value_col = final_value_column_name # Now refers to the new kWh column
+                    break
+        
+        # Attempt 3: Energy columns (WattHours) that need conversion
+        if not value_col: # Only if we still haven't found a suitable column
+            wh_options = ['watt_hours']
+            for option in wh_options:
+                found_col = next((col for col in df.columns if option.lower() == col.lower()), None)
+                if found_col:
+                    raw_wh_col = found_col
+                    print(f"Found energy column (WattHours): '{raw_wh_col}'. Converting to '{final_value_column_name}'.")
+                    df[final_value_column_name] = pd.to_numeric(df[raw_wh_col], errors='coerce') / 1000.0
+                    value_col = final_value_column_name # Now refers to the new kWh column
+                    break
 
         if not time_col or not value_col:
-            print(f"Error: Could not find required time ('{time_col}') or value ('{value_col}') columns in {target_file}")
+            print(f"Error: Could not find required time or value columns in {target_file}")
+            print(f"  Time column sought (tried exact & substring): {time_col_candidates}")
+            print(f"  Value column sought (direct kWh): {direct_kwh_options}")
+            print(f"  Value column sought (convert from W): {power_options if 'power_options' in locals() else 'not searched'}")
+            print(f"  Value column sought (convert from Wh): {wh_options if 'wh_options' in locals() else 'not searched'}")
+            print(f"  Available columns in file: {list(df.columns)}")
             return None
             
-        print(f"Using columns: Time='{time_col}', Value='{value_col}' from {target_file.name}. Unit is Watts: {unit_is_watts}")
+        # At this point, 'value_col' should be 'kilowatt_hours' if a value was found and processed.
+        print(f"Using columns: Time='{time_col}', Final Value='{value_col}' (as {final_value_column_name}) from {target_file.name}")
 
-        # Convert and process
+        # Convert and process time column
         df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
+        
+        # If timestamps were parsed with timezone information (e.g., from 'Z' indicating UTC)
+        # Convert them to 'Europe/Stockholm' for plotting display
         if pd.api.types.is_datetime64_any_dtype(df[time_col]) and df[time_col].dt.tz is not None:
-            df[time_col] = df[time_col].dt.tz_localize(None)
-
-        df[value_col] = pd.to_numeric(df[value_col], errors='coerce')
-
-        # --- Perform Unit Conversion if necessary ---
-        if unit_is_watts:
-            print(f"Converting column '{value_col}' from Watts to Kilowatt-hours (dividing by 1000).")
-            # Ensure the column is numeric before division
-            if pd.api.types.is_numeric_dtype(df[value_col]):
-                 df['kilowatt_hours'] = df[value_col] / 1000.0
-                 value_col = 'kilowatt_hours' # Update value_col to the new, correct column name
-            else:
-                 print(f"Warning: Cannot convert column '{value_col}' to kWh as it's not numeric.")
-                 # Keep original value_col, potentially problematic later
-                 df['kilowatt_hours'] = df[value_col] # Copy potentially non-numeric data
-        elif value_col != 'kilowatt_hours':
-             # Rename if the original column was already kWh but named differently (e.g., 'kwh')
-             print(f"Renaming value column '{value_col}' to 'kilowatt_hours'")
-             df.rename(columns={value_col: 'kilowatt_hours'}, inplace=True)
-             value_col = 'kilowatt_hours'
+            print(f"INFO: Timestamps in {target_file.name} are timezone-aware ({df[time_col].dt.tz}). Attempting conversion to Europe/Stockholm.")
+            try:
+                df[time_col] = df[time_col].dt.tz_convert('Europe/Stockholm')
+                # After conversion, timestamps are 'Europe/Stockholm' aware. Matplotlib will use this for display.
+                if not df.empty and len(df[time_col]) > 0:
+                    print(f"INFO: Successfully converted timestamps to Europe/Stockholm. Example: {df[time_col].iloc[0]}")
+                else:
+                    print(f"INFO: Successfully converted timestamps to Europe/Stockholm (DataFrame was empty or no rows).")
+            except Exception as e:
+                print(f"WARNING: Error converting timestamps for {target_file.name} to Europe/Stockholm: {e}. Proceeding with original timezone: {df[time_col].dt.tz}.")
         else:
-             # Column is already 'kilowatt_hours', no action needed
-             pass
+            # Timestamps are naive after parsing (e.g. no 'Z' or offset in CSV string, or parsing failed to make it aware)
+            # Assume naive timestamps from forecast files (like merged_predictions.csv)
+            # are intended to be in the local site timezone ('Europe/Stockholm').
+            print(f"INFO: Timestamps in {target_file.name} are naive after pd.to_datetime.")
+            print(f"Attempting to localize them to 'Europe/Stockholm' as they likely represent local time.")
+            try:
+                df[time_col] = df[time_col].dt.tz_localize('Europe/Stockholm', ambiguous='infer', nonexistent='shift_forward')
+                # After localization, timestamps are 'Europe/Stockholm' aware.
+                if not df.empty and len(df[time_col]) > 0:
+                    print(f"INFO: Successfully localized naive timestamps to Europe/Stockholm. Example: {df[time_col].iloc[0]}")
+                else:
+                     print(f"INFO: Successfully localized naive timestamps to Europe/Stockholm (DataFrame was empty or no rows).")
+            except Exception as e:
+                print(f"WARNING: Error localizing naive timestamps for {target_file.name} to Europe/Stockholm: {e}. Proceeding with naive timestamps.")
 
-        # Drop rows where time or the *final* value column conversion failed
+        # Ensure the target value column is numeric; this should be the *final_value_column_name*
+        if value_col not in df.columns:
+             print(f"Critical Error: The target value column '{value_col}' is unexpectedly missing before numeric conversion.")
+             return None
+        df[value_col] = pd.to_numeric(df[value_col], errors='coerce')
+        
+        # Drop rows where time or the final value column conversion failed
         df = df.dropna(subset=[time_col, value_col])
 
-        # Check if essential columns are present before setting index
         if time_col not in df.columns or value_col not in df.columns:
             print(f"Error: Essential columns ('{time_col}', '{value_col}') not found before setting index in {target_file.name}")
             return None
@@ -118,23 +178,52 @@ def load_single_csv(folder_path: Path) -> pd.DataFrame:
         df = df.sort_index()
 
         # Ensure the final 'kilowatt_hours' column exists after all operations
-        if 'kilowatt_hours' not in df.columns:
-             print(f"Error: Column 'kilowatt_hours' not found after processing in {target_file.name}")
+        # value_col should now be final_value_column_name ('kilowatt_hours')
+        if final_value_column_name not in df.columns:
+             print(f"Error: Column '{final_value_column_name}' not found after processing in {target_file.name}. Current value_col is '{value_col}'.")
              return None
 
         # Select only the essential column + add date
-        df_processed = df[['kilowatt_hours']].copy()
+        df_processed = df[[final_value_column_name]].copy() # Use final_value_column_name
         df_processed['date'] = df_processed.index.date
 
         # Handle potential duplicate timestamps (e.g., from merging)
         if df_processed.index.duplicated().any():
             print(f"Found duplicate timestamps in {target_file.name}, aggregating by taking the mean...")
             # Preserve dates associated with the index before grouping
-            dates = df_processed['date'].copy()
-            # Group by index and aggregate numeric columns (should just be kilowatt_hours)
-            df_processed = df_processed.groupby(level=0).mean()
+            dates_for_duplicates = df_processed['date'].copy()
+            
+            # Select only numeric columns for aggregation, then apply mean
+            # This ensures 'date' column (datetime.date objects) isn't included in mean calculation.
+            numeric_cols = df_processed.select_dtypes(include=np.number).columns
+            
+            if not numeric_cols.empty:
+                 df_numeric_aggregated = df_processed[numeric_cols].groupby(level=0).mean()
+                 df_processed = df_numeric_aggregated # Reassign with aggregated numeric data
+            else:
+                 # If there are no numeric columns, handle duplicates by taking the first entry.
+                 # This also preserves the index integrity if numeric_cols was empty.
+                 df_processed = df_processed.loc[~df_processed.index.duplicated(keep='first')].copy()
+                 # df_processed will retain non-numeric columns here if they existed beyond 'date'.
+
             # Reapply the date information. Use the first date found for duplicates.
-            df_processed['date'] = dates.groupby(level=0).first()
+            # Ensure the index of df_processed is used for reindexing dates.
+            if not df_processed.empty:
+                 # If dates_for_duplicates is not empty, group it and reindex.
+                 # Otherwise, if df_processed has an index, try to infer dates (should not happen if dates_for_duplicates was populated).
+                 if not dates_for_duplicates.empty:
+                    df_processed['date'] = dates_for_duplicates.groupby(level=0).first().reindex(df_processed.index)
+                 elif df_processed.index.name is not None: # Fallback: if index has dates (e.g. DatetimeIndex)
+                    df_processed['date'] = df_processed.index.date
+                 # If df_processed is empty now (e.g. all numeric were NaN and numeric_cols was empty), this will not add 'date' column which is fine.
+            elif not dates_for_duplicates.empty :
+                 # This case means df_processed became empty (e.g., all numeric data was NaN and numeric_cols was not empty, or numeric_cols was empty and then .loc resulted in empty).
+                 # Create an empty df with the correct index and date column to prevent errors later if 'date' is expected.
+                 unique_index_from_dates = dates_for_duplicates.index[~dates_for_duplicates.index.duplicated(keep='first')]
+                 if not unique_index_from_dates.empty:
+                    df_processed = pd.DataFrame(index=unique_index_from_dates)
+                    df_processed['date'] = dates_for_duplicates.groupby(level=0).first().reindex(df_processed.index)
+                 # If unique_index_from_dates is also empty, df_processed remains empty.
 
         print(f"Successfully loaded {len(df_processed)} rows from {target_file.name}")
         return df_processed
@@ -633,10 +722,12 @@ def plot_daily_summary(data, output_path=None, period_name="Period", show_plot: 
         title_date = f'{start_date_str} to {end_date_str}'
     else:
         title_date = "Selected Period"
-        title = f'Solar Energy Production - {title_date}'
-        subtitle = 'Daily Totals (kWh)'
     
-    ax.set_title(f'{title}\n{subtitle}', fontsize=16, fontweight='bold', pad=20)
+    # Define title and subtitle outside the if/else block
+    title = f'Solar Energy Production - {title_date}'
+    subtitle = 'Daily Totals (kWh)'
+    
+    ax.set_title(f'{title}\\n{subtitle}', fontsize=16, fontweight='bold', pad=20)
     ax.set_ylabel('Energy Production (kWh)', fontsize=12, labelpad=10)
     
     # Add grid and set color
@@ -772,12 +863,13 @@ def plot_heatmap(data, output_path=None, period_name="Period", show_plot: bool =
     max_val = pivot_df.values.max()
     # Only add text if value > 0 and number of days is reasonable
     add_text = num_days <= 31 # Avoid clutter for very long ranges
-    if add_text and max_val > 0:
-        threshold = max_val * 0.05 # Show values above 5% of max
-    for i in range(len(pivot_df)):
-        for j in range(len(pivot_df.columns)):
-            value = pivot_df.iloc[i, j]
-            if value > threshold:
+    
+    if add_text and max_val > 0: # Only proceed if we want to add text and have a positive max value
+        threshold = max_val * 0.05 # Define threshold here
+        for i in range(len(pivot_df)):
+            for j in range(len(pivot_df.columns)):
+                value = pivot_df.iloc[i, j]
+                if value > threshold: # Now threshold is guaranteed to be defined
                     # Adjust text color based on background intensity
                     text_color = 'white' if value > max_val * 0.6 else 'black'
                     ax.text(j, i, f"{value:.1f}", ha="center", va="center", color=text_color, fontsize=7, clip_on=True)

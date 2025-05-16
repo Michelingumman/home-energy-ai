@@ -21,7 +21,8 @@ random_seed: int = 42                   # Seed for random number generators for 
 # Training process control
 checkpoint_freq: int = 100_000  # Timesteps: How often to save a model checkpoint during training
 eval_freq: int = 50_000     # Timesteps: How often to run evaluation during training
-eval_episodes: int = 10       # Number of episodes to run for each evaluation cycle
+eval_episodes: int = 20       # Number of episodes to run for each evaluation cycle
+step_debug_logging_enabled: bool = False # If True, enables verbose logger.debug() calls within the environment's step method for detailed debugging.
 
 
 # ==============================================================================
@@ -35,8 +36,7 @@ battery_degradation_cost_per_kwh: float = 45.0  # Cost units per kWh of battery 
 
 # --- Simulation Time & Conditions ---
 simulation_days: int = 60      # Days: Length of a single training episode
-random_weather: bool = True    # Whether to use randomized weather data during training
-fixed_baseload_kw: float = 0.5 # kW: Constant household demand if variable consumption is not used
+fixed_baseload_kw: float = 1.0 # kW: Constant household demand if variable consumption is not used
 
 # --- Price Data Configuration (Training) ---
 use_price_model_train: bool = False         # If True, use the ML price model; if False, use historical/predicted prices from CSV
@@ -57,7 +57,7 @@ solar_data_path_train: str = "src/predictions/solar/actual_data/ActualSolarProdu
 # ==============================================================================
 # Configuration for the simulation environment when evaluating the agent
 
-simulation_days_eval: int = 14       # Days: Length of a single evaluation episode
+simulation_days_eval: int = 30       # Days: Length of a single evaluation episode
 random_weather_eval: bool = False    # Whether to use randomized weather data during evaluation
 
 # --- Price Data Configuration (Evaluation) ---
@@ -78,9 +78,9 @@ solar_data_path_eval: str = "src/predictions/solar/actual_data/ActualSolarProduc
 soc_action_penalty_val: float = -100.0  # Penalty for illegal State of Charge actions (e.g., charging a full battery)
 
 # --- Peak Demand Penalties ---
-peak_threshold_kw: float = 6.0          # kW: Threshold above which peak demand penalty applies
-peak_penalty_factor: float = 50.0         # Multiplier for the peak penalty component (original value in file was 5.0, but was 10.0 in other places, using 10.0 from eval script for consistency example)
-peak_penalty_scale_factor: float = 10.0  # Scaling factor for the peak penalty term in the total reward calculation
+peak_threshold_kw: float = 5.0          # kW: Threshold above which peak demand penalty applies
+peak_penalty_factor: float = 30.0         # Multiplier for the peak penalty component (original value in file was 5.0, but was 10.0 in other places, using 10.0 from eval script for consistency example)
+peak_penalty_scale_factor: float = 100.0  # Scaling factor for the peak penalty term in the total reward calculation
 
 # --- Export Limitation ---
 export_peak_threshold_kw: float = 20.0  # kW: Maximum total power (solar + battery) that can be exported to the grid (25A * 230V * 3 phases ≈ 17.25kW)
@@ -90,18 +90,18 @@ apply_swedish_night_discount: bool = True  # Whether to apply the Swedish night-
 night_discount_factor: float = 0.5  # Price is multiplied by this factor during night hours (default: 0.5 = 50% discount)
 
 # --- Battery Degradation Cost ---
-battery_cost_scale_factor: float = 0.5  # Scaling factor for battery degradation cost in the total reward calculation
+battery_cost_scale_factor: float = 1.0  # Scaling factor for battery degradation cost in the total reward calculation
 
 # --- Price Arbitrage Bonuses (Charging) ---
-charge_bonus_threshold_price: float = 20.0  # öre/kWh: Price below which charging the battery receives a bonus
-charge_bonus_multiplier: float = 200.0       # Multiplier for the charging bonus
+charge_bonus_threshold_price: float = 10.0  # öre/kWh: Price below which charging the battery receives a bonus
+charge_bonus_multiplier: float = 500.0       # Multiplier for the charging bonus
 
 # --- Price Arbitrage Bonuses (Discharging) ---
-discharge_bonus_threshold_price_moderate: float = 60.0  # öre/kWh: Moderate price above which discharging receives a bonus
-discharge_bonus_multiplier_moderate: float = 250.0        # Multiplier for the moderate discharge bonus
+discharge_bonus_threshold_price_moderate: float = 100.0  # öre/kWh: Moderate price above which discharging receives a bonus
+discharge_bonus_multiplier_moderate: float = 550.0        # Multiplier for the moderate discharge bonus
 
-discharge_bonus_threshold_price_high: float = 100.0  # öre/kWh: High price above which discharging receives a larger bonus
-discharge_bonus_multiplier_high: float = 400.0        # Multiplier for the high discharge bonus
+discharge_bonus_threshold_price_high: float = 150.0  # öre/kWh: High price above which discharging receives a larger bonus
+discharge_bonus_multiplier_high: float = 1000.0        # Multiplier for the high discharge bonus
 
 
 # ==============================================================================
@@ -109,12 +109,12 @@ discharge_bonus_multiplier_high: float = 400.0        # Multiplier for the high 
 # ==============================================================================
 # Configuration specific to the short-term Proximal Policy Optimization (PPO) agent
 
-short_term_learning_rate: float = 1e-5   # Learning rate for the PPO optimizer
+short_term_learning_rate: float = 1e-4   # Learning rate for the PPO optimizer
 short_term_gamma: float = 0.998          # Discount factor for future rewards
 short_term_n_steps: int = 2048           # Number of steps to run for each environment per update (collects data for this many steps)
-short_term_batch_size: int = 256          # Minibatch size for PPO updates
+short_term_batch_size: int = 64          # Minibatch size for PPO updates
 short_term_n_epochs: int = 20            # Number of epochs when optimizing the PPO surrogate loss
-short_term_timesteps: int = 5000000        # Total number of timesteps to train the short-term agent
+short_term_timesteps: int = 50000        # Total number of timesteps to train the short-term agent
 
 
 # ==============================================================================

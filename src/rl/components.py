@@ -139,12 +139,3 @@ class Battery:
         """
         self.soc = initial_soc if initial_soc is not None else (self.min_soc + self.max_soc) / 2
         # Note: We don't reset cycle_count and energy_throughput as those are cumulative
-
-# Remove duplicate class definitions that start here (IF THEY EXISTED - this is a safeguard)
-# # class Appliance:
-# #     \"\"\"Represents a household appliance with power requirements and constraints.\"\"\"
-# #     ...
-# # 
-# # class ApplianceManager:
-# #     \"\"\"Manages multiple appliances, their states, and power consumption.\"\"\"
-# #     ... 

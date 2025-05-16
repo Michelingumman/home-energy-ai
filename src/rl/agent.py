@@ -115,4 +115,3 @@ class ShortTermAgent:
         """
         self.model.save(path)
         print(f"Saved short-term model to {path}")
-

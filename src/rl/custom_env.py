@@ -62,6 +62,8 @@ class HomeEnergyEnv(gym.Env):
         self.config = config if config is not None else {}
         
         # Set up logger level if specified in config
+        # This logger level primarily affects pre-training/initialization logs from this class.
+        # Debug logs within the step() method will be controlled by step_debug_logging_enabled.
         if self.config.get("log_level"):
             log_level = self.config.get("log_level")
             # Convert string level to actual logging level
@@ -73,6 +75,8 @@ class HomeEnergyEnv(gym.Env):
                 
         # Flag to enable/disable timestamp sanity check prints
         self.debug_prints = self.config.get("debug_prints", False)
+        # Flag to control verbose debug logging within the step method for performance
+        self._step_debug_logging_enabled = self.config.get("step_debug_logging_enabled", False)
                 
         logger.info("\n{:=^80}".format(" Initializing HomeEnergyEnv "))
 
@@ -375,253 +379,181 @@ class HomeEnergyEnv(gym.Env):
     
     def step(self, action: Union[np.ndarray, Dict]) -> Tuple[Dict, float, bool, bool, Dict]:
         current_timestamp = self.start_datetime + datetime.timedelta(hours=self.current_step * self.time_step_hours)
-        logger.debug(f"\n--- Step {self.current_step} --- Timestamp: {current_timestamp} ---")
+        if self._step_debug_logging_enabled:
+            logger.debug(f"\n--- Step {self.current_step} --- Timestamp: {current_timestamp} ---")
         
         battery_action = float(action[0] if isinstance(action, np.ndarray) and action.ndim > 0 else action)
         self.last_action = battery_action
-        logger.debug(f"  Action received: {battery_action:.4f}")
+        if self._step_debug_logging_enabled:
+            logger.debug(f"  Action received: {battery_action:.4f}")
         
-        # SoC action penalties are no longer needed as we've implemented hard constraints
-        # in the _handle_battery_action method
-        soc_action_penalty = 0.0
-
+        # Call modified _handle_battery_action
+        # It now returns 'attempted_soc_violation' instead of 'constraint_applied'
+        # and no longer applies hard SoC constraints or grid export constraints internally for action clipping.
         battery_info = self._handle_battery_action(battery_action)
-        # battery_info already logs its details
-        
-        # Re-implement penalty for attempted constraint violations
-        # Add the penalty if the agent attempted an invalid action (that required constraint enforcement)
-        if battery_info.get("constraint_applied", False):
-            soc_action_penalty_factor = self.config.get("soc_action_penalty_val", -500.0)
-            soc_action_penalty = soc_action_penalty_factor * abs(battery_action)
-            logger.debug(f"  Applied SoC action penalty: {soc_action_penalty:.4f} for attempted constraint violation")
-        else:
-            soc_action_penalty = 0.0
+        battery_power_kw = battery_info["power_kw"] # Actual power after battery's physical limits
+        battery_degradation_cost = battery_info.get("degradation_cost", 0.0)
+        attempted_soc_violation = battery_info.get("attempted_soc_violation", False)
 
+        # Get current environmental states
         current_price = self.price_forecast_actual[self.current_step]
-        logger.debug(f"  Current Price: {current_price:.2f} öre/kWh")
+        if self._step_debug_logging_enabled:
+            logger.debug(f"  Current Price: {current_price:.2f} öre/kWh")
         
         current_solar_production_kw = 0.0
         if self.use_solar_predictions and self.solar_forecast_actual is not None:
             current_solar_production_kw = self.solar_forecast_actual[self.current_step]
-            # Ensure solar production is not negative (can happen with faulty data or ffill at start)
             current_solar_production_kw = max(0.0, current_solar_production_kw)
-        logger.debug(f"  Current Solar Production: {current_solar_production_kw:.2f} kW")
+        if self._step_debug_logging_enabled:
+            logger.debug(f"  Current Solar Production: {current_solar_production_kw:.2f} kW")
         
         if self.use_variable_consumption and self.episode_consumption_kw is not None:
             current_demand_kw = self.episode_consumption_kw[self.current_step]
-        else: # Fallback or fixed mode
+        else:
             current_demand_kw = self.fixed_baseload_kw
         
-        base_demand_kw = current_demand_kw # For logging consistency and if needed elsewhere
-        net_load_before_battery = current_demand_kw - current_solar_production_kw # Subtract solar
-        logger.debug(f"  Current Demand (Gross): {current_demand_kw:.2f} kW")
-        logger.debug(f"  Net Load Before Battery (Demand - Solar): {net_load_before_battery:.2f} kW")
+        base_demand_kw = current_demand_kw 
+        net_load_before_battery = current_demand_kw - current_solar_production_kw
+        if self._step_debug_logging_enabled:
+            logger.debug(f"  Current Demand (Gross): {current_demand_kw:.2f} kW")
+            logger.debug(f"  Net Load Before Battery (Demand - Solar): {net_load_before_battery:.2f} kW")
+            logger.debug(f"  Battery Power (from _handle_battery_action): {battery_power_kw:.2f} kW (Neg=Charge, Pos=Discharge)")
+        
+        grid_power_kw = net_load_before_battery - battery_power_kw # Positive for import, negative for export
+        if self._step_debug_logging_enabled:
+            logger.debug(f"  Grid Power: {grid_power_kw:.2f} kW (Neg=Export, Pos=Import)")
 
-        battery_power_kw = battery_info["power_kw"]
-        # Logged in _handle_battery_action, but good to see in context too
-        logger.debug(f"  Battery Power: {battery_power_kw:.2f} kW (Neg=Charge, Pos=Discharge)")
+        # Calculate reward using the new centralized method
+        reward, reward_components = self._calculate_reward(
+            battery_power_kw=battery_power_kw,
+            degradation_cost=battery_degradation_cost,
+            grid_power_kw=grid_power_kw,
+            current_price=current_price,
+            attempted_soc_violation=attempted_soc_violation,
+            time_step_hours=self.time_step_hours
+        )
         
-        grid_power_kw = net_load_before_battery - battery_power_kw
-        logger.debug(f"  Grid Power: {grid_power_kw:.2f} kW (Neg=Export, Pos=Import)")
+        if self._step_debug_logging_enabled:
+            logger.debug(f"  Total Reward for step (from _calculate_reward): {reward:.4f}")
+
+        # Update histories (grid_cost is now part of reward_components)
+        # The 'reward_grid_cost' from reward_components is -actual_grid_cost_value.
+        # So, actual_grid_cost_value is -reward_components['reward_grid_cost'].
+        actual_grid_cost_value = -reward_components.get('reward_grid_cost', 0.0)
+        self.price_history.append(current_price)
+        self.grid_cost_history.append(actual_grid_cost_value) # Store the actual cost
+        self.battery_cost_history.append(battery_degradation_cost) # Store actual degradation cost
+        self.total_cost += actual_grid_cost_value # Accumulate actual cost
         
-        grid_energy_kwh = grid_power_kw * self.time_step_hours
-        grid_cost = grid_energy_kwh * current_price
-        logger.debug(f"  Grid Cost for step: {grid_cost:.4f}")
-        
-        battery_cost = battery_info.get("degradation_cost", 0.0)
-        # Logged in _handle_battery_action
-        
-        # Get peak_threshold_kw from config, default to 5.0
-        peak_thresh_kw = self.config.get("peak_threshold_kw", 5.0)
-        peak_penalty_factor = self.config.get("peak_penalty_factor", 5.0)
-        peak_penalty = 0
-        if grid_power_kw > peak_thresh_kw:
-             peak_penalty = -peak_penalty_factor * (grid_power_kw - peak_thresh_kw) * self.time_step_hours
-        
-        if grid_power_kw > self.peak_power:
+        if grid_power_kw > self.peak_power: # Keep track of peak import
             self.peak_power = grid_power_kw
 
-        # Get scaling factors from config
-        battery_cost_scale = self.config.get("battery_cost_scale_factor", 1.0)
-        peak_penalty_scale = self.config.get("peak_penalty_scale_factor", 0.5)
-
-        scaled_battery_cost = battery_cost * battery_cost_scale
-        scaled_peak_penalty = peak_penalty * peak_penalty_scale
-        
-        price_arbitrage_bonus = 0
-        
-        # Get arbitrage parameters from config
-        charge_thresh_price = self.config.get("charge_bonus_threshold_price", 20.0)
-        charge_multiplier = self.config.get("charge_bonus_multiplier", 5.0)
-        discharge_thresh_moderate = self.config.get("discharge_bonus_threshold_price_moderate", 50.0)
-        discharge_multiplier_moderate = self.config.get("discharge_bonus_multiplier_moderate", 10.0)
-        discharge_thresh_high = self.config.get("discharge_bonus_threshold_price_high", 100.0)
-        discharge_multiplier_high = self.config.get("discharge_bonus_multiplier_high", 25.0)
-
-        # === START DETAILED LOGGING FOR REWARD DEBUGGING ===
-        logger.debug(f"  REWARD_DEBUG: --- Config Values Used This Step ---")
-        logger.debug(f"  REWARD_DEBUG: charge_thresh_price: {charge_thresh_price}")
-        logger.debug(f"  REWARD_DEBUG: charge_multiplier: {charge_multiplier}")
-        logger.debug(f"  REWARD_DEBUG: discharge_thresh_moderate: {discharge_thresh_moderate}")
-        logger.debug(f"  REWARD_DEBUG: discharge_multiplier_moderate: {discharge_multiplier_moderate}")
-        logger.debug(f"  REWARD_DEBUG: discharge_thresh_high: {discharge_thresh_high}")
-        logger.debug(f"  REWARD_DEBUG: discharge_multiplier_high: {discharge_multiplier_high}")
-        logger.debug(f"  REWARD_DEBUG: battery_cost_scale_factor: {battery_cost_scale}")
-        logger.debug(f"  REWARD_DEBUG: peak_penalty_scale_factor: {peak_penalty_scale}")
-        logger.debug(f"  REWARD_DEBUG: peak_threshold_kw (config): {peak_thresh_kw}")
-        logger.debug(f"  REWARD_DEBUG: peak_penalty_factor (config): {peak_penalty_factor}")
-        logger.debug(f"  REWARD_DEBUG: battery_degradation_cost_per_kwh (battery init): {self.battery.degradation_cost_per_kwh}")
-        logger.debug(f"  REWARD_DEBUG: --- Intermediate Values ---")
-        logger.debug(f"  REWARD_DEBUG: current_price: {current_price:.4f}")
-        logger.debug(f"  REWARD_DEBUG: battery_power_kw: {battery_power_kw:.4f}")
-        logger.debug(f"  REWARD_DEBUG: grid_power_kw: {grid_power_kw:.4f}")
-        logger.debug(f"  REWARD_DEBUG: grid_energy_kwh: {grid_energy_kwh:.4f}")
-        logger.debug(f"  REWARD_DEBUG: raw_grid_cost: {grid_cost:.4f}")
-        logger.debug(f"  REWARD_DEBUG: raw_battery_cost (degradation): {battery_cost:.4f}")
-        logger.debug(f"  REWARD_DEBUG: raw_peak_penalty: {peak_penalty:.4f}")
-        # === END DETAILED LOGGING FOR REWARD DEBUGGING ===
-
-        if battery_power_kw < 0 and current_price < charge_thresh_price:
-            price_arbitrage_bonus = charge_multiplier * abs(battery_power_kw) * self.time_step_hours
-        elif battery_power_kw > 0 and current_price > discharge_thresh_moderate:
-             price_arbitrage_bonus = discharge_multiplier_moderate * battery_power_kw * self.time_step_hours
-        if battery_power_kw > 0 and current_price > discharge_thresh_high: # Additional bonus for very high prices
-             price_arbitrage_bonus += discharge_multiplier_high * battery_power_kw * self.time_step_hours # Note: This logic means high bonus can stack if > moderate & > high
-        
-        # === DETAILED LOGGING FOR REWARD COMPONENTS ===
-        logger.debug(f"  REWARD_DEBUG: --- Final Reward Component Values ---")
-        logger.debug(f"  REWARD_DEBUG: Term (-grid_cost): {-grid_cost:.4f}")
-        logger.debug(f"  REWARD_DEBUG: Term (scaled_peak_penalty): {scaled_peak_penalty:.4f}")
-        logger.debug(f"  REWARD_DEBUG: Term (-scaled_battery_cost): {-scaled_battery_cost:.4f}")
-        logger.debug(f"  REWARD_DEBUG: Term (price_arbitrage_bonus): {price_arbitrage_bonus:.4f}")
-        logger.debug(f"  REWARD_DEBUG: Term (soc_action_penalty): {soc_action_penalty:.4f}")
-        # === END DETAILED LOGGING FOR REWARD COMPONENTS ===
-
-        reward = -grid_cost + scaled_peak_penalty - scaled_battery_cost + price_arbitrage_bonus + soc_action_penalty
-        logger.debug(f"  Reward Components: GridCostTerm ({-grid_cost:.4f}), PeakPenaltyTerm ({scaled_peak_penalty:.4f}), ScaledBatteryCostTerm ({-scaled_battery_cost:.4f}), ArbitrageBonus ({price_arbitrage_bonus:.4f}), SoCActionPenalty ({soc_action_penalty:.4f})")
-        logger.debug(f"  Total Reward for step: {reward:.4f}")
-        
-        self.price_history.append(current_price)
-        self.grid_cost_history.append(grid_cost)
-        self.battery_cost_history.append(battery_cost)
-        self.total_cost += grid_cost
-        
         self.current_step += 1
         terminated = self.current_step >= self.simulation_steps
-        truncated = False
+        truncated = False # Not using truncation based on other factors for now
         
         observation = self._get_observation()
         info = self._get_info()
-        info.update(battery_info)
+        
+        # Update info with all relevant data for logging and evaluation
+        info.update(battery_info) # Includes new SoC, actual power_kw, degradation_cost, attempted_soc_violation
+        
         info["current_price"] = current_price
         info["grid_power_kw"] = grid_power_kw
-        info["base_demand_kw"] = base_demand_kw
-        info["battery_cost"] = battery_cost
+        info["base_demand_kw"] = base_demand_kw # Gross household demand
         info["current_solar_production_kw"] = current_solar_production_kw
+        info["is_night_discount"] = self.is_night_discount[self.current_step -1] if hasattr(self, 'is_night_discount') and self.current_step > 0 else False
         
-        # Add night discount information for visualization
-        if hasattr(self, 'is_night_discount') and self.current_step < len(self.is_night_discount):
-            info["is_night_discount"] = self.is_night_discount[self.current_step]
-        else:
-            info["is_night_discount"] = False
+        # Add all reward components to info, evaluate_agent.py expects these specific keys
+        info.update(reward_components)
         
-        # Store individual reward components in info dict for logging/evaluation
-        info["reward_grid_cost"] = -grid_cost
-        info["reward_peak_penalty"] = scaled_peak_penalty
-        info["reward_battery_cost"] = -scaled_battery_cost # Note: battery_cost itself is positive, term is negative
-        info["reward_arbitrage_bonus"] = price_arbitrage_bonus
-        info["reward_soc_action_penalty"] = soc_action_penalty
-        
-        if self.render_mode == "human":
-            self.render()
-        
+        if self._step_debug_logging_enabled:
+            logger.debug(f"  Step {self.current_step-1} completed. Terminated: {terminated}, Truncated: {truncated}")
+            logger.debug(f"  Returned Info: {info}")
+
         return observation, reward, terminated, truncated, info
     
     def _handle_battery_action(self, battery_action: float) -> Dict:
         duration_hours = self.time_step_hours
         actual_power_kw = 0.0
         degradation_cost = 0.0
-        constraint_applied = False
+        attempted_soc_violation = False # New flag
 
-        logger.debug(f"  _handle_battery_action: Input action: {battery_action:.4f}")
+        if self._step_debug_logging_enabled:
+            logger.debug(f"  _handle_battery_action: Input action: {battery_action:.4f}, Current SoC: {self.battery.soc:.4f}")
 
-        # Get current demand and solar production to calculate export constraints
-        if self.use_variable_consumption and self.episode_consumption_kw is not None:
-            current_demand_kw = self.episode_consumption_kw[self.current_step]
-        else:
-            current_demand_kw = self.fixed_baseload_kw
-        
-        if self.use_solar_predictions and self.solar_forecast_actual is not None:
-            current_solar_kw = max(0.0, self.solar_forecast_actual[self.current_step])
-        else:
-            current_solar_kw = 0.0
-        
-        net_load = current_demand_kw - current_solar_kw
-        
-        # Get export threshold from config or use default (use absolute value for clarity)
-        export_peak_thresh_kw = abs(self.config.get("export_peak_threshold_kw", 20.0))
-        
-        # Calculate maximum safe discharge to avoid overloading grid export
-        # If net_load is -10 (exporting 10kW solar) and threshold is 20kW, 
-        # we can safely discharge max 10kW more from battery
-        max_safe_discharge_kw = max(0.0, export_peak_thresh_kw + net_load)
-        
-        if battery_action < 0:  # Charge
-            # Skip charging if battery is already at max_soc (hard constraint)
-            if self.battery.soc >= self.battery.max_soc:
-                logger.debug(f"    Battery already at max SoC ({self.battery.soc:.4f}). Charging request ignored.")
-                constraint_applied = True
-                return {
-                    "power_kw": 0.0,
-                    "degradation_cost": 0.0,
-                    "soc": self.battery.soc,
-                    "constraint_applied": constraint_applied
-                }
-                
+        # Convert current SoC (0-1) to energy (kWh) for checking violations accurately
+        # Assuming self.battery.capacity is the total capacity in kWh
+        # And self.battery.soc is a fraction (0 to 1)
+        # min_energy_kwh = self.battery.min_soc * self.battery.capacity_kwh (effectively 0 if min_soc is 0)
+        # max_energy_kwh = self.battery.max_soc * self.battery.capacity_kwh (effectively capacity if max_soc is 1)
+        # For simplicity, let's assume self.battery.charge/discharge handles internal energy directly
+        # and we use soc for checks. min_soc=0, max_soc=1 for typical usage.
+
+        if battery_action < 0:  # Agent wants to charge
             requested_charge_power_kw = -battery_action * self.battery.max_charge_rate
-            logger.debug(f"    Attempting Charge: Requested Power = {requested_charge_power_kw:.2f} kW")
+            if self._step_debug_logging_enabled:
+                logger.debug(f"    Attempting Charge: Requested Power = {requested_charge_power_kw:.2f} kW")
+            
+            # Check for attempted violation BEFORE calling charge
+            # If current SoC is already at max (e.g., 1.0), any charge attempt is a violation
+            if self.battery.soc >= self.battery.max_soc: # max_soc is likely 1.0
+                 if requested_charge_power_kw > 1e-3: # Only a violation if trying to charge significantly
+                    attempted_soc_violation = True
+                    if self._step_debug_logging_enabled:
+                        logger.debug(f"    Attempted SoC Violation (Charge): SoC ({self.battery.soc:.4f}) is at/above max_soc ({self.battery.max_soc:.4f}) but charge was requested.")
+            
+            # The battery.charge method should internally handle not exceeding capacity
+            # and return the actual energy charged.
             requested_charge_energy_kwh = requested_charge_power_kw * duration_hours
             actual_charged_kwh, degradation_cost = self.battery.charge(
                 amount_kwh=requested_charge_energy_kwh, hours=duration_hours
             )
-            actual_power_kw = -actual_charged_kwh / duration_hours
+            if duration_hours > 0:
+                actual_power_kw = -actual_charged_kwh / duration_hours
+            else:
+                actual_power_kw = 0.0
             
-        elif battery_action > 0:  # Discharge
-            # Skip discharging if battery is already at min_soc (hard constraint)
-            if self.battery.soc <= self.battery.min_soc:
-                logger.debug(f"    Battery already at min SoC ({self.battery.soc:.4f}). Discharge request ignored.")
-                constraint_applied = True
-                return {
-                    "power_kw": 0.0,
-                    "degradation_cost": 0.0,
-                    "soc": self.battery.soc,
-                    "constraint_applied": constraint_applied
-                }
-            
-            # Limit discharge based on grid export threshold
+        elif battery_action > 0:  # Agent wants to discharge
             requested_discharge_power_kw = battery_action * self.battery.max_discharge_rate
-            # Apply grid export constraint - limit discharge to avoid overloading
-            constrained_discharge_power_kw = min(requested_discharge_power_kw, max_safe_discharge_kw)
+            if self._step_debug_logging_enabled:
+                logger.debug(f"    Attempting Discharge: Requested Power = {requested_discharge_power_kw:.2f} kW")
+
+            # Check for attempted violation BEFORE calling discharge
+            # If current SoC is at min (e.g., 0.0), any discharge attempt is a violation
+            if self.battery.soc <= self.battery.min_soc: # min_soc is likely 0.0
+                if requested_discharge_power_kw > 1e-3: # Only a violation if trying to discharge significantly
+                    attempted_soc_violation = True
+                    if self._step_debug_logging_enabled:
+                        logger.debug(f"    Attempted SoC Violation (Discharge): SoC ({self.battery.soc:.4f}) is at/below min_soc ({self.battery.min_soc:.4f}) but discharge was requested.")
+
+            # REMOVED: Grid export constraint based on `max_safe_discharge_kw`
+            # The penalty for excessive export will be handled by the reward function.
             
-            if constrained_discharge_power_kw < requested_discharge_power_kw:
-                logger.debug(f"    Grid export constraint applied: Reduced discharge from {requested_discharge_power_kw:.2f} kW to {constrained_discharge_power_kw:.2f} kW")
-                constraint_applied = True
-            
-            logger.debug(f"    Attempting Discharge: Requested Power = {constrained_discharge_power_kw:.2f} kW (original: {requested_discharge_power_kw:.2f} kW)")
-            requested_discharge_energy_kwh = constrained_discharge_power_kw * duration_hours
+            # The battery.discharge method should internally handle not going below min SoC
+            # and return the actual energy discharged.
+            requested_discharge_energy_kwh = requested_discharge_power_kw * duration_hours
             actual_discharged_kwh, degradation_cost = self.battery.discharge(
                 amount_kwh=requested_discharge_energy_kwh, hours=duration_hours
             )
-            actual_power_kw = actual_discharged_kwh / duration_hours
-        else:
-            logger.debug(f"    Battery Idle Action (0.0)")
+            if duration_hours > 0:
+                actual_power_kw = actual_discharged_kwh / duration_hours
+            else:
+                actual_power_kw = 0.0
+        else: # battery_action is 0 or very close to 0
+            if self._step_debug_logging_enabled:
+                logger.debug(f"    Battery Idle Action (near 0.0)")
+            actual_power_kw = 0.0
+            degradation_cost = 0.0
 
-        logger.debug(f"    _handle_battery_action Result: Actual Power = {actual_power_kw:.2f} kW, Degradation Cost = {degradation_cost:.4f}, New SoC = {self.battery.soc:.4f}")
+        if self._step_debug_logging_enabled:
+            logger.debug(f"    _handle_battery_action Result: Actual Power = {actual_power_kw:.2f} kW, Degradation Cost = {degradation_cost:.4f}, New SoC = {self.battery.soc:.4f}, Attempted Violation: {attempted_soc_violation}")
+        
         return {
             "power_kw": actual_power_kw,
             "degradation_cost": degradation_cost,
-            "soc": self.battery.soc,
-            "constraint_applied": constraint_applied
+            "soc": self.battery.soc, # Return the new SoC after the action
+            "attempted_soc_violation": attempted_soc_violation # New flag
         }
     
     def _initialize_forecasts(self) -> None:
@@ -1100,6 +1032,118 @@ class HomeEnergyEnv(gym.Env):
         else:
             logger.warning(f"Consumption data file {file_path_to_load} not found or is not a file.")
             self.all_consumption_data_kw = None
+
+    def _calculate_reward(self, 
+                          battery_power_kw: float, 
+                          degradation_cost: float, 
+                          grid_power_kw: float, 
+                          current_price: float, 
+                          attempted_soc_violation: bool,
+                          time_step_hours: float) -> Tuple[float, Dict]:
+        """
+        Calculates the reward for the current step based on various factors.
+        All reward components are calculated such that they can be summed directly
+        to form the total reward. Penalties are negative, bonuses are positive.
+        """
+        
+        # 1. SoC Action Penalty
+        # Applied if the agent's raw action, before any clipping by physical limits,
+        # would have violated the battery's SoC constraints (e.g. charging a full battery).
+        soc_action_penalty = 0.0
+        if attempted_soc_violation:
+            soc_action_penalty = self.config.get("soc_action_penalty_val", -500.0) # This is a negative value from config
+        
+        # 2. Grid Interaction Cost/Revenue
+        # grid_power_kw: positive for import (cost), negative for export (revenue)
+        # current_price: öre/kWh
+        # grid_energy_kwh: kWh
+        grid_energy_kwh = grid_power_kw * time_step_hours
+        
+        # Cost is positive, revenue is negative from this calculation
+        grid_cost_or_revenue_value = grid_energy_kwh * current_price 
+        
+        # For reward: invert sign. If cost (positive), becomes negative reward. If revenue (negative), becomes positive reward.
+        # This aligns with `evaluate_agent.py` expecting `reward_grid_cost` to be the negative of actual cost.
+        reward_grid_interaction = -grid_cost_or_revenue_value
+
+        # 3. Battery Degradation Cost
+        # degradation_cost is already a positive value representing cost.
+        scaled_battery_degradation_cost = degradation_cost * self.config.get("battery_cost_scale_factor", 1.0)
+        # For reward, this is a negative component.
+        reward_battery_degradation = -scaled_battery_degradation_cost
+
+        # 4. Import/Export Peak Penalty
+        # Penalizes drawing too much power from the grid or exporting too much.
+        peak_penalty_value = 0.0
+        import_peak_threshold_kw = self.config.get("peak_threshold_kw", 5.0)
+        # export_peak_threshold_kw from config is the allowed export (e.g., 20kW).
+        # We penalize if abs(grid_power_kw) for export exceeds this.
+        export_peak_threshold_kw = self.config.get("export_peak_threshold_kw", 20.0) 
+        peak_penalty_factor = self.config.get("peak_penalty_factor", 10.0) # Should be positive
+
+        if grid_power_kw > import_peak_threshold_kw: # Excessive import
+            penalty_energy_kwh = (grid_power_kw - import_peak_threshold_kw) * time_step_hours
+            peak_penalty_value = -peak_penalty_factor * penalty_energy_kwh # Negative for penalty
+        elif grid_power_kw < -export_peak_threshold_kw: # Excessive export (grid_power_kw is negative)
+            # abs(grid_power_kw) is the magnitude of export.
+            penalty_energy_kwh = (abs(grid_power_kw) - export_peak_threshold_kw) * time_step_hours
+            peak_penalty_value = -peak_penalty_factor * penalty_energy_kwh # Negative for penalty
+        
+        # 5. Price Arbitrage Bonus
+        # Rewards charging at very low prices or discharging at very high prices.
+        # This uses the actual battery_power_kw.
+        price_arbitrage_bonus = 0.0
+        if abs(battery_power_kw) > 1e-6: # Only if battery is active
+            charge_thresh_price = self.config.get("charge_bonus_threshold_price", 10.0)
+            charge_multiplier = self.config.get("charge_bonus_multiplier", 300.0)
+            
+            discharge_thresh_moderate = self.config.get("discharge_bonus_threshold_price_moderate", 100.0)
+            discharge_multiplier_moderate = self.config.get("discharge_bonus_multiplier_moderate", 350.0)
+            
+            discharge_thresh_high = self.config.get("discharge_bonus_threshold_price_high", 150.0)
+            discharge_multiplier_high = self.config.get("discharge_bonus_multiplier_high", 700.0)
+
+            if battery_power_kw < 0: # Charging
+                if current_price < charge_thresh_price:
+                    # Bonus proportional to how much was charged and how cheap it was (relative to no bonus)
+                    price_arbitrage_bonus = charge_multiplier * abs(battery_power_kw) * time_step_hours 
+            elif battery_power_kw > 0: # Discharging
+                if current_price > discharge_thresh_high: # Higher bonus for very high prices
+                    price_arbitrage_bonus = discharge_multiplier_high * battery_power_kw * time_step_hours
+                elif current_price > discharge_thresh_moderate: # Moderate bonus
+                    price_arbitrage_bonus = discharge_multiplier_moderate * battery_power_kw * time_step_hours
+        
+        # Total Reward
+        total_reward = (reward_grid_interaction + 
+                        reward_battery_degradation + 
+                        soc_action_penalty + 
+                        peak_penalty_value + 
+                        price_arbitrage_bonus)
+
+        # For logging and info dict, to be consistent with evaluate_agent.py
+        # evaluate_agent expects: 'reward_grid_cost', 'reward_peak_penalty', 'reward_battery_cost', 
+        # 'reward_arbitrage_bonus', 'reward_soc_action_penalty'
+        # My reward_grid_interaction is already -grid_cost.
+        # My peak_penalty_value is already the penalty (negative or zero).
+        # My reward_battery_degradation is already -scaled_battery_cost.
+        reward_components = {
+            "reward_grid_cost": reward_grid_interaction, 
+            "reward_peak_penalty": peak_penalty_value,
+            "reward_battery_cost": reward_battery_degradation, # This is -scaled_battery_cost
+            "reward_arbitrage_bonus": price_arbitrage_bonus,
+            "reward_soc_action_penalty": soc_action_penalty
+        }
+        
+        if self._step_debug_logging_enabled:
+            logger.debug(f"  REWARD_CALC: --- Reward Components (New Method) ---")
+            logger.debug(f"  REWARD_CALC: Grid Interaction: {reward_grid_interaction:.4f} (from grid_cost_val: {-reward_grid_interaction:.4f})")
+            logger.debug(f"  REWARD_CALC: Battery Degradation: {reward_battery_degradation:.4f} (from scaled_cost: {-reward_battery_degradation:.4f})")
+            logger.debug(f"  REWARD_CALC: SoC Action Penalty: {soc_action_penalty:.4f}")
+            logger.debug(f"  REWARD_CALC: Peak Penalty: {peak_penalty_value:.4f}")
+            logger.debug(f"  REWARD_CALC: Arbitrage Bonus: {price_arbitrage_bonus:.4f}")
+            logger.debug(f"  REWARD_CALC: Total Reward: {total_reward:.4f}")
+
+        return total_reward, reward_components
 
 # Example usage (for testing the simplified environment)
 if __name__ == "__main__":

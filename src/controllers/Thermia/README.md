@@ -48,4 +48,25 @@ This script connects to the Thermia Online API, fetches historical data for a sp
     python ExtractHistoricData.py --days 30 --plot
     ```
 
+
+# Control the heaptpump 
+
+### Festch all available info
+use the script: `ThermiaControl.py --info`
+this will fetch all info from the Thermia API
+
 ---
+
+### actually controlling
+in the `ThermiaControl.py` script use the flag `--set` and `--value`
+
+Example:
+```bash
+    python ThermiaControl.py --set (set-options) --value (value-options)
+```
+The options available is:
+- temperature [int]
+- operation_mode ["ON"/"OFF"]
+- hot_water_switch_state [int]
+- set_hot_water_boost_switch_state [int]
+Also controllable via homeassistant (not temp tho)

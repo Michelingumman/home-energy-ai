@@ -186,18 +186,44 @@ def get_thermia_info():
     print("Hot Water Switch State: " + str(heat_pump.hot_water_switch_state))
     print("Hot Water Boost Switch State: " + str(heat_pump.hot_water_boost_switch_state))
 
-# TODO: implement a function to control the heatpump based onth RL system for setting 
-# asheduling and temperature setpoints
+
+def set_thermia(set_type, value):
+    thermia = get_thermia_connection()
+    heat_pump = thermia.heat_pumps[0]
+
+    if set_type == "temperature":
+        heat_pump.set_temperature(int(value))
+        print("Temperature set to: " + str(value))
+        
+    elif set_type == "operation_mode":
+        heat_pump.set_operation_mode(value)
+        print("Operation mode set to: " + str(value))
+        print(heat_pump.operation_mode)
+        
+    elif set_type == "hot_water_switch_state":
+        heat_pump.set_hot_water_switch_state(int(value))
+        print("Hot water switch state set to: " + str(value))
+        print(heat_pump.hot_water_switch_state)
+        
+    elif set_type == "hot_water_boost_switch_state":
+        heat_pump.set_hot_water_boost_switch_state(1)
+        print("Hot water boost switch state set to: " + str(value))
+        print(heat_pump.hot_water_boost_switch_state)
+    else:
+        print("Invalid set type")
 
 def main():
     parser = argparse.ArgumentParser(description='Get basic Thermia Info')
     parser.add_argument('--info', action='store_true', help='Get basic Thermia Info')
+    parser.add_argument('--set', type=str, help='choose between: temperature, operation_mode, hot_water_switch_state, hot_water_boost_switch_state')
+    parser.add_argument('--value', type=str, help='value to set')
     args = parser.parse_args()
 
     if args.info:
         get_thermia_info()
 
-
+    if args.set:
+        set_thermia(args.set, args.value)
 
 
 if __name__ == "__main__":

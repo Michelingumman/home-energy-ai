@@ -15,102 +15,178 @@ class Battery:
     
     def __init__(
         self, 
-        capacity_kwh: float = 22.0,
-        min_soc: float = 0.1,
-        max_soc: float = 0.9,
-        max_cycles: int = 10000,
-        degradation_cost_per_kwh: float = 45.0,  # Cost in öre per kWh 
-        max_charge_rate: float = 5.0,  # kW
-        max_discharge_rate: float = 10.0,  # kW
-        efficiency: float = 0.95
+        capacity_kwh: float,
+        degradation_cost_per_kwh: float,
+        initial_soc: float = 0.5,
+        max_charge_power_kw: Optional[float] = None,
+        max_discharge_power_kw: Optional[float] = None,
+        charge_efficiency: float = 0.95,
+        discharge_efficiency: float = 0.95
     ):
         """Initialize battery with given parameters.
         
         Args:
             capacity_kwh: Total battery capacity in kWh
-            min_soc: Minimum state of charge (0.0-1.0)
-            max_soc: Maximum state of charge (0.0-1.0)
-            max_cycles: Expected battery lifetime in cycles
             degradation_cost_per_kwh: Cost in öre per kWh (e.g., 45.0 for 45 öre/kWh)
-            max_charge_rate: Maximum charging power in kW
-            max_discharge_rate: Maximum discharging power in kW
-            efficiency: Battery round-trip efficiency
+            initial_soc: Initial state of charge (0.0-1.0)
+            max_charge_power_kw: Maximum charging power in kW
+            max_discharge_power_kw: Maximum discharging power in kW
+            charge_efficiency: Battery charging efficiency
+            discharge_efficiency: Battery discharging efficiency
         """
         self.capacity_kwh = capacity_kwh
-        self.min_soc = min_soc
-        self.max_soc = max_soc
-        self.max_cycles = max_cycles
-        self.degradation_cost_per_kwh = degradation_cost_per_kwh
-        self.max_charge_rate = max_charge_rate
-        self.max_discharge_rate = max_discharge_rate
-        self.efficiency = efficiency
+        self.degradation_cost_per_kwh = degradation_cost_per_kwh  # öre/kWh
         
-        # State variables
-        self.soc: float = (min_soc + max_soc) / 2  # Start at middle of allowed range
-        self.cycle_count: float = 0.0
-        self.energy_throughput: float = 0.0
+        # If max_charge_power_kw or max_discharge_power_kw are not provided, default to C/2 rate (full charge/discharge in 2 hours)
+        self.max_charge_power_kw = max_charge_power_kw if max_charge_power_kw is not None else self.capacity_kwh / 2
+        self.max_discharge_power_kw = max_discharge_power_kw if max_discharge_power_kw is not None else self.capacity_kwh / 2
         
-    def charge(self, amount_kwh: float, hours: float = 1.0) -> Tuple[float, float]:
-        """Charge the battery with the given amount of energy.
-        
-        Args:
-            amount_kwh: Amount of energy to charge (kWh)
-            hours: Time period in hours
-            
-        Returns:
-            tuple: (actual_charged, degradation_cost)
+        self.charge_efficiency = charge_efficiency
+        self.discharge_efficiency = discharge_efficiency
+
+        if not (0.0 <= initial_soc <= 1.0):
+            raise ValueError(f"Initial SoC must be between 0.0 and 1.0, got {initial_soc}")
+        self.initial_soc = initial_soc
+        self.soc = self.initial_soc
+        self.current_kwh = self.capacity_kwh * self.soc
+
+    def reset(self):
+        self.soc = self.initial_soc
+        self.current_kwh = self.capacity_kwh * self.soc
+
+    def step(self, target_power_kw: float, duration_hours: float) -> Tuple[float, float, bool]:
         """
-        # Validate against max charge rate
-        max_possible = self.max_charge_rate * hours
-        amount_kwh = min(amount_kwh, max_possible)
-        
-        # Calculate how much energy the battery can accept
-        current_energy = self.soc * self.capacity_kwh
-        max_energy = self.max_soc * self.capacity_kwh
-        energy_headroom = max_energy - current_energy
-        
-        # Apply efficiency loss during charging
-        effective_charge = min(amount_kwh * self.efficiency, energy_headroom)
-        
-        if effective_charge > 0:
-            self.soc = (current_energy + effective_charge) / self.capacity_kwh
-            self.energy_throughput += effective_charge
-            degradation_cost = self.calc_degrade_cost(effective_charge)
-            return effective_charge / self.efficiency, degradation_cost
-        
-        return 0.0, 0.0
-    
-    def discharge(self, amount_kwh: float, hours: float = 1.0) -> Tuple[float, float]:
-        """Discharge the battery by the given amount of energy.
-        
+        Charges or discharges the battery based on target_power_kw.
         Args:
-            amount_kwh: Amount of energy to discharge (kWh)
-            hours: Time period in hours
-            
+            target_power_kw: Power at the battery terminals. 
+                             Positive to discharge (power flowing out of battery), 
+                             negative to charge (power flowing into battery).
+            duration_hours: Duration of the step.
         Returns:
-            tuple: (actual_discharged, degradation_cost)
+            Tuple[float, float, bool]: 
+                1. actual_power_kw_at_terminals: Actual power at battery terminals (kW).
+                   Positive if discharging, negative if charging.
+                2. energy_change_in_storage_kwh: Actual energy change in battery storage (kWh).
+                   Positive if energy was added (charged), negative if energy was removed (discharged).
+                3. limited_by_soc: Boolean flag indicating if the action was limited by SoC bounds.
         """
-        # Validate against max discharge rate
-        max_possible = self.max_discharge_rate * hours
-        amount_kwh = min(amount_kwh, max_possible)
+        energy_change_in_storage_kwh = 0.0
+        actual_power_kw_at_terminals = 0.0
+        limited_by_soc = False  # New flag to indicate if action was limited by SoC bounds
+
+        if target_power_kw < 0:  # Attempting to charge
+            # Power requested to flow INTO the battery (absolute value)
+            requested_charge_power_kw = abs(target_power_kw)
+            # Limit by max_charge_power_kw
+            effective_charge_power_kw = min(requested_charge_power_kw, self.max_charge_power_kw)
+            
+            # Energy that would be added to storage if no SoC limit and 100% efficiency
+            potential_energy_to_storage_kwh = effective_charge_power_kw * duration_hours
+            
+            # Account for charging efficiency: energy drawn from source > energy stored
+            # If we want to store X kWh, we need to draw X / efficiency kWh from the source.
+            # Here, `effective_charge_power_kw` is power at terminals, so energy to storage is `* efficiency`
+            energy_added_to_storage_with_eff_kwh = potential_energy_to_storage_kwh * self.charge_efficiency
+
+            # How much can we actually add due to SoC limit?
+            available_capacity_kwh = self.capacity_kwh - self.current_kwh
+            actual_energy_added_to_storage_kwh = min(energy_added_to_storage_with_eff_kwh, available_capacity_kwh)
+            
+            # Check if we're being limited by SoC (battery is near full)
+            if actual_energy_added_to_storage_kwh < energy_added_to_storage_with_eff_kwh:
+                limited_by_soc = True
+            
+            # Update SoC
+            self.current_kwh += actual_energy_added_to_storage_kwh
+            self.soc = self.current_kwh / self.capacity_kwh
+            
+            energy_change_in_storage_kwh = actual_energy_added_to_storage_kwh
+            
+            # Actual power at terminals (negative because charging)
+            # This is the power that was effectively pushed into the battery from the outside.
+            if duration_hours > 0 and self.charge_efficiency > 0:
+                actual_power_kw_at_terminals = -(actual_energy_added_to_storage_kwh / self.charge_efficiency) / duration_hours
+            elif duration_hours > 0: # Avoid division by zero if efficiency is zero
+                actual_power_kw_at_terminals = -effective_charge_power_kw # Fallback, assumes perfect conversion if efficiency is 0
+            else:
+                actual_power_kw_at_terminals = 0.0
+
+        elif target_power_kw > 0:  # Attempting to discharge
+            # Power requested to flow OUT of the battery
+            requested_discharge_power_kw = target_power_kw
+            # Limit by max_discharge_power_kw
+            effective_discharge_power_kw = min(requested_discharge_power_kw, self.max_discharge_power_kw)
+            
+            # Energy that would be delivered if no SoC limit and 100% efficiency
+            potential_energy_from_storage_kwh = effective_discharge_power_kw * duration_hours
+            
+            # Account for discharging efficiency: energy drawn from storage > energy delivered
+            # To deliver Y kWh, we need to draw Y / efficiency kWh from storage.
+            # Here, `effective_discharge_power_kw` is power at terminals, so energy drawn from storage is ` / efficiency`
+            if self.discharge_efficiency > 0:
+                 energy_drawn_from_storage_for_eff_kwh = potential_energy_from_storage_kwh / self.discharge_efficiency
+            else: # Avoid division by zero
+                 energy_drawn_from_storage_for_eff_kwh = potential_energy_from_storage_kwh # Fallback
+
+            # How much can we actually draw due to SoC limit?
+            available_energy_in_storage_kwh = self.current_kwh
+            actual_energy_drawn_from_storage_kwh = min(energy_drawn_from_storage_for_eff_kwh, available_energy_in_storage_kwh)
+            
+            # Check if we're being limited by SoC (battery is near empty)
+            if actual_energy_drawn_from_storage_kwh < energy_drawn_from_storage_for_eff_kwh:
+                limited_by_soc = True
+            
+            # Update SoC
+            self.current_kwh -= actual_energy_drawn_from_storage_kwh
+            self.soc = self.current_kwh / self.capacity_kwh
+            
+            energy_change_in_storage_kwh = -actual_energy_drawn_from_storage_kwh # Negative as it's removed from storage
+            
+            # Actual power at terminals (positive because discharging)
+            # This is the power that was effectively delivered by the battery to the outside.
+            if duration_hours > 0:
+                actual_power_kw_at_terminals = (actual_energy_drawn_from_storage_kwh * self.discharge_efficiency) / duration_hours
+            else:
+                actual_power_kw_at_terminals = 0.0
         
-        # Calculate how much energy the battery can provide
-        current_energy = self.soc * self.capacity_kwh
-        min_energy = self.min_soc * self.capacity_kwh
-        available_energy = current_energy - min_energy
-        
-        # Apply efficiency loss during discharging
-        effective_discharge = min(amount_kwh, available_energy * self.efficiency)
-        
-        if effective_discharge > 0:
-            energy_removed = effective_discharge / self.efficiency
-            self.soc = (current_energy - energy_removed) / self.capacity_kwh
-            self.energy_throughput += energy_removed
-            degradation_cost = self.calc_degrade_cost(energy_removed)
-            return effective_discharge, degradation_cost
-        
-        return 0.0, 0.0
-    
+        # Ensure SoC is not numerically unstable
+        self.soc = np.clip(self.soc, 0.0, 1.0)
+        self.current_kwh = np.clip(self.current_kwh, 0.0, self.capacity_kwh)
+
+        return actual_power_kw_at_terminals, energy_change_in_storage_kwh, limited_by_soc
+
+    # def charge(self, energy_kwh: float) -> float:
+    #     """DEPRECATED: Use step method. Kept for compatibility if used elsewhere but not recommended.
+    #     Charges the battery with a given amount of energy.
+    #     Args:
+    #         energy_kwh: Energy to charge in kWh.
+    #     Returns:
+    #         float: Actual energy charged in kWh.
+    #     """
+    #     # This method does not consider power limits or efficiency directly.
+    #     # It's a simplified version. For proper simulation, use the step method.
+    #     possible_charge = self.capacity_kwh - self.current_kwh
+    #     actual_charge = min(energy_kwh, possible_charge)
+    #     self.current_kwh += actual_charge
+    #     self.soc = self.current_kwh / self.capacity_kwh
+    #     return actual_charge
+
+    # def discharge(self, energy_kwh: float) -> float:
+    #     """DEPRECATED: Use step method. Kept for compatibility if used elsewhere but not recommended.
+    #     Discharges the battery by a given amount of energy.
+    #     Args:
+    #         energy_kwh: Energy to discharge in kWh.
+    #     Returns:
+    #         float: Actual energy discharged in kWh.
+    #     """
+    #     # This method does not consider power limits or efficiency directly.
+    #     # It's a simplified version. For proper simulation, use the step method.
+    #     possible_discharge = self.current_kwh
+    #     actual_discharge = min(energy_kwh, possible_discharge)
+    #     self.current_kwh -= actual_discharge
+    #     self.soc = self.current_kwh / self.capacity_kwh
+    #     return actual_discharge
+
     def calc_degrade_cost(self, energy_kwh: float) -> float:
         """Calculate the degradation cost for a given energy throughput.
         
@@ -130,12 +206,6 @@ class Battery:
         degradation_cost = energy_kwh * self.degradation_cost_per_kwh # This is now energy_kwh * öre_cost_per_kwh
         
         return degradation_cost
-    
-    def reset(self, initial_soc: Optional[float] = None) -> None:
-        """Reset the battery to initial state.
-        
-        Args:
-            initial_soc: Initial state of charge (default: middle of allowed range)
-        """
-        self.soc = initial_soc if initial_soc is not None else (self.min_soc + self.max_soc) / 2
-        # Note: We don't reset cycle_count and energy_throughput as those are cumulative
+
+
+

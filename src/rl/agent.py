@@ -51,7 +51,8 @@ class ShortTermAgent:
         self.n_steps = self.config.get("short_term_n_steps", 2048)
         self.batch_size = self.config.get("short_term_batch_size", 64)
         self.n_epochs = self.config.get("short_term_n_epochs", 10)
-        
+        self.ent_coeff = self.config.get("short_term_ent_coeff", 0.01)
+        self.gae_lambda = self.config.get("short_term_gae_lambda", 0.98)
         # Initialize the model
         self.model = PPO(
             "MultiInputPolicy",
@@ -61,7 +62,9 @@ class ShortTermAgent:
             n_steps=self.n_steps,
             batch_size=self.batch_size,
             n_epochs=self.n_epochs,
-            verbose=0
+            verbose=0,
+            ent_coef=self.ent_coeff,
+            gae_lambda=self.gae_lambda,
         )
         
         # Load a pre-trained model if provided
@@ -115,3 +118,14 @@ class ShortTermAgent:
         """
         self.model.save(path)
         print(f"Saved short-term model to {path}")
+
+
+class RuleBasedAgent:
+    """
+    Rule-based agent that operates on 1-hour timesteps.
+    
+    Handles immediate control decisions based on current state and forecasts.
+    
+    The general ideas is to charge when the price is below 20 öre/kWh and 
+    discharge when the price is above 100 öre/kWh.
+    """

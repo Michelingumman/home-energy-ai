@@ -93,6 +93,9 @@ python src/rl/simulations/run_simulation.py --model_path src/rl/saved_models/sho
   - Short-term agent (1h time steps) keeping the plan on track and handling overrides
 
 - **Battery Management**: Protects a 22 kWh battery between 20%-90% SoC with degradation modeling
+  - Asymmetric action mapping that properly handles different charge/discharge power limits
+  - Charge limit: 5 kW, Discharge limit: 10 kW
+  - Action space (-1 to +1) maps proportionally to these different limits
 
 - **Appliance Control**: Manages high-power appliances to avoid simultaneous peaks:
   - Floor heating
@@ -106,6 +109,7 @@ python src/rl/simulations/run_simulation.py --model_path src/rl/saved_models/sho
   - Charging battery during low-price periods
   - Discharging during high-price periods
   - Avoiding peak loads that might be penalized
+  - Applying export reward bonus when selling electricity back to the grid
 
 ## Customization
 

@@ -990,14 +990,35 @@ if __name__ == "__main__":
     config = get_config_dict()
 
     # --- Start of new logic to select a random full month ---
+    
+    # Determine required data sources and their paths
     price_predictions_path_str = config.get("price_predictions_path", "src/predictions/prices/plots/predictions/merged")
-    # Construct path relative to project root, assuming evaluate_agent.py is in src/rl/
-    # PROJECT_ROOT is defined earlier in the script
     price_file_path = Path(PROJECT_ROOT) / price_predictions_path_str
 
-    min_data_date = None
-    max_data_date = None
+    use_variable_consumption = config.get("use_variable_consumption", False)
+    consumption_file_path = None
+    if use_variable_consumption:
+        consumption_data_path_str = config.get("consumption_data_path")
+        if consumption_data_path_str:
+            consumption_file_path = Path(PROJECT_ROOT) / consumption_data_path_str
+        else:
+            print("Warning: Variable consumption is enabled but no consumption_data_path is specified in config. Cannot check consumption data range.")
+            use_variable_consumption = False # Disable if path is missing
 
+    use_solar_predictions = config.get("use_solar_predictions", False)
+    solar_file_path = None
+    if use_solar_predictions:
+        solar_data_path_str = config.get("solar_data_path")
+        if solar_data_path_str:
+            solar_file_path = Path(PROJECT_ROOT) / solar_data_path_str
+        else:
+            print("Warning: Solar prediction is enabled but no solar_data_path is specified in config. Cannot check solar data range.")
+            use_solar_predictions = False # Disable if path is missing
+
+    all_min_dates = []
+    all_max_dates = []
+
+    # 1. Get Price Data Range
     if price_file_path.exists():
         try:
             price_df = pd.read_csv(price_file_path, index_col='HourSE', parse_dates=True)
@@ -1005,38 +1026,97 @@ if __name__ == "__main__":
                 if price_df.index.tzinfo is None:
                     try:
                         price_df.index = price_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
-                        price_df = price_df[~pd.isna(price_df.index)] 
+                        price_df = price_df[~pd.isna(price_df.index)]
                     except Exception as loc_e:
-                        print(f"Warning: Could not localize price data timestamps: {loc_e}. Proceeding with naive timestamps if any.")
-                
+                        print(f"Warning: Could not localize price data timestamps: {loc_e}.")
                 if not price_df.empty:
-                    min_data_date = price_df.index.min()
-                    max_data_date = price_df.index.max()
+                    all_min_dates.append(price_df.index.min())
+                    all_max_dates.append(price_df.index.max())
         except Exception as e:
-            print(f"Warning: Could not read price data from {price_file_path} for date range determination: {e}")
-
-    if min_data_date is None or max_data_date is None:
-        print("Error: Could not determine data date range from price file. Exiting.")
+            print(f"Error: Could not read price data from {price_file_path} for date range determination: {e}")
+            sys.exit(1) # Price data is essential
+    else:
+        print(f"Error: Price data file not found at {price_file_path}. Exiting.")
         sys.exit(1)
 
-    possible_months = []
-    # Ensure min_data_date has timezone info if it's going to be used with tz-aware operations
-    # For simplicity, if min_data_date became tz-aware, current_month_start should also be.
-    # If price_df.index was successfully localized, min_data_date will be tz-aware.
-    current_month_start = pd.Timestamp(min_data_date.year, min_data_date.month, 1, tzinfo=min_data_date.tzinfo)
+    # 2. Get Consumption Data Range (if used)
+    if use_variable_consumption and consumption_file_path:
+        if consumption_file_path.exists():
+            try:
+                # Assuming consumption CSV has a 'timestamp' column
+                consum_df = pd.read_csv(consumption_file_path, parse_dates=['timestamp'], index_col='timestamp')
+                if not consum_df.empty:
+                    if consum_df.index.tzinfo is None: # Similar localization as in custom_env
+                        try:
+                            consum_df.index = consum_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
+                            consum_df = consum_df[~pd.isna(consum_df.index)]
+                        except Exception as loc_e:
+                             print(f"Warning: Could not localize consumption data timestamps: {loc_e}.")
+                    if not consum_df.empty:
+                        all_min_dates.append(consum_df.index.min())
+                        all_max_dates.append(consum_df.index.max())
+                    else: # Empty after localization
+                        print(f"Warning: Consumption data file {consumption_file_path} is empty after localization. Cannot use its date range.")
+                else: # Empty before localization
+                    print(f"Warning: Consumption data file {consumption_file_path} is empty. Cannot use its date range.")
+            except Exception as e:
+                print(f"Warning: Could not read consumption data from {consumption_file_path} for date range: {e}. Proceeding without its range.")
+        else:
+            print(f"Warning: Consumption data file not found at {consumption_file_path}. Proceeding without its range.")
 
-    while current_month_start <= max_data_date:
-        month_end = current_month_start + pd.offsets.MonthEnd(0)
-        # Ensure the full month is within the data range
-        if month_end <= max_data_date and current_month_start >= min_data_date:
-            possible_months.append((current_month_start.year, current_month_start.month))
+    # 3. Get Solar Data Range (if used)
+    if use_solar_predictions and solar_file_path:
+        if solar_file_path.exists():
+            try:
+                # Assuming solar CSV has a 'Timestamp' column
+                solar_df = pd.read_csv(solar_file_path, parse_dates=['Timestamp'], index_col='Timestamp')
+                if not solar_df.empty:
+                    if solar_df.index.tzinfo is None: # Similar localization
+                        try:
+                            # Solar data often comes in UTC then converted
+                            solar_df.index = solar_df.index.tz_localize('UTC').tz_convert('Europe/Stockholm')
+                        except Exception as loc_e:
+                            print(f"Warning: Could not localize/convert solar data timestamps: {loc_e}.")
+                    elif str(solar_df.index.tz) != 'Europe/Stockholm': # If already localized but not to Stockholm
+                         solar_df.index = solar_df.index.tz_convert('Europe/Stockholm')
+                    
+                    if not solar_df.empty: # Check again after potential conversion issues
+                        all_min_dates.append(solar_df.index.min())
+                        all_max_dates.append(solar_df.index.max())
+                    else:
+                        print(f"Warning: Solar data file {solar_file_path} is empty after localization/conversion. Cannot use its date range.")
+                else:
+                     print(f"Warning: Solar data file {solar_file_path} is empty. Cannot use its date range.")
+            except Exception as e:
+                print(f"Warning: Could not read solar data from {solar_file_path} for date range: {e}. Proceeding without its range.")
+        else:
+            print(f"Warning: Solar data file not found at {solar_file_path}. Proceeding without its range.")
+
+    if not all_min_dates or not all_max_dates:
+        print("Error: Could not establish any valid data date ranges. Exiting.")
+        sys.exit(1)
         
-        # Move to the start of the next month
+    # Calculate effective overall date range (intersection)
+    effective_min_data_date = max(all_min_dates)
+    effective_max_data_date = min(all_max_dates)
+
+    if effective_min_data_date >= effective_max_data_date:
+        print(f"Error: No overlapping data range found across all required sources. Min: {effective_min_data_date}, Max: {effective_max_data_date}. Exiting.")
+        sys.exit(1)
+
+    print(f"Effective data range for selecting simulation month: {effective_min_data_date} to {effective_max_data_date}")
+
+    possible_months = []
+    current_month_start = pd.Timestamp(effective_min_data_date.year, effective_min_data_date.month, 1, tzinfo=effective_min_data_date.tzinfo)
+
+    while current_month_start <= effective_max_data_date:
+        month_end = current_month_start + pd.offsets.MonthEnd(0)
+        if month_end <= effective_max_data_date and current_month_start >= effective_min_data_date:
+            possible_months.append((current_month_start.year, current_month_start.month))
         current_month_start += pd.offsets.MonthBegin(1)
 
-
     if not possible_months:
-        print(f"Error: No full months available in the data range {min_data_date} to {max_data_date}. Exiting.")
+        print(f"Error: No full months available in the effective data range {effective_min_data_date} to {effective_max_data_date}. Exiting.")
         sys.exit(1)
 
     selected_year, selected_month = random.choice(possible_months)

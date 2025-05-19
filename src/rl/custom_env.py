@@ -638,13 +638,29 @@ class HomeEnergyEnv(gym.Env):
                 hourly_mean_effective_peaks = df_month_peaks['peak_power'].resample('h').mean().fillna(0)
                 hourly_positive_peaks = hourly_mean_effective_peaks[hourly_mean_effective_peaks > 0]
                 
-                sorted_hourly_peaks = sorted(hourly_positive_peaks.tolist(), reverse=True)
+                if not hourly_positive_peaks.empty:
+                    sorted_hourly_peaks_series = hourly_positive_peaks.sort_values(ascending=False)
+                    
+                    selected_daily_peak_values = []
+                    seen_peak_days = set()
+                    
+                    for peak_timestamp, peak_power in sorted_hourly_peaks_series.items():
+                        peak_day = peak_timestamp.date() # Get the date part of the timestamp
+                        
+                        if peak_day not in seen_peak_days:
+                            selected_daily_peak_values.append(peak_power)
+                            seen_peak_days.add(peak_day)
+                            
+                        if len(selected_daily_peak_values) >= 3:
+                            break # Found 3 peaks from 3 unique days
+                    
+                    # self.top3_peaks should store these, padded with 0.0 if fewer than 3 found
+                    # The selected_daily_peak_values are already sorted by value due to iterating sorted_hourly_peaks_series
+                    self.top3_peaks = selected_daily_peak_values + [0.0] * (3 - len(selected_daily_peak_values))
+                else:
+                    self.top3_peaks = [0.0, 0.0, 0.0]
                 
-                self.top3_peaks = sorted_hourly_peaks[:min(3, len(sorted_hourly_peaks))]
-                while len(self.top3_peaks) < 3:
-                    self.top3_peaks.append(0.0)  # Pad with zeros if needed
-                
-                self.peak_rolling_average = sum(self.top3_peaks) / 3.0
+                self.peak_rolling_average = sum(self.top3_peaks) / 3.0 # Average of 3 values
             else:
                 self.top3_peaks = [0.0, 0.0, 0.0]
                 self.peak_rolling_average = 0.0

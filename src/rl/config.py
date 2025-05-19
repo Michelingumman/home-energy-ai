@@ -84,6 +84,8 @@ soc_max_limit: float = 0.8                  # Maximum allowable SoC
 
 # Battery economics
 battery_degradation_cost_per_kwh: float = 45.0  # Cost in öre/kWh for battery usage
+# Battery degradation cost in reward
+battery_degradation_reward_scaling_factor: float = 2.0  # Scale degradation cost in reward
 
 
 
@@ -118,14 +120,14 @@ night_capacity_discount: float = 0.5         # Discount for peaks during 22:00-0
 # ==============================================================================
 
 # Physical limit violation penalties
-soc_limit_penalty_factor: float = 1000.0       # Base penalty for SoC outside allowed range
-soc_violation_scale: float = 0.0             # Scaling for physical limit violations (will be multiplied by 50 in code)
+soc_limit_penalty_factor: float = 100.0       # Base penalty for SoC outside allowed range
+soc_violation_scale: float = 1.0             # Scaling for physical limit violations (will be multiplied by 50 in code)
 # soc_action_limit_scale: float = 5.0          # Scaling for actions constrained by SoC
 
 # Preferred SoC range (soft constraints)
 preferred_soc_min_base: float = 0.3          # Lower bound of preferred SoC range
 preferred_soc_max_base: float = 0.7          # Upper bound of preferred SoC range
-preferred_soc_reward_factor: float = 100.0   # Reward for staying in preferred range (doubled to make it stronger)
+preferred_soc_reward_factor: float = 200.0   # Reward for staying in preferred range
 preferred_soc_reward_scale: float = 1.0      # Scaling for preferred range reward
 
 
@@ -139,7 +141,7 @@ preferred_soc_reward_scale: float = 1.0      # Scaling for preferred range rewar
 
 # Peak shaving incentives
 peak_power_threshold_kw: float = 5.0         # Target maximum grid import
-peak_penalty_factor: float = 300.0             # Penalty per kW above threshold
+peak_penalty_factor: float = 1000.0             # Penalty per kW above threshold
 peak_penalty_scale: float = 1.0              # Scaling for peak penalties
 
 # Price arbitrage incentives
@@ -148,7 +150,7 @@ arbitrage_reward_scale: float = 1.0            # Scaling for arbitrage rewards
 
 # Low price charging incentives
 low_price_threshold_ore_kwh: float = 20.0      # Fixed low price threshold
-charge_at_low_price_reward_factor: float = 100.0 # Reward for charging at low prices
+charge_at_low_price_reward_factor: float = 40.0 # Reward for charging at low prices
 
 # High price discharging incentives
 high_price_threshold_ore_kwh: float = 100.0    # Fixed high price threshold
@@ -162,8 +164,6 @@ use_percentile_price_thresholds: bool = False  # Use percentiles instead of fixe
 low_price_percentile: float = 25.0             # Bottom percentile for "low" prices
 high_price_percentile: float = 75.0            # Top percentile for "high" prices
 
-# Battery degradation cost in reward
-battery_degradation_reward_scaling_factor: float = 1.0  # Scale degradation cost in reward
 
 # Global reward scaling
 reward_scaling_factor: float = 0.03            # Global multiplier for all rewards
@@ -179,11 +179,11 @@ reward_scaling_factor: float = 0.03            # Global multiplier for all rewar
 
 # Core PPO parameters
 short_term_learning_rate: float = 3e-4        # Learning rate for the optimizer
-short_term_gamma: float = 0.95               # Discount factor for future rewards
+short_term_gamma: float = 0.98               # Discount factor for future rewards
 short_term_n_steps: int = 2048                # Steps per update batch
 short_term_batch_size: int = 256              # Minibatch size for updates
 short_term_n_epochs: int = 15                 # Number of epochs per update
-short_term_ent_coeff: float = 0.01           # Entropy coefficient (exploration)
+short_term_ent_coeff: float = 0.1           # Entropy coefficient (exploration)
 short_term_gae_lambda: float = 0.97           # GAE lambda parameter
 short_term_timesteps: int = 500000            # Total timesteps for training
 

@@ -17,11 +17,15 @@ the simulation environment, and training processes.
 
 # Model and data paths
 model_dir: str = "src/rl/saved_models"                # Directory to save trained models
-log_dir: str = "src/rl/logs"                          # Directory for logs
+log_dir: str = "src/rl/logs"  
+# Directory for logs
 price_predictions_path: str = "data/processed/SE3prices.csv"  # Price predictions/historical data
-consumption_data_path: str = "data/processed/villamichelin/VillamichelinConsumption.csv"  # Household consumption
-solar_data_path_train: str = "src/predictions/solar/actual_data/ActualSolarProductionData.csv"  # Solar production data
-solar_data_path_eval: str = "src/predictions/solar/actual_data/ActualSolarProductionData.csv"  # Solar data for evaluation
+# consumption_data_path: str = "data/processed/villamichelin/VillamichelinConsumption.csv"  # Household consumption
+consumption_data_path: str = "data/processed/villamichelin/synthetic/VillamichelinConsumption.csv"  # Synthetic Household consumption
+
+
+# solar_data_path: str = "src/predictions/solar/actual_data/ActualSolarProductionData.csv"  # Solar production data
+solar_data_path: str = "data/processed/villamichelin/synthetic/ActualSolarProductionData.csv"  # Synthetic Solar production data
 
 # ML model paths (for demand/price forecasting)
 demand_model_path: str = "src/models/demand_model.keras"  # Demand prediction model
@@ -34,6 +38,12 @@ checkpoint_freq: int = 1_000_000    # Save checkpoint every X timesteps
 eval_freq: int = 50_000             # Evaluate model every X timesteps
 eval_episodes: int = 10             # Number of episodes per evaluation
 
+
+debug_prints: bool = True          # Print debug information  
+
+# Optional: Restrict training to a specific date range (YYYY-MM-DD)
+start_date: str = None  # Earliest allowed date for training episodes (inclusive)
+end_date: str = None    # Latest allowed date for training episodes (inclusive)
 
 
 
@@ -85,7 +95,7 @@ soc_max_limit: float = 0.8                  # Maximum allowable SoC
 # Battery economics
 battery_degradation_cost_per_kwh: float = 45.0  # Cost in öre/kWh for battery usage
 # Battery degradation cost in reward
-battery_degradation_reward_scaling_factor: float = 2.0  # Scale degradation cost in reward
+battery_degradation_reward_scaling_factor: float = 1.0  # Scale degradation cost in reward
 
 
 
@@ -120,15 +130,27 @@ night_capacity_discount: float = 0.5         # Discount for peaks during 22:00-0
 # ==============================================================================
 
 # Physical limit violation penalties
-soc_limit_penalty_factor: float = 100.0       # Base penalty for SoC outside allowed range
+soc_limit_penalty_factor: float = 1000.0       # Base penalty for SoC outside allowed range
 soc_violation_scale: float = 1.0             # Scaling for physical limit violations (will be multiplied by 50 in code)
 # soc_action_limit_scale: float = 5.0          # Scaling for actions constrained by SoC
 
 # Preferred SoC range (soft constraints)
 preferred_soc_min_base: float = 0.3          # Lower bound of preferred SoC range
 preferred_soc_max_base: float = 0.7          # Upper bound of preferred SoC range
-preferred_soc_reward_factor: float = 200.0   # Reward for staying in preferred range
-preferred_soc_reward_scale: float = 1.0      # Scaling for preferred range reward
+preferred_soc_reward_factor: float = 800.0   # Reward for staying in preferred range (increased from 500.0)
+soc_soft_scale: float = 250.0               # Scaling for soft limit violations (increased)
+
+# High SoC specific penalties
+high_soc_penalty_multiplier: float = 3.0    # Multiplier for penalties above very_high_soc_threshold
+very_high_soc_threshold: float = 0.85       # Threshold for applying extra penalties
+
+# Action modification penalty
+action_modification_penalty: float = 50.0    # Penalty for actions requiring safety modification
+
+# Potential function parameters
+soc_potential_min_value: float = -50.0       # Finite min value replacing -1e6
+soc_potential_max_value: float = -50.0       # Finite max value replacing -1e6
+
 
 
 
@@ -139,34 +161,49 @@ preferred_soc_reward_scale: float = 1.0      # Scaling for preferred range rewar
 #                           REWARD FUNCTION - GRID MANAGEMENT
 # ==============================================================================
 
+#consumption * price = grid cost scaling factor
+grid_cost_scaling_factor: float = 0.5
+
 # Peak shaving incentives
 peak_power_threshold_kw: float = 5.0         # Target maximum grid import
-peak_penalty_factor: float = 1000.0             # Penalty per kW above threshold
+peak_penalty_factor: float = 500.0             # Penalty per kW above threshold
 peak_penalty_scale: float = 1.0              # Scaling for peak penalties
 
 # Price arbitrage incentives
-enable_explicit_arbitrage_reward: bool = True  # Enable additional arbitrage rewards
+enable_explicit_arbitrage_reward: bool = True    # Whether to include arbitrage bonus rewards
 arbitrage_reward_scale: float = 1.0            # Scaling for arbitrage rewards
 
 # Low price charging incentives
-low_price_threshold_ore_kwh: float = 20.0      # Fixed low price threshold
-charge_at_low_price_reward_factor: float = 40.0 # Reward for charging at low prices
+low_price_threshold_ore_kwh: float = 20.0        # Fixed threshold for low prices (for charging)
+charge_at_low_price_reward_factor: float = 100.0 # Reward for charging at low prices
 
 # High price discharging incentives
-high_price_threshold_ore_kwh: float = 100.0    # Fixed high price threshold
-discharge_at_high_price_reward_factor: float = 1000.0 # Reward for discharging at high prices
+high_price_threshold_ore_kwh: float = 100.0      # Fixed threshold for high prices (for discharging)
+discharge_at_high_price_reward_factor: float = 200.0 # Reward for discharging at high prices
 
 # Export reward
 export_reward_bonus_ore_kwh: float = 60.0      # Bonus in öre/kWh for exported electricity on top of spot price
+export_scaling_factor: float = 0.3
 
 # Dynamic price threshold calculation
-use_percentile_price_thresholds: bool = False  # Use percentiles instead of fixed values
-low_price_percentile: float = 25.0             # Bottom percentile for "low" prices
-high_price_percentile: float = 75.0            # Top percentile for "high" prices
+use_percentile_price_thresholds: bool = True     # Whether to use percentiles instead of fixed thresholds
+low_price_percentile: float = 30.0               # Percentile for low price (increased)
+high_price_percentile: float = 70.0              # Percentile for high price (decreased)
 
 
 # Global reward scaling
-reward_scaling_factor: float = 0.03            # Global multiplier for all rewards
+reward_scaling_factor: float = 1.0            # Global multiplier for all rewards
+
+# Multi-Objective Reward Component Weights
+w_grid: float = 1.0                          # Weight for grid cost component
+w_cap: float = 1.0                           # Weight for capacity penalty component
+w_deg: float = 0.5                           # Weight for battery degradation (reduced from 1.0)
+w_soc: float = 5.0                           # Weight for SoC management (increased)
+w_shape: float = 0.001                       # Weight for potential-based shaping (drastically reduced)
+w_night: float = 1.0                         # Weight for night charging discount
+w_arbitrage: float = 2.0                     # Weight for price arbitrage (increased)
+w_export: float = 1.0                        # Weight for export bonus
+w_action_mod: float = 1.0                    # Weight for action modification penalty
 
 
 
@@ -179,13 +216,13 @@ reward_scaling_factor: float = 0.03            # Global multiplier for all rewar
 
 # Core PPO parameters
 short_term_learning_rate: float = 3e-4        # Learning rate for the optimizer
-short_term_gamma: float = 0.98               # Discount factor for future rewards
+short_term_gamma: float = 0.98               # Discount factor for future rewards, higher is more future rewards
 short_term_n_steps: int = 2048                # Steps per update batch
-short_term_batch_size: int = 256              # Minibatch size for updates
+short_term_batch_size: int = 128              # Minibatch size for updates
 short_term_n_epochs: int = 15                 # Number of epochs per update
 short_term_ent_coeff: float = 0.1           # Entropy coefficient (exploration)
 short_term_gae_lambda: float = 0.97           # GAE lambda parameter
-short_term_timesteps: int = 500000            # Total timesteps for training
+short_term_timesteps: int = 100000            # Total timesteps for training
 
 # ==============================================================================
 #                           HELPER FUNCTION
@@ -205,3 +242,10 @@ def get_config_dict() -> dict:
         key: value for key, value in globals().items() 
         if not key.startswith("__") and key != "get_config_dict"
     } 
+
+# Data augmentation settings (only used during training)
+use_data_augmentation: bool = False  # Master switch for data augmentation
+augment_solar_data: bool = True      # Apply random scaling to solar data
+solar_augmentation_factor: float = 0.2  # Random variation factor for solar data (±20%)
+augment_consumption_data: bool = True  # Apply random scaling to consumption data
+consumption_augmentation_factor: float = 0.15  # Random variation factor for consumption (±15%) 

@@ -5,6 +5,13 @@ import argparse
 import pathlib
 import numpy as np
 
+SIMPLE_PLOT = True
+SIMPLE_PLOT_FILE = r"C:\_Projects\home-energy-ai\data\processed\villamichelin\synthetic\villamichelin_synthetic.csv"
+x = "timestamp"
+y = "consumption"
+
+
+
 files = ["SE3prices", "SwedenGrid", "time_features", "weather_data", "holidays", "VillamichelinConsumption", "heat_pump_power_15min_20191211_to_20250513"]
 
 def check_data(file_name: str):
@@ -105,6 +112,10 @@ def investigate_negative_prices():
     print(f"Latest negative timestamp:     {latest_timestamp}")
 
 
+if SIMPLE_PLOT:
+    df = pd.read_csv(SIMPLE_PLOT_FILE)
+    plt.step(df[f'{x}'], df[f'{y}'])
+    plt.show()
 
 args = argparse.ArgumentParser()
 
@@ -130,6 +141,9 @@ elif args.check and args.file:
 
 elif args.neg_prices:
     investigate_negative_prices()
+else:
+    print("No arguments provided")
+    exit()
 
 
 

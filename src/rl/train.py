@@ -235,7 +235,7 @@ def run_sanity_checks(env: HomeEnergyEnv, config: dict, num_steps: int = 100):
     # Define a function to do detailed cost verification at a specific step
     def detailed_cost_verification(step_info, step_num, current_dt):
         """Perform detailed verification of cost calculations for a single step"""
-        logger.info("\n" + "-"*80)
+        logger.info("-"*80)
         logger.info(f"DETAILED COST VERIFICATION FOR STEP {step_num} - {current_dt}")
         logger.info("-"*80)
         
@@ -318,7 +318,7 @@ def run_sanity_checks(env: HomeEnergyEnv, config: dict, num_steps: int = 100):
     
     for i in range(max_steps):
         action = np.array([np.random.uniform(-1.0, 1.0)])
-        obs, reward, terminated, truncated, info = env.step(action)
+        observation, reward, terminated, truncated, info = env.step(action)
         
         # Store data for analysis
         if "reward_components" in info:
@@ -365,7 +365,7 @@ def run_sanity_checks(env: HomeEnergyEnv, config: dict, num_steps: int = 100):
             break
     
     # Calculate and log summary statistics
-    logger.info("\n" + "="*80)
+    logger.info("="*80)
     logger.info("SANITY CHECK SUMMARY STATISTICS")
     logger.info("="*80)
     
@@ -569,9 +569,36 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sanity-check-steps",
         type=int,
-        default=100,
-        help="Number of steps to run in the sanity check (default: 100)"
+        default=10,
+        help="Number of steps to run in the sanity check (default: 10)"
+    )
+    
+    parser.add_argument(
+        "--start-date",
+        type=str,
+        default=None,
+        help="Earliest allowed date for training episodes (YYYY-MM-DD). If not set, uses earliest available in data."
+    )
+    parser.add_argument(
+        "--end-date",
+        type=str,
+        default=None,
+        help="Latest allowed date for training episodes (YYYY-MM-DD). If not set, uses latest available in data."
+    )
+    parser.add_argument(
+        "--augment-data",
+        action="store_true",
+        help="Enable data augmentation during training to increase variety of solar and consumption patterns"
     )
     
     args = parser.parse_args()
+    # Inject start_date and end_date into config_dict for use by the environment
+    if args.start_date:
+        rl_config.start_date = args.start_date
+    if args.end_date:
+        rl_config.end_date = args.end_date
+    # Enable data augmentation if requested
+    if args.augment_data:
+        rl_config.use_data_augmentation = True
+        print("Data augmentation enabled for training")
     main() 

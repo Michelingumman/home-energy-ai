@@ -27,8 +27,273 @@ logger = logging.getLogger("home_energy_env")
 # Default paths for prediction files
 PRICE_PREDICTIONS_PATH = "src/predictions/prices/plots/predictions/merged"
 
-# Default path for actual solar data
-ACTUAL_SOLAR_DATA_PATH = "src/predictions/solar/actual_data/ActualSolarProductionData.csv"
+# Utility functions for the new reward structure
+
+def compute_max_charge_rate(soc: float, max_soc: float, max_charge_power_kw: float, 
+                           battery_capacity_kwh: float, time_step_hours: float) -> float:
+    """
+    Computes maximum allowed charging rate (in normalized -1 to 0 space) based on current SoC.
+    Returns a value between 0 (no charging allowed) and max_charge_power_kw.
+    
+    Args:
+        soc: Current battery state of charge (0 to 1)
+        max_soc: Maximum allowed SoC (e.g., 0.8)
+        max_charge_power_kw: Maximum battery charging power
+        battery_capacity_kwh: Battery capacity in kWh
+        time_step_hours: Time step duration in hours
+        
+    Returns:
+        float: Maximum normalized charging rate (0 to max_charge_power_kw)
+    """
+    # If already at or above max_soc, no charging allowed
+    if soc >= max_soc:
+        return 0.0
+    
+    # Calculate energy headroom and convert to power
+    energy_headroom_kwh = (max_soc - soc) * battery_capacity_kwh
+    max_safe_charge_power = min(max_charge_power_kw, energy_headroom_kwh / time_step_hours)
+    
+    return max_safe_charge_power
+
+
+def compute_max_discharge_rate(soc: float, min_soc: float, max_discharge_power_kw: float,
+                              battery_capacity_kwh: float, time_step_hours: float) -> float:
+    """
+    Computes maximum allowed discharging rate (in normalized 0 to 1 space) based on current SoC.
+    Returns a value between 0 (no discharging allowed) and max_discharge_power_kw.
+    
+    Args:
+        soc: Current battery state of charge (0 to 1)
+        min_soc: Minimum allowed SoC (e.g., 0.2)
+        max_discharge_power_kw: Maximum battery discharging power
+        battery_capacity_kwh: Battery capacity in kWh
+        time_step_hours: Time step duration in hours
+        
+    Returns:
+        float: Maximum normalized discharging rate (0 to max_discharge_power_kw)
+    """
+    # If already at or below min_soc, no discharging allowed
+    if soc <= min_soc:
+        return 0.0
+    
+    # Calculate energy available and convert to power
+    energy_available_kwh = (soc - min_soc) * battery_capacity_kwh
+    max_safe_discharge_power = min(max_discharge_power_kw, energy_available_kwh / time_step_hours)
+    
+    return max_safe_discharge_power
+
+
+def safe_action_mask(raw_action: float, soc: float, min_soc: float, max_soc: float, 
+                    max_charge_power_kw: float, max_discharge_power_kw: float,
+                    battery_capacity_kwh: float, time_step_hours: float) -> float:
+    """
+    Projects raw_action into the feasible action set such that
+    resulting SoC remains within [min_soc, max_soc].
+    
+    Args:
+        raw_action: Normalized action from agent (-1 to 1)
+        soc: Current battery state of charge (0 to 1)
+        min_soc: Minimum allowed SoC (e.g., 0.2)
+        max_soc: Maximum allowed SoC (e.g., 0.8)
+        max_charge_power_kw: Maximum battery charging power
+        max_discharge_power_kw: Maximum battery discharging power
+        battery_capacity_kwh: Battery capacity in kWh
+        time_step_hours: Time step duration in hours
+        
+    Returns:
+        float: Safe action that won't violate SoC constraints
+    """
+    # Compute the max allowable charge/discharge for current SoC
+    max_charge = compute_max_charge_rate(soc, max_soc, max_charge_power_kw, 
+                                        battery_capacity_kwh, time_step_hours)
+    max_discharge = compute_max_discharge_rate(soc, min_soc, max_discharge_power_kw,
+                                             battery_capacity_kwh, time_step_hours)
+    
+    # Convert from raw normalized (-1 to 1) to actual power values
+    requested_power = raw_action
+    if requested_power < 0:  # Charging request
+        # Scale the -1 to 0 range to -max_charge_power_kw to 0
+        requested_charge_power = -requested_power * max_charge_power_kw
+        # Limit to safe value
+        safe_charge_power = min(requested_charge_power, max_charge)
+        # Convert back to normalized space
+        safe_action = -safe_charge_power / max_charge_power_kw if max_charge_power_kw > 0 else 0
+    else:  # Discharging request
+        # Scale the 0 to 1 range to 0 to max_discharge_power_kw  
+        requested_discharge_power = requested_power * max_discharge_power_kw
+        # Limit to safe value
+        safe_discharge_power = min(requested_discharge_power, max_discharge)
+        # Convert back to normalized space
+        safe_action = safe_discharge_power / max_discharge_power_kw if max_discharge_power_kw > 0 else 0
+        
+    return safe_action
+
+
+def soc_potential(soc: float, min_soc: float, low_pref: float, high_pref: float, max_soc: float) -> float:
+    """
+    Creates a potential function that guides the agent toward preferred SoC ranges.
+    Uses finite values with smoother gradients to avoid extreme reward spikes.
+    
+    Args:
+        soc: Current battery state of charge (0 to 1)
+        min_soc: Minimum allowed SoC (hard constraint, e.g., 0.2)
+        low_pref: Lower bound of preferred SoC range (soft constraint, e.g., 0.3)
+        high_pref: Upper bound of preferred SoC range (soft constraint, e.g., 0.7)
+        max_soc: Maximum allowed SoC (hard constraint, e.g., 0.8)
+        
+    Returns:
+        float: Potential value for shaping reward
+    """
+    # Use configurable finite values instead of -1e6
+    from src.rl.config import get_config_dict
+    config = get_config_dict()
+    potential_min_value = config.get("soc_potential_min_value", -50.0)
+    
+    if soc <= min_soc or soc >= max_soc:
+        return potential_min_value  # Finite negative value
+    
+    # Calculate center and width of preferred range
+    mid = 0.5 * (low_pref + high_pref)
+    width = max(0.001, 0.5 * (high_pref - low_pref))  # Prevent division by zero
+    
+    # Smooth transition outside preferred range
+    if soc < low_pref:
+        # Normalize to [0,1] between min_soc and low_pref
+        normalized_dist = (soc - min_soc) / max(0.001, (low_pref - min_soc))
+        return normalized_dist - 0.5  # Range from -0.5 to 0.5
+    elif soc > high_pref:
+        # Normalize to [0,1] between high_pref and max_soc
+        normalized_dist = (max_soc - soc) / max(0.001, (max_soc - high_pref))
+        return normalized_dist - 0.5  # Range from -0.5 to 0.5
+    else:
+        # Inside preferred band - normalized distance from center
+        normalized_dist = 1.0 - (abs(soc - mid) / width)
+        return normalized_dist  # Range from 0 to 1
+
+
+def shaping_reward(soc_t: float, soc_tp1: float, gamma: float, 
+                  min_soc: float, low_pref: float, high_pref: float, max_soc: float) -> float:
+    """
+    Calculates potential-based shaping reward that guides agent behavior without
+    changing the optimal policy.
+    
+    Args:
+        soc_t: SoC at current time step
+        soc_tp1: SoC at next time step
+        gamma: Discount factor for future rewards
+        min_soc: Minimum allowed SoC (hard constraint)
+        low_pref: Lower bound of preferred SoC range (soft constraint)
+        high_pref: Upper bound of preferred SoC range (soft constraint)
+        max_soc: Maximum allowed SoC (hard constraint)
+        
+    Returns:
+        float: Shaping reward component
+    """
+    pot_t = soc_potential(soc_t, min_soc, low_pref, high_pref, max_soc)
+    pot_tp1 = soc_potential(soc_tp1, min_soc, low_pref, high_pref, max_soc)
+    
+    return gamma * pot_tp1 - pot_t
+
+
+def soc_reward(soc: float, min_soc: float, low_pref: float, high_pref: float, max_soc: float,
+              violation_scale: float, soft_scale: float, preferred_scale: float) -> float:
+    """
+    Unified SoC reward function that provides graduated rewards/penalties based on SoC position.
+    Includes extra penalties for very high SoC to discourage constant high-SoC operation.
+    
+    Args:
+        soc: Current battery state of charge (0 to 1)
+        min_soc: Minimum allowed SoC (hard constraint, e.g., 0.2)
+        low_pref: Lower bound of preferred SoC range (soft constraint, e.g., 0.3)
+        high_pref: Upper bound of preferred SoC range (soft constraint, e.g., 0.7)
+        max_soc: Maximum allowed SoC (hard constraint, e.g., 0.8)
+        violation_scale: Scaling factor for hard limit violations
+        soft_scale: Scaling factor for soft limit violations
+        preferred_scale: Scaling factor for rewards inside preferred range
+        
+    Returns:
+        float: SoC-related reward component
+    """
+    # Get high SoC penalty parameters from config
+    from src.rl.config import get_config_dict
+    config = get_config_dict()
+    high_soc_multiplier = config.get("high_soc_penalty_multiplier", 10.0)  # Increased from 3.0
+    very_high_threshold = config.get("very_high_soc_threshold", 0.85)
+    
+    # Hard limit violations (severe penalties)
+    if soc < min_soc:
+        return -(min_soc - soc) * violation_scale
+    if soc > max_soc:
+        return -(soc - max_soc) * violation_scale
+    
+    # Very high SoC additional penalty
+    if soc > very_high_threshold:
+        return -(soc - high_pref) * soft_scale * high_soc_multiplier
+    
+    # Soft limit violations (moderate penalties)
+    if soc < low_pref:
+        return -(low_pref - soc) * soft_scale
+    if soc > high_pref:
+        return -(soc - high_pref) * soft_scale
+    
+    # Inside preferred band (rewards)
+    mid = 0.5 * (low_pref + high_pref)
+    width = 0.5 * (high_pref - low_pref)
+    # Reward is highest at center of range and decreases toward edges
+    return preferred_scale * (1.0 - abs(soc - mid) / width)
+
+
+def total_reward(components: Dict[str, float], weights: Dict[str, float]) -> float:
+    """
+    Aggregates all reward components using weighted sum approach.
+    
+    Args:
+        components: Dictionary containing reward components
+        weights: Dictionary of weight factors for each component
+        
+    Returns:
+        float: Total aggregated reward
+    """
+    total = 0.0
+    
+    # Grid cost (negative penalty)
+    if 'grid_cost' in components and 'w_grid' in weights:
+        total += weights['w_grid'] * (-components['grid_cost'])
+    
+    # Capacity (peak demand)
+    if 'capacity_penalty' in components and 'w_cap' in weights:
+        total += weights['w_cap'] * (-components['capacity_penalty'])
+    
+    # Battery degradation
+    if 'degradation_cost' in components and 'w_deg' in weights:
+        total += weights['w_deg'] * (-components['degradation_cost'])
+    
+    # SoC management
+    if 'soc_reward' in components and 'w_soc' in weights:
+        total += weights['w_soc'] * components['soc_reward']
+    
+    # Potential-based shaping
+    if 'shaping_reward' in components and 'w_shape' in weights:
+        total += weights['w_shape'] * components['shaping_reward']
+    
+    # Night-time charging reward - only applied when actually charging the battery
+    if all(k in components for k in ['night_discount', 'battery_charging_power']) and 'w_night' in weights:
+        # Only add night charging reward if actually charging (battery_charging_power > 0)
+        total += weights['w_night'] * components['night_discount'] * components['battery_charging_power']
+    
+    # Arbitrage bonus
+    if 'arbitrage_bonus' in components and 'w_arbitrage' in weights:
+        total += weights['w_arbitrage'] * components['arbitrage_bonus']
+    
+    # Export bonus
+    if 'export_bonus' in components and 'w_export' in weights:
+        total += weights['w_export'] * components['export_bonus']
+    
+    # Action modification penalty
+    if 'action_mod_penalty' in components and 'w_action_mod' in weights:
+        total += weights['w_action_mod'] * (-components['action_mod_penalty'])
+    
+    return total
 
 class HomeEnergyEnv(gym.Env):
     """
@@ -76,6 +341,10 @@ class HomeEnergyEnv(gym.Env):
                 
         # Flag to enable/disable timestamp sanity check prints
         self.debug_prints = self.config.get("debug_prints", False)
+        
+        # Counter for consecutive invalid actions
+        self.consecutive_invalid_actions = 0
+        self.max_consecutive_penalty_multiplier = self.config.get("max_consecutive_penalty_multiplier", 5.0)
                 
         logger.info("\n{:=^80}".format(" Initializing HomeEnergyEnv "))
 
@@ -91,7 +360,7 @@ class HomeEnergyEnv(gym.Env):
         self.consumption_data_path = self.config.get("consumption_data_path", None)
         self.battery_degradation_cost_per_kwh = self.config.get("battery_degradation_cost_per_kwh", 45.0)
         self.use_solar_predictions = self.config.get("use_solar_predictions", True)
-        self.solar_data_path = self.config.get("solar_data_path", ACTUAL_SOLAR_DATA_PATH)
+        self.solar_data_path = self.config.get("solar_data_path", None)
 
         # New parameters from config for battery and rewards
         self.battery_initial_soc = self.config.get("battery_initial_soc", 0.5)
@@ -128,6 +397,12 @@ class HomeEnergyEnv(gym.Env):
         self.max_solar_data_date = None
         self.time_step_hours = self.time_step_minutes / 60.0
         
+        # Optional: restrict training to a specific date range
+        self.start_date_str = self.config.get("start_date", None)
+        self.end_date_str = self.config.get("end_date", None)
+        self.start_date = None
+        self.end_date = None
+        # Will parse these in _set_random_start_datetime
         logger.info(f"Time step configured: {self.time_step_minutes} minutes ({self.time_step_hours:.2f} hours).")
         
         # Log key parameters in a more consolidated way
@@ -308,12 +583,37 @@ class HomeEnergyEnv(gym.Env):
                 else:
                     effective_max_data_date = self.max_solar_data_date
 
-        if effective_min_data_date is None or effective_max_data_date is None:
-            logger.critical("CRITICAL: No valid date range found from data for random start. Exiting.")
-            sys.exit(1)
+        # Restrict by user-specified start_date and end_date if provided
+        tz = None
+        # Try to use the timezone of the data if available
+        if hasattr(effective_min_data_date, 'tzinfo') and effective_min_data_date.tzinfo is not None:
+            tz = effective_min_data_date.tzinfo
+        if self.start_date_str:
+            try:
+                self.start_date = pd.Timestamp(self.start_date_str)
+                if tz is not None and self.start_date.tzinfo is None:
+                    self.start_date = self.start_date.tz_localize(tz)
+                effective_min_data_date = max(effective_min_data_date, self.start_date)
+                logger.info(f"Restricting minimum episode start date to {self.start_date} (user-specified)")
+            except Exception as e:
+                logger.error(f"Could not parse start_date '{self.start_date_str}': {e}")
+                raise
+        if self.end_date_str:
+            try:
+                self.end_date = pd.Timestamp(self.end_date_str)
+                if tz is not None and self.end_date.tzinfo is None:
+                    self.end_date = self.end_date.tz_localize(tz)
+                effective_max_data_date = min(effective_max_data_date, self.end_date)
+                logger.info(f"Restricting maximum episode start date to {self.end_date} (user-specified)")
+            except Exception as e:
+                logger.error(f"Could not parse end_date '{self.end_date_str}': {e}")
+                raise
+        if effective_min_data_date > effective_max_data_date:
+            logger.critical(f"No valid data range after applying start_date ({self.start_date}) and end_date ({self.end_date}). Exiting.")
+            raise ValueError(f"No valid data range after applying start_date ({self.start_date}) and end_date ({self.end_date})")
 
         max_possible_start_date = effective_max_data_date - pd.Timedelta(days=self.simulation_days) # simulation_days is from config
-        
+
         if effective_min_data_date > max_possible_start_date:
             logger.warning(
                 f"Overall data range {effective_min_data_date} to {effective_max_data_date} is too short for simulation_days ({self.simulation_days}). "
@@ -354,7 +654,17 @@ class HomeEnergyEnv(gym.Env):
             logger.info(f"Random seed set to: {seed}")
         
         self.current_step = 0
+        self.consecutive_invalid_actions = 0  # Reset consecutive invalid actions counter
 
+        # Log effective data ranges for all sources
+        logger.info("--- DATA RANGE SUMMARY ---")
+        logger.info(f"Price data: {self.min_price_data_date} to {self.max_price_data_date}")
+        if self.use_variable_consumption and self.all_consumption_data_kw is not None:
+            logger.info(f"Consumption data: {self.all_consumption_data_kw.index.min()} to {self.all_consumption_data_kw.index.max()}")
+        if self.use_solar_predictions and self.all_solar_data_hourly_kw is not None:
+            logger.info(f"Solar data: {self.all_solar_data_hourly_kw.index.min()} to {self.all_solar_data_hourly_kw.index.max()}")
+        logger.info("--------------------------")
+        
         # Determine start_datetime for the episode
         if self.config.get("force_specific_start_month", False):
             start_year = self.config.get("start_year")
@@ -463,7 +773,17 @@ class HomeEnergyEnv(gym.Env):
                     self.episode_consumption_kw = np.full(self.simulation_steps, self.fixed_baseload_kw)
                 else:
                     self.episode_consumption_kw = episode_consumption_df['consumption_kw'].values[:self.simulation_steps]
-                    # logger.info(f"Variable consumption profile for episode loaded. Length: {len(self.episode_consumption_kw)}")
+                    # Apply data augmentation if enabled
+                    if self.config.get("use_data_augmentation", False) and self.config.get("augment_consumption_data", True):
+                        augmentation_factor = self.config.get("consumption_augmentation_factor", 0.15)
+                        
+                        # Generate random scaling factor for the episode
+                        consumption_scale = np.random.normal(1.0, augmentation_factor)
+                        consumption_scale = max(0.7, min(1.3, consumption_scale))  # Limit scaling to reasonable range
+                        
+                        # Apply augmentation
+                        self.episode_consumption_kw = self.episode_consumption_kw * consumption_scale
+                        logger.info(f"Applied consumption data augmentation with scaling factor: {consumption_scale:.2f}")
 
             except Exception as e:
                 logger.error(f"Error selecting episode consumption data: {e}. Defaulting to fixed baseload.")
@@ -507,10 +827,33 @@ class HomeEnergyEnv(gym.Env):
             truncated (bool): Whether the episode was truncated (not used here, use terminated).
             info (Dict): Contains auxiliary diagnostic information useful for debugging, logging, and learning.
         """
-        # 1. Action Interpretation
-        # Action is a value between -1 (max charge) and 1 (max discharge)
-        # Use asymmetric mapping function to handle different charge/discharge limits
-        target_battery_terminal_power_kw = self._map_action_to_battery_power(action[0])
+        # 1. Apply Safe Action Masking
+        # Store the original action for logging/debugging
+        original_action = action[0]
+        
+        # Apply safety constraints to avoid SoC violations
+        soc_min_limit = self.config.get("soc_min_limit", 0.2)
+        soc_max_limit = self.config.get("soc_max_limit", 0.8)
+        
+        # Apply the safety mask to constrain actions that would violate SoC limits
+        safe_action = safe_action_mask(
+            raw_action=action[0],
+            soc=self.battery.soc,
+            min_soc=soc_min_limit,
+            max_soc=soc_max_limit,
+            max_charge_power_kw=self.battery_max_charge_power_kw,
+            max_discharge_power_kw=self.battery_max_discharge_power_kw,
+            battery_capacity_kwh=self.battery_capacity,
+            time_step_hours=self.time_step_hours
+        )
+        
+        # Record if action was modified
+        action_modified = (original_action != safe_action)
+        if action_modified and self.debug_prints:
+            logger.debug(f"Step {self.current_step}: Action modified from {original_action:.4f} to {safe_action:.4f} to protect SoC limits")
+        
+        # Convert the safe normalized action to actual power
+        target_battery_terminal_power_kw = self._map_action_to_battery_power(safe_action)
 
         # 2. Get Current Actuals for this step
         current_dt = self.start_datetime + datetime.timedelta(hours=self.current_step * self.time_step_hours)
@@ -525,13 +868,28 @@ class HomeEnergyEnv(gym.Env):
             current_consumption_kw = self.episode_consumption_kw[self.current_step]
 
         # 3. Battery Operation
-        # The battery.step method handles internal power limits and efficiencies.
-        # actual_battery_power_kw_at_terminals: positive for discharge, negative for charge (power from/to grid perspective)
-        # energy_change_in_storage_kwh: positive for charge, negative for discharge (change in stored energy)
+        # Store current SoC for reward shaping calculation
+        soc_before = self.battery.soc
+        
+        # Apply action to battery
         actual_battery_power_kw_at_terminals, energy_change_in_storage_kwh, limited_by_soc = self.battery.step(
             target_power_kw=target_battery_terminal_power_kw,
             duration_hours=self.time_step_hours
         )
+        
+        # Get the SoC after action
+        soc_after = self.battery.soc
+        
+        # Track battery operations for debugging
+        if self.debug_prints and (self.current_step % 20 == 0 or action_modified or limited_by_soc):
+            logger.debug(f"Battery operation - Step {self.current_step}: "
+                        f"Target power: {target_battery_terminal_power_kw:.2f} kW, "
+                        f"Actual power: {actual_battery_power_kw_at_terminals:.2f} kW, "
+                        f"SoC: {soc_before:.2f} → {soc_after:.2f}, "
+                        f"Limited by SoC: {limited_by_soc}, "
+                        f"Modified: {action_modified}, "
+                        f"Original action: {original_action:.2f}, "
+                        f"Safe action: {safe_action:.2f}")
 
         # 4. Net Power Calculation
         # Net consumption by the house after its own solar production
@@ -541,266 +899,275 @@ class HomeEnergyEnv(gym.Env):
         # If battery is discharging (positive actual_battery_power_kw_at_terminals), it reduces grid import.
         # If battery is charging (negative actual_battery_power_kw_at_terminals), it increases grid import.
         grid_power_kw = net_house_demand_kw - actual_battery_power_kw_at_terminals
+        
         # Positive grid_power_kw: drawing from grid (import)
-        # Negative grid_power_kw: exporting to grid (export) - assuming this is allowed/handled by utility
+        # Negative grid_power_kw: exporting to grid (export)
+        
+        # Track peak power for capacity fee calculation if importing from grid
+        if grid_power_kw > 0:
+            # Check if current power is one of the top 3 peaks this month
+            is_night = False
+            if hasattr(self, 'is_night_discount') and self.current_step < len(self.is_night_discount):
+                is_night = self.is_night_discount[self.current_step]
+            
+            # Apply night discount to peak value if applicable
+            night_capacity_discount = self.config.get("night_capacity_discount", 0.5)
+            effective_grid_power = grid_power_kw * (night_capacity_discount if is_night else 1.0)
+            
+            # Record this power peak with its timestamp for capacity fee calculation
+            self.current_month_peak_data.append((current_dt, effective_grid_power))
+            
+            # Update top3_peaks list
+            if effective_grid_power > min(self.top3_peaks) or 0.0 in self.top3_peaks:
+                self.top3_peaks[self.top3_peaks.index(min(self.top3_peaks))] = effective_grid_power
+                self.top3_peaks.sort(reverse=True)
+                
+                # Calculate rolling average of top 3 peaks (or fewer if we don't have 3 yet)
+                non_zero_peaks = [p for p in self.top3_peaks if p > 0]
+                self.peak_rolling_average = sum(non_zero_peaks) / len(non_zero_peaks) if non_zero_peaks else 0.0
+                
+            # Also track overall peak power for the episode
+            if grid_power_kw > self.peak_power:
+                self.peak_power = grid_power_kw
 
-        # 5. Reward Calculation
-        reward = 0.0
+        # 5. Reward Calculation using the new component-based approach
+        
+        # Time-dependent parameters
+        gamma = self.config.get("short_term_gamma", 0.98)  # Discount factor for shaping
+        current_hour = current_dt.hour
+        is_night = False
+        if hasattr(self, 'is_night_discount') and self.current_step < len(self.is_night_discount):
+            is_night = self.is_night_discount[self.current_step]
+            
+        # Log pricing and energy flows for debugging
+        if self.debug_prints and self.current_step % 20 == 0:
+            logger.debug(f"Energy flows - Step {self.current_step}: "
+                        f"Time: {current_dt.strftime('%Y-%m-%d %H:%M')} {'(Night)' if is_night else ''}, "
+                        f"Price: {current_price_ore_per_kwh:.2f} öre/kWh, "
+                        f"Grid Power: {grid_power_kw:.2f} kW, "
+                        f"Battery Power: {actual_battery_power_kw_at_terminals:.2f} kW, "
+                        f"Consumption: {current_consumption_kw:.2f} kW, "
+                        f"Solar: {current_solar_kw:.2f} kW")
+        
+        # Get SoC parameters
+        preferred_soc_min = self.config.get("preferred_soc_min_base", 0.3)
+        preferred_soc_max = self.config.get("preferred_soc_max_base", 0.7)
+        soc_violation_scale = self.config.get("soc_violation_scale", 1.0) * 1000
+        soc_soft_scale = self.config.get("soc_soft_scale", 100.0)
+        preferred_soc_scale = self.config.get("preferred_soc_reward_factor", 500.0)
+        
+        # 5.1 Calculate each reward component separately
         reward_components = {}
         
-        # New Swedish electricity pricing model:
-        # 1. Energy cost = (spot_price * VAT) + grid_fee + energy_tax, with night discount on grid_fee
-        # 2. Capacity fee = average of top 3 peaks for the month * capacity_fee_per_kw (applied at month boundaries)
-        # 3. Fixed monthly fee (applied at the beginning of each month)
-        
-        
-        # Get SoC limits from config
-        soc_max_limit = self.config.get("soc_max_limit", 0.8)
-        soc_min_limit = self.config.get("soc_min_limit", 0.2)
-
-        # Component 1: SoC Management - Unified approach
-        soc_penalty = 0.0
-        
-        # Direct SoC violation penalty for being outside physical limits
-        soc_violation_scale = self.config.get("soc_violation_scale", 10.0)  # Updated default
-        if self.battery.soc > soc_max_limit:
-            # Use a much more aggressive step function penalty
-            soc_penalty -= self.soc_limit_penalty_factor * soc_violation_scale  #
-        elif self.battery.soc < soc_min_limit:
-            # Use a much more aggressive step function penalty
-            soc_penalty -= self.soc_limit_penalty_factor * soc_violation_scale  # 
-            
-        # Removed: SoC action limit penalty
-            
-        reward += soc_penalty
-        reward_components['reward_soc_limit_penalty'] = soc_penalty
-
-        # Component 2: Cost/Revenue from Grid Interaction (Electricity Bill)
+        # Grid cost component (always present)
         grid_energy_kwh = grid_power_kw * self.time_step_hours
         grid_cost = 0.0
-        export_bonus = 0.0
         
         if grid_power_kw > 0:  # Importing from grid
-            # New pricing model using parameters from config
-            current_hour = (self.start_datetime + datetime.timedelta(hours=self.current_step * self.time_step_hours)).hour
+            energy_tax = self.config.get("energy_tax", 54.875)
+            vat_mult = self.config.get("vat_mult", 1.25)
+            grid_fee_val = self.config.get("grid_fee", 6.25)
             
-            # Apply VAT to spot price
-            energy_tax = self.config.get("energy_tax", 54.875)  # öre/kWh
-            vat_mult = self.config.get("vat_mult", 1.25)  # 25% VAT
-            grid_fee = self.config.get("grid_fee", 6.25)  # öre/kWh
-            
-            # Calculate total cost per kWh in öre - NOTE: grid fee doesn't get night discount
             spot_with_vat = current_price_ore_per_kwh * vat_mult
-            cost_ore = spot_with_vat + grid_fee + energy_tax
+            cost_ore = spot_with_vat + grid_fee_val + energy_tax
             
-            # Convert to SEK for the reward (öre/100)
-            cost_sek = (grid_power_kw * cost_ore * self.time_step_hours) / 100.0
-            grid_cost = cost_sek * 100.0  # Keep in öre for consistency with existing code
-        elif grid_power_kw < 0:  # Exporting to grid (optional revenue)
-            # Apply export reward bonus
-            export_reward_bonus_ore_kwh = self.config.get("export_reward_bonus_ore_kwh", 60.0)  # öre/kWh
-            # Calculate revenue: spot price + bonus, multiplied by exported energy
-            export_energy_kwh = abs(grid_energy_kwh)  # Make positive for calculation
+            grid_cost = (grid_power_kw * cost_ore * self.time_step_hours)  # in öre
+            grid_cost = grid_cost * self.config.get("grid_cost_scaling_factor", 1.0)
+            
+            # Update tracking metrics
+            self.total_cost += grid_cost / 100.0  # Convert öre to SEK
+            self.grid_cost_history.append(grid_cost)
+        
+        reward_components['grid_cost'] = grid_cost
+        
+        # Capacity penalty component (Peak shaving incentive)
+        capacity_penalty = 0.0
+        peak_power_threshold_kw = self.config.get("peak_power_threshold_kw", 5.0)
+        
+        if grid_power_kw > peak_power_threshold_kw:
+            # Penalty for exceeding threshold
+            excess_power = grid_power_kw - peak_power_threshold_kw
+            peak_penalty_factor = self.config.get("peak_penalty_factor", 500.0)
+            peak_penalty_scale = self.config.get("peak_penalty_scale", 1.0)
+            capacity_penalty = excess_power * peak_penalty_factor * peak_penalty_scale
+        
+        reward_components['capacity_penalty'] = capacity_penalty
+        
+        # Battery degradation component
+        degradation_cost = 0.0
+        if abs(energy_change_in_storage_kwh) > 0:
+            # Calculate the battery degradation cost in öre
+            energy_throughput = abs(energy_change_in_storage_kwh)
+            degradation_cost = energy_throughput * self.battery_degradation_cost_per_kwh
+            degradation_cost *= self.battery_degradation_reward_scaling_factor
+            
+            self.battery_cost_history.append(degradation_cost)
+        
+        reward_components['degradation_cost'] = degradation_cost
+        
+        # Unified SoC reward component
+        soc_rew = soc_reward(
+            soc=soc_after, 
+            min_soc=soc_min_limit,
+            low_pref=preferred_soc_min,
+            high_pref=preferred_soc_max,
+            max_soc=soc_max_limit,
+            violation_scale=soc_violation_scale,
+            soft_scale=soc_soft_scale,
+            preferred_scale=preferred_soc_scale
+        )
+        reward_components['soc_reward'] = soc_rew
+        
+        # Potential-based shaping reward
+        shape_rew = shaping_reward(
+            soc_t=soc_before,
+            soc_tp1=soc_after,
+            gamma=gamma,
+            min_soc=soc_min_limit,
+            low_pref=preferred_soc_min,
+            high_pref=preferred_soc_max,
+            max_soc=soc_max_limit
+        )
+        reward_components['shaping_reward'] = shape_rew
+        
+        # Night-time discount incentive (encourage night charging)
+        reward_components['night_discount'] = float(is_night)
+        reward_components['grid_import'] = max(0, grid_power_kw)  # Only positive for import
+        
+        # Export bonus component
+        export_bonus = 0.0
+        if grid_power_kw < 0:  # Exporting to grid
+            export_energy_kwh = abs(grid_energy_kwh)
+            export_reward_bonus_ore_kwh = self.config.get("export_reward_bonus_ore_kwh", 60.0)
             export_revenue_ore = (current_price_ore_per_kwh + export_reward_bonus_ore_kwh) * export_energy_kwh
-            export_bonus = export_revenue_ore  # This is positive (a bonus)
+            export_bonus = export_revenue_ore * self.config.get("export_scaling_factor", 1.0)
+        reward_components['export_bonus'] = export_bonus
         
-        reward -= grid_cost  # Subtract cost from reward
-        reward += export_bonus  # Add export bonus to reward
-        reward_components['reward_grid_cost'] = -grid_cost
-        reward_components['reward_export_bonus'] = export_bonus
-        self.total_cost += grid_cost / 100.0  # Track cost in SEK
-        self.grid_cost_history.append(grid_cost)
-
-        # Track grid power for capacity fee calculation
-        if grid_power_kw > 0:  # Only track import peaks
-            # Use pre-calculated night discount flag instead of recalculating
-            is_night = self.is_night_discount[self.current_step] if self.current_step < len(self.is_night_discount) else (
-                (current_dt.hour >= 22 or current_dt.hour < 6)
-            )
-            night_capacity_discount = self.config.get("night_capacity_discount", 0.5)
-            
-            # Apply night discount to peaks during night hours
-            effective_15min_peak = grid_power_kw * (night_capacity_discount if is_night else 1.0)
-            
-            # Append the 15-minute effective peak and its timestamp for the current month
-            self.current_month_peak_data.append((current_dt, effective_15min_peak))
-            
-            # Calculate top 3 HOURLY peaks and rolling average for the current month so far
-            if self.current_month_peak_data:
-                # Create a DataFrame from the collected 15-minute peak data for the current month
-                # Ensure timestamps are timezone-aware if they come from a source that is.
-                # current_dt is timezone-naive from self.start_datetime. If price data is tz-aware, this might need alignment.
-                # For now, assuming current_dt is appropriate for direct use as index.
-                df_month_peaks = pd.DataFrame(self.current_month_peak_data, columns=['timestamp', 'peak_power'])
-                df_month_peaks.set_index('timestamp', inplace=True)
-
-                # Resample to hourly mean. Only consider positive peaks.
-                hourly_mean_effective_peaks = df_month_peaks['peak_power'].resample('h').mean().fillna(0)
-                hourly_positive_peaks = hourly_mean_effective_peaks[hourly_mean_effective_peaks > 0]
-                
-                if not hourly_positive_peaks.empty:
-                    sorted_hourly_peaks_series = hourly_positive_peaks.sort_values(ascending=False)
-                    
-                    selected_daily_peak_values = []
-                    seen_peak_days = set()
-                    
-                    for peak_timestamp, peak_power in sorted_hourly_peaks_series.items():
-                        peak_day = peak_timestamp.date() # Get the date part of the timestamp
-                        
-                        if peak_day not in seen_peak_days:
-                            selected_daily_peak_values.append(peak_power)
-                            seen_peak_days.add(peak_day)
-                            
-                        if len(selected_daily_peak_values) >= 3:
-                            break # Found 3 peaks from 3 unique days
-                    
-                    # self.top3_peaks should store these, padded with 0.0 if fewer than 3 found
-                    # The selected_daily_peak_values are already sorted by value due to iterating sorted_hourly_peaks_series
-                    self.top3_peaks = selected_daily_peak_values + [0.0] * (3 - len(selected_daily_peak_values))
-                else:
-                    self.top3_peaks = [0.0, 0.0, 0.0]
-                
-                self.peak_rolling_average = sum(self.top3_peaks) / 3.0 # Average of 3 values
-            else:
-                self.top3_peaks = [0.0, 0.0, 0.0]
-                self.peak_rolling_average = 0.0
-        # else: if grid_power_kw <= 0, the peak data for this step is not relevant for capacity fee calculation based on import peaks
-            # No change to self.top3_peaks or self.peak_rolling_average if there's no new positive grid_power_kw,
-            # they retain their values from the previous step or from month reset.
-            # However, if grid_power_kw is not positive, we should ensure that if current_month_peak_data is empty,
-            # top3_peaks and peak_rolling_average are zero. This is handled by the `if self.current_month_peak_data:` block.
-
-        
-        # Calculate month progress (0 to 1)
-        current_dt = self.start_datetime + datetime.timedelta(hours=self.current_step * self.time_step_hours)
-        days_elapsed = (current_dt - self.month_start_date).days
-        hours_elapsed = (current_dt - self.month_start_date).seconds / 3600
-        total_elapsed = days_elapsed + (hours_elapsed / 24)
-        month_progress = min(1.0, total_elapsed / self.days_in_month)
-        
-        # Check if we're at a month boundary
-        next_step_dt = self.start_datetime + datetime.timedelta(hours=(self.current_step + 1) * self.time_step_hours)
-        is_month_boundary = current_dt.month != next_step_dt.month
-        
-        # Check if we're at the beginning of a month
-        is_month_start = (current_dt.day == 1 and current_dt.hour == 0 and 
-                          (current_dt.minute < self.time_step_minutes or self.time_step_minutes == 60))
-        
-        # Apply capacity fee at month boundaries
-        if is_month_boundary and len(self.top3_peaks) > 0:
-            capacity_fee_sek_per_kw = self.config.get("capacity_fee_sek_per_kw", 81.25)
-            
-            # Use already calculated top3_peaks and peak_rolling_average
-            cap_penalty = self.peak_rolling_average * capacity_fee_sek_per_kw
-            reward -= cap_penalty
-            reward_components['reward_capacity_fee'] = -cap_penalty
-            self.total_cost += cap_penalty  # Add to total cost
-            
-            # Reset peak data for the next month
-            self.current_month_peak_data = [] # Clear the 15-min data
-            self.top3_peaks = [0.0, 0.0, 0.0]
-            self.peak_rolling_average = 0.0
-        
-        # Apply fixed monthly fee at the beginning of each month
-        # Note: This is removed from reward calculation as it's a non-decision variable,
-        # but we still track it in total_cost for accurate billing simulation
-        if is_month_start:
-            fixed_grid_fee_sek_per_month = self.config.get("fixed_grid_fee_sek_per_month", 365.0)
-            # Removed from reward calculation: reward -= fixed_grid_fee_sek_per_month
-            # Don't track in reward components at all
-            self.total_cost += fixed_grid_fee_sek_per_month  # Still track in total cost
-
-        # Component 3: Peak Shaving Penalty
-        peak_penalty = 0.0
-        peak_penalty_scale = self.config.get("peak_penalty_scale", 1.0)
-        if grid_power_kw > self.peak_power_threshold_kw:
-            excess_power_kw = grid_power_kw - self.peak_power_threshold_kw
-            peak_penalty = -excess_power_kw * self.peak_penalty_factor * peak_penalty_scale
-        reward += peak_penalty
-        reward_components['reward_peak_penalty'] = peak_penalty
-        self.peak_power = max(self.peak_power, grid_power_kw)  # Track overall peak power
-
-        # Component 4: Battery Degradation Cost
-        abs_energy_processed_kwh = abs(energy_change_in_storage_kwh) 
-        degradation_cost = abs_energy_processed_kwh * self.battery.degradation_cost_per_kwh
-        degradation_cost_scaled = degradation_cost * self.battery_degradation_reward_scaling_factor
-        
-        reward -= degradation_cost_scaled  # Subtract scaled cost from reward
-        reward_components['reward_battery_cost'] = -degradation_cost_scaled
-        self.battery_cost_history.append(degradation_cost)  # Store original cost for history
-        self.total_cost += degradation_cost / 100.0  # Track unscaled cost in SEK
-
-        # Component 5: Optional - Price Arbitrage Reward
+        # Arbitrage bonus component
         arbitrage_bonus = 0.0
         if self.enable_explicit_arbitrage_reward:
             arbitrage_reward_scale = self.config.get("arbitrage_reward_scale", 1.0)
-            
             # Charging at low prices
             if actual_battery_power_kw_at_terminals < 0 and current_price_ore_per_kwh < self.low_price_threshold_actual:
                 energy_charged_kwh = abs(actual_battery_power_kw_at_terminals) * self.time_step_hours
                 arbitrage_bonus += energy_charged_kwh * self.charge_at_low_price_reward_factor * arbitrage_reward_scale
-                
             # Discharging at high prices
             elif actual_battery_power_kw_at_terminals > 0 and current_price_ore_per_kwh > self.high_price_threshold_actual:
                 energy_discharged_kwh = actual_battery_power_kw_at_terminals * self.time_step_hours
                 arbitrage_bonus += energy_discharged_kwh * self.discharge_at_high_price_reward_factor * arbitrage_reward_scale
-                
-            reward += arbitrage_bonus
-        reward_components['reward_arbitrage_bonus'] = arbitrage_bonus
-
-        # Component 6: Optional - Preferred SoC Range Reward
-        preferred_soc_reward = 0.0
-        preferred_soc_min = self.config.get("preferred_soc_min_base", 0.3)
-        preferred_soc_max = self.config.get("preferred_soc_max_base", 0.7)
-        preferred_soc_reward_scale = self.config.get("preferred_soc_reward_scale", 1.0)
+        reward_components['arbitrage_bonus'] = arbitrage_bonus
         
-        if preferred_soc_min <= self.battery.soc <= preferred_soc_max:
-            # Reward peaks at the center of the preferred range
-            center_distance = abs(self.battery.soc - (preferred_soc_min + preferred_soc_max)/2)
-            range_width = (preferred_soc_max - preferred_soc_min)/2
-            normalized_distance = center_distance / range_width  # 0 at center, 1 at edges
-            reward_factor = 1.0 - normalized_distance  # 1 at center, 0 at edges
-            preferred_soc_reward = self.config.get("preferred_soc_reward_factor", 0.0) * reward_factor * preferred_soc_reward_scale
-            reward += preferred_soc_reward
+        # Calculate battery charging power for night charging reward
+        # This should be positive only when the battery is actually charging
+        battery_charging_power = 0.0
+        if actual_battery_power_kw_at_terminals < 0:  # Negative power means charging
+            battery_charging_power = abs(actual_battery_power_kw_at_terminals)
+        reward_components['battery_charging_power'] = battery_charging_power
         
-        reward_components['reward_preferred_soc'] = preferred_soc_reward
+        # Add action modification penalty if safety mask was applied
+        if action_modified:
+            # Update consecutive invalid actions counter
+            self.consecutive_invalid_actions += 1
+            # Apply escalating penalty for repeated invalid actions
+            escalation_factor = min(
+                self.consecutive_invalid_actions,
+                self.max_consecutive_penalty_multiplier
+            )
+            action_mod_penalty = abs(original_action - safe_action) * self.config.get("action_modification_penalty", 200.0) * escalation_factor
+            reward_components['action_mod_penalty'] = action_mod_penalty
+            if self.debug_prints:
+                logger.debug(f"Applied escalating penalty (x{escalation_factor}) for {self.consecutive_invalid_actions} consecutive invalid actions")
+        else:
+            # Reset consecutive counter when action is valid
+            self.consecutive_invalid_actions = 0
+            reward_components['action_mod_penalty'] = 0.0
         
-
-        # Apply overall reward scaling if configured
+        # 5.2 Aggregate all components with weights
+        # Define component weights (customizable through config)
+        weights = {
+            'w_grid': self.config.get("w_grid", 1.0),
+            'w_cap': self.config.get("w_cap", 1.0),
+            'w_deg': self.config.get("w_deg", 1.0),
+            'w_soc': self.config.get("w_soc", 2.0),  # Increased from 1.0
+            'w_shape': self.config.get("w_shape", 0.1),
+            'w_night': self.config.get("w_night", 0.5),
+            'w_arbitrage': self.config.get("w_arbitrage", 1.0),
+            'w_export': self.config.get("w_export", 1.0),
+            'w_action_mod': self.config.get("w_action_mod", 1.0)  # Increased from 0.1
+        }
+        
+        # Calculate total reward using weighted aggregation
+        reward = total_reward(reward_components, weights)
+        
+        # Ensure reward consistency (debug check)
+        night_charging_reward = reward_components['night_discount'] * reward_components['battery_charging_power'] * weights['w_night']
+        if night_charging_reward > 0 and reward_components['battery_charging_power'] <= 0:
+            logger.warning(f"Reward consistency check failed: Night charging reward {night_charging_reward} > 0 but battery_charging_power = {reward_components['battery_charging_power']}")
+            # Force the reward to 0 in this case
+            night_charging_reward = 0.0
+        
+        # Apply overall reward scaling factor if configured
         reward_scaling_factor = self.config.get("reward_scaling_factor", 1.0)
         reward = reward * reward_scaling_factor
+        
+        # Log detailed reward breakdown periodically or when debugging
+        if self.debug_prints or self.current_step % 100 == 0:
+            logger.debug(f"Step {self.current_step} reward breakdown: "
+                         f"grid_cost={-reward_components['grid_cost']:.2f}, "
+                         f"battery_cost={-reward_components['degradation_cost']:.2f}, "
+                         f"soc_reward={reward_components['soc_reward']:.2f}, "
+                         f"night_charging={night_charging_reward:.2f}, "
+                         f"arbitrage={reward_components['arbitrage_bonus']:.2f}, "
+                         f"action_mod_penalty={-reward_components['action_mod_penalty']:.2f}, "
+                         f"total={reward:.2f}")
+        
+        # Create a formatted reward_components dict for info tracking
+        # This is to maintain compatibility with existing evaluation code
+        formatted_reward_components = {
+            'reward_grid_cost': -reward_components['grid_cost'],
+            'reward_capacity_penalty': -reward_components['capacity_penalty'],
+            'reward_battery_cost': -reward_components['degradation_cost'],
+            'reward_soc_reward': reward_components['soc_reward'],
+            'reward_shaping': reward_components['shaping_reward'],
+            'reward_arbitrage_bonus': reward_components['arbitrage_bonus'],
+            'reward_export_bonus': reward_components['export_bonus'],
+            'reward_night_charging': night_charging_reward,  # Using the validated night_charging_reward
+            'reward_action_mod_penalty': reward_components['action_mod_penalty'],
+            'battery_charging_power': reward_components['battery_charging_power']
+        }
 
         # 6. Update State & History
         self.current_step += 1
         self.price_history.append(current_price_ore_per_kwh)
-        self.last_action = action[0]
+        self.last_action = original_action  # Store the original action for rendering
         self.total_reward += reward
 
         # 7. Termination/Truncation
         terminated = False
         if self.current_step >= self.simulation_steps:
             terminated = True
-        truncated = False # Not using truncation for now
+        truncated = False  # Not using truncation for now
 
         # 8. Observation & Info
         observation = self._get_observation()
         info = self._get_info()
+        
+        # Add additional info fields
         info["current_price"] = current_price_ore_per_kwh
-        info["power_kw"] = actual_battery_power_kw_at_terminals # Battery power at terminals
+        info["power_kw"] = actual_battery_power_kw_at_terminals
         info["grid_power_kw"] = grid_power_kw
         info["base_demand_kw"] = current_consumption_kw
         info["current_solar_production_kw"] = current_solar_kw
-        info["export_bonus"] = export_bonus  # Add export bonus to info
-        if hasattr(self, 'is_night_discount') and self.current_step <= len(self.is_night_discount):
-             info["is_night_discount"] = self.is_night_discount[self.current_step -1]
-        else:
-             info["is_night_discount"] = False # Default if not available
-        info["reward_components"] = reward_components
-        info["total_reward_episode"] = self.total_reward # Cumulative reward for the current episode
-
-        # For evaluate_agent.py compatibility for some specific keys it looks for
-        # Ensure reward components are directly in info if evaluate_agent expects them flat
-        info.update(reward_components)
+        info["action_modified"] = action_modified
+        info["original_action"] = original_action
+        info["safe_action"] = safe_action
+        info["export_bonus"] = export_bonus
+        info["is_night_discount"] = is_night
+        info["reward_components"] = formatted_reward_components
+        info["total_reward_episode"] = self.total_reward
+        
+        # For compatibility with evaluate_agent.py
+        info.update(formatted_reward_components)
 
         return observation, reward, terminated, truncated, info
 
@@ -841,7 +1208,11 @@ class HomeEnergyEnv(gym.Env):
             self.price_predictions_df.index = pd.to_datetime(self.price_predictions_df.index)
 
         self.price_predictions_df = self.price_predictions_df.sort_index()
-        resampled_prices = self.price_predictions_df['price'].resample(f'{int(self.time_step_hours*60)}min').interpolate(method='linear')
+        
+        # Important change: use 'ffill' method instead of 'interpolate' to properly handle hourly data
+        # This will forward-fill hourly price data instead of linearly interpolating between hours
+        resampled_prices = self.price_predictions_df['price'].resample(f'{int(self.time_step_hours*60)}min').ffill()
+        
         aligned_prices = resampled_prices.reindex(sim_timestamps, method='nearest').ffill().bfill()
         aligned_prices_np = aligned_prices.values
 
@@ -934,16 +1305,16 @@ class HomeEnergyEnv(gym.Env):
             
             # Check boundary conditions specifically
             if hour == 5 and minute >= 45:
-                logger.info(f"Boundary case: {timestamp} (Hour {hour}:{minute}) marked as night={is_night}")
+                # logger.info(f"Boundary case: {timestamp} (Hour {hour}:{minute}) marked as night={is_night}")
                 boundary_timestamps.append((i, timestamp, is_night))
             elif hour == 6 and minute < 15:
-                logger.info(f"Boundary case: {timestamp} (Hour {hour}:{minute}) marked as night={is_night}")
+                # logger.info(f"Boundary case: {timestamp} (Hour {hour}:{minute}) marked as night={is_night}")
                 boundary_timestamps.append((i, timestamp, is_night))
             elif hour == 21 and minute >= 45:
-                logger.info(f"Boundary case: {timestamp} (Hour {hour}:{minute}) marked as night={is_night}")
+                # logger.info(f"Boundary case: {timestamp} (Hour {hour}:{minute}) marked as night={is_night}")
                 boundary_timestamps.append((i, timestamp, is_night))
             elif hour == 22 and minute < 15:
-                logger.info(f"Boundary case: {timestamp} (Hour {hour}:{minute}) marked as night={is_night}")
+                # logger.info(f"Boundary case: {timestamp} (Hour {hour}:{minute}) marked as night={is_night}")
                 boundary_timestamps.append((i, timestamp, is_night))
                 
             self.is_night_discount[i] = is_night
@@ -952,7 +1323,9 @@ class HomeEnergyEnv(gym.Env):
         if boundary_timestamps:
             logger.info(f"Found {len(boundary_timestamps)} boundary timestamps:")
             for idx, ts, night in boundary_timestamps:
-                logger.info(f"  Index {idx}: {ts} - Night discount: {night}")
+                everyfour = (idx % 4 == 0) # True if index is divisible by 4 (i.e. every 4th)
+                if everyfour:# reduces clutter
+                    logger.info(f"  Index {idx}: {ts} - Night discount: {night}")
         else:
             logger.info("No boundary timestamps found in simulation period")
     
@@ -1003,6 +1376,20 @@ class HomeEnergyEnv(gym.Env):
             
             self.solar_forecast_observed[i, :] = observed_forecast_series.values
         
+        # Apply data augmentation if enabled
+        if self.config.get("use_data_augmentation", False) and self.config.get("augment_solar_data", True):
+            augmentation_factor = self.config.get("solar_augmentation_factor", 0.2)
+            
+            # Generate random scaling factors for the entire episode
+            # Use a normal distribution centered at 1.0 with a standard deviation based on the augmentation factor
+            solar_scale = np.random.normal(1.0, augmentation_factor)
+            solar_scale = max(0.5, min(1.5, solar_scale))  # Limit scaling to reasonable range
+            
+            # Apply augmentation to both actual and observed solar forecasts
+            self.solar_forecast_actual = self.solar_forecast_actual * solar_scale
+            self.solar_forecast_observed = self.solar_forecast_observed * solar_scale
+            
+            logger.info(f"Applied solar data augmentation with scaling factor: {solar_scale:.2f}")
 
     def _get_observation(self) -> Dict:
         current_dt = self.start_datetime + datetime.timedelta(hours=self.current_step * self.time_step_hours)
@@ -1287,7 +1674,6 @@ class HomeEnergyEnv(gym.Env):
         except Exception as e:
             logger.error(f"Error loading or processing solar data from {file_path_to_load}: {e}")
             self.all_solar_data_hourly_kw = None
-
 
     def _load_consumption_data(self) -> None:
         if not self.consumption_data_path:

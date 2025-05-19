@@ -1,122 +1,152 @@
-# Home Energy RL System
+# Home Energy Reinforcement Learning System
 
-This is a hierarchical reinforcement learning system for optimizing home energy usage. The system controls a battery, manages appliances, and interfaces with solar production to minimize electricity costs while maintaining user comfort.
+This directory contains the core components for a reinforcement learning (RL) system designed to optimize home energy usage. It learns to control a home battery system, considering grid prices, solar production, and household consumption to minimize electricity costs.
+
+## Core Components
+
+-   **`custom_env.py`**: Defines the `HomeEnergyEnv`, which is the simulation environment where the RL agent learns. It simulates the home energy system, including the battery, grid interaction, solar panels, and energy consumption. It's responsible for calculating rewards based on the agent's actions and the current state of the system.
+-   **`config.py`**: This is the central configuration file. It holds all key parameters for the RL environment (e.g., battery capacity, simulation length), agent training (e.g., learning rates, number of timesteps), and reward function (e.g., penalties for peak loads, bonuses for arbitrage).
+-   **`train.py`**: The main script used to train the RL agent. It initializes the `HomeEnergyEnv`, sets up the PPO (Proximal Policy Optimization) agent from Stable Baselines3, and runs the training loop. It saves trained models and logs training progress (viewable with TensorBoard).
+-   **`evaluate_agent.py`**: This script is used to evaluate the performance of a trained RL agent. It loads a saved model, runs it in the `HomeEnergyEnv` for a specified period (e.g., a specific month), and generates plots and metrics to analyze its behavior and effectiveness.
+-   **`agent.py`**: Contains the definition for the `ShortTermAgent`, which is a wrapper around the Stable Baselines3 PPO model. (Note: The system was previously envisioned as hierarchical, but current focus is on the short-term agent).
+-   **`components.py`**: Defines classes for individual parts of the home energy system, such as the `Battery`.
+
+## Setup
+
+1.  Ensure you have Python 3.10+ installed.
+2.  Install the required packages:
+    ```bash
+    pip install gymnasium stable-baselines3 numpy pandas matplotlib tensorflow
+    ```
+    (Refer to the main project `requirements.txt` for a more comprehensive list of dependencies if issues arise).
+
+## How to Run
+
+All scripts are run from the root directory of the `home-energy-ai` project.
+
+### 1. Configuration
+
+Before training or evaluation, review and adjust parameters in `src/rl/config.py` to match your desired setup. This includes:
+    - Data paths (prices, consumption, solar).
+    - Battery specifications.
+    - Electricity pricing details (tariffs, taxes).
+    - Reward function components and weights.
+    - Agent hyperparameters.
+
+### 2. Training the Agent (`train.py`)
+
+The `train.py` script trains the PPO agent.
+
+**Basic Training:**
+```bash
+python src/rl/train.py
+```
+This will train the agent using the default settings in `config.py` and save the model periodically and at the end of training in `src/rl/saved_models/`. Logs for TensorBoard will be in `src/rl/logs/`.
+
+**Training with Specific Date Ranges:**
+You can restrict the training data to a specific period using `--start-date` and `--end-date`. This is useful if you want the agent to focus on particular seasons or data segments.
+```bash
+python src/rl/train.py --start-date YYYY-MM-DD --end-date YYYY-MM-DD
+```
+Example:
+```bash
+python src/rl/train.py --start-date 2023-03-01 --end-date 2023-05-31
+```
+
+**Training with Data Augmentation:**
+To improve generalization, especially with limited data (like solar production), you can enable data augmentation. This will apply slight random variations to solar and consumption data during each training episode.
+```bash
+python src/rl/train.py --augment-data
+```
+Example:
+```bash
+python src/rl/train.py --augment-data --start-date 2023-01-01 --end-date 2023-12-31
+```
+Data augmentation settings (like the strength of augmentation) can be configured in `config.py`.
+
+**Continuing Training from a Checkpoint:**
+If you have a previously saved model checkpoint, you can continue training from it:
+```bash
+python src/rl/train.py --short_term_model src/rl/saved_models/short_term_checkpoints/your_model_checkpoint.zip
+```
+
+**Other `train.py` Options:**
+-   `--skip-sanity-check`: Skips pre-training checks of the environment and reward function.
+-   `--sanity-check-only`: Runs only the sanity checks and then exits. Useful for debugging the environment.
+-   `--sanity-check-steps <N>`: Specifies the number of steps for the sanity check episode (default: 100).
+
+### 3. Evaluating a Trained Agent (`evaluate_agent.py`)
+
+The `evaluate_agent.py` script loads a trained model and runs it in the environment to assess its performance. Data augmentation is **always disabled** during evaluation to test the agent on real, unaltered data.
+
+**Basic Evaluation (Random Month):**
+By default, the script selects a random full month from your available data range for evaluation.
+```bash
+python src/rl/evaluate_agent.py
+```
+This command assumes your final trained model is saved as `src/rl/saved_models/short_term_agent_final.zip`. If your model has a different name or path, use the `--model_path` argument (though the default model name is hardcoded in `evaluate_agent.py` currently, this might change).
+
+**Evaluating a Specific Month:**
+Use the `--start-month` argument to evaluate the agent's performance for a specific month.
+```bash
+python src/rl/evaluate_agent.py --start-month YYYY-MM
+```
+Example:
+```bash
+python src/rl/evaluate_agent.py --start-month 2023-07
+```
+
+**Evaluating with Random Start Dates (Not a Specific Month):**
+If you prefer the evaluation episode to start at a completely random date and time within the available data (rather than being aligned to a specific month), use the `--random-start` flag. The episode length will be determined by `simulation_days_eval` in `config.py`.
+```bash
+python src/rl/evaluate_agent.py --random-start
+```
+
+**Evaluation Output:**
+-   Performance plots (e.g., SoC, prices, actions, grid power, reward components) will be saved in a timestamped subdirectory within `src/rl/simulations/results/`.
+-   Metrics will be printed to the console.
+-   Raw episode data may also be saved for further analysis (check script details).
+
+## Key Features Simulated
+
+-   **Battery Management**: Controls a battery (e.g., 22 kWh capacity) within specified SoC limits (e.g., 20%-80%), considering degradation costs.
+-   **Cost Optimization**: Aims to minimize electricity costs by:
+    -   Leveraging solar energy.
+    -   Charging the battery during low grid prices.
+    -   Discharging the battery during high grid prices or to reduce peak loads.
+    -   Considering complex Swedish electricity tariffs (energy tax, VAT, grid fees, capacity charges with night discounts).
+-   **Peak Shaving**: Penalizes high grid import peaks to avoid capacity fees.
+-   **Data-Driven**: Uses historical or predicted data for prices, household consumption, and solar production.
+
+## Customization
+
+The system is highly customizable through `src/rl/config.py`. You can adjust:
+-   Environment parameters (simulation length, data paths, fixed baseloads).
+-   Battery characteristics (capacity, charge/discharge rates, efficiency, degradation cost).
+-   Electricity pricing model details.
+-   The entire reward function structure and the weights of its components.
+-   PPO agent hyperparameters (learning rate, batch size, etc.).
+-   Data augmentation settings.
+
+By modifying `config.py`, you can tailor the simulation and agent training to specific scenarios, hardware, or optimization goals.
 
 ## Project Structure
 
 ```
 src/rl/
-├ components.py          # Battery, ApplianceManager, SolarSystem  
-├ custom_env.py          # HomeEnergyEnv (1 h)  
-├ wrappers.py            # LongTermEnv (aggregates 4 h → 1 step)  
-├ agent.py               # ShortTermAgent, LongTermAgent, HierarchicalController  
-├ train.py               # loads demand/price models, trains agents  
-├ config.py            # Python-based configuration for RL training and environment
-├ evaluate_agent.py    # Script to evaluate a trained agent and visualize performance
-├ saved_models/        # Directory for storing trained model files (e.g., .zip)
-├ logs/                # Directory for TensorBoard logs and other training logs
-└ simulations/
-    ├ run_simulation.py  # roll out a week with saved models
-    └ results/           # saved simulation results
-```
-
-## Installation
-
-1. The system requires Python 3.12.10 and the following packages:
-
-```
-gymnasium>=0.28.1
-stable-baselines3>=2.0.0
-numpy>=1.24.0
-pandas>=2.0.0
-matplotlib>=3.7.0
-tensorflow>=2.12.0  # For loading prediction models
-```
-
-2. Install required packages:
-
-```bash
-pip install gymnasium stable-baselines3 numpy pandas matplotlib tensorflow
-```
-
-## Usage
-
-### Configuration
-
-Key parameters for the RL environment, training, and agent behavior are managed in `src/rl/config.py`.
-This Python file allows for detailed configuration with comments and type hints.
-
-Previously, configuration was in `rl_config.json`. This has been replaced by `config.py`.
-
-### Training
-
-To train an agent (currently focused on a short-term PPO agent):
-
-```bash
-python src/rl/train.py --model_name my_agent_v1 
-# Optionally, specify a config (though the script imports src.rl.config by default):
-# python src/rl/train.py --config src/rl/config.py --model_name my_agent_v1
-```
-
-- The script will use parameters defined in `src/rl/config.py`.
-- Trained models will be saved in `src/rl/saved_models/`.
-- TensorBoard logs will be in `src/rl/logs/`.
-
-### Evaluating a Trained Agent
-
-To evaluate a trained agent and generate performance plots:
-
-```bash
-python src/rl/evaluate_agent.py --model_path src/rl/saved_models/short_term_agent_final.zip 
-# Optionally, specify a config (though the script imports src.rl.config by default):
-# python src/rl/evaluate_agent.py --model_path src/rl/saved_models/short_term_agent_final.zip --config src/rl/config.py
-```
-
-- This will run the agent in the evaluation environment (configured via `src/rl/config.py` for evaluation settings).
-- Detailed data will be saved as a CSV and a performance plot will be generated in `src/rl/simulations/results/`.
-
-### Running a Simulation (Example)
-
-To run a simulation with a trained agent (similar to evaluation but can be more flexible for specific scenarios):
-
-```bash
-python src/rl/simulations/run_simulation.py --model_path src/rl/saved_models/short_term_agent_final.zip
-# To render the simulation (if supported by the environment's render mode):
-# python src/rl/simulations/run_simulation.py --model_path src/rl/saved_models/short_term_agent_final.zip --render
-# The script uses settings from src/rl/config.py by default.
-```
-
-## Features
-
-- **Hierarchical Control**: A two-level control system with:
-  - Long-term agent (4h time steps) planning SoC corridors and appliance windows
-  - Short-term agent (1h time steps) keeping the plan on track and handling overrides
-
-- **Battery Management**: Protects a 22 kWh battery between 20%-90% SoC with degradation modeling
-  - Asymmetric action mapping that properly handles different charge/discharge power limits
-  - Charge limit: 5 kW, Discharge limit: 10 kW
-  - Action space (-1 to +1) maps proportionally to these different limits
-
-- **Appliance Control**: Manages high-power appliances to avoid simultaneous peaks:
-  - Floor heating
-  - Heat pump
-  - EV charger
-  - Sauna
-  - And other household appliances
-
-- **Electricity Cost Optimization**: Minimizes grid costs by:
-  - Using solar energy when available
-  - Charging battery during low-price periods
-  - Discharging during high-price periods
-  - Avoiding peak loads that might be penalized
-  - Applying export reward bonus when selling electricity back to the grid
-
-## Customization
-
-- **Environment Parameters**: Adjust settings in `src/rl/config.py` (e.g., `battery_capacity`, `simulation_days`, data paths).
-- **Reward Function**: Modify reward components and their scaling factors in `src/rl/config.py` (e.g., `peak_penalty_factor`, `charge_bonus_multiplier`). These are used by `custom_env.py`.
-- **Agent Hyperparameters**: Tune PPO agent parameters (e.g., `short_term_learning_rate`, `short_term_n_steps`) in `src/rl/config.py` for the `train.py` script.
-- **Battery capacity and constraints**: Adjust parameters in `rl_config.json` to customize:
-- Training parameters (learning rates, episode length, etc.)
-- Penalty factors for peak loads
-- Reward factors for comfort 
+├── __pycache__/
+├── agent.py
+├── components.py
+├── config.py
+├── custom_env.py
+├── evaluate_agent.py
+├── hyperparameter_optimization.py
+├── logs/
+├── README.md
+├── run_optimization.py
+├── safety_buffer.py
+├── saved_models/
+├── simulations/
+│   └── results/
+└── train.py
+``` 

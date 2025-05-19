@@ -23,81 +23,64 @@ from src.rl import config
 def plot_agent_performance(episode_data, model_name=None, save_dir=None):
     """
     Generate a comprehensive plot of agent's performance during an episode.
+    Handles different data resolutions properly:
+    - Hourly: Prices, solar, household consumption, grid power peaks
+    - 15-min: Battery SoC, actions, battery power
     
     Args:
         episode_data: A list of episode timestep dictionaries
         model_name: Optional name of the model for the plot title
         save_dir: Optional directory to save the plot
     """
-    # Extract data
-    timestamps = [data['timestamp'] for data in episode_data]
-    rewards = [data['reward'] for data in episode_data]
+    # Extract data at original 15-min resolution
+    timestamps_15min = [data['timestamp'] for data in episode_data]
     soc_values = [data['soc'][0] for data in episode_data]
-    prices = [data['current_price'] for data in episode_data]
     battery_powers = [data.get('power_kw', 0) for data in episode_data]
-    grid_powers = [data.get('grid_power_kw', 0) for data in episode_data]
-    base_demands = [data.get('base_demand_kw', 0) for data in episode_data]
-    solar_productions = [data.get('current_solar_production_kw', 0) for data in episode_data]
-    night_discounts = [data.get('is_night_discount', False) for data in episode_data]
-    actions = [data.get('action', 0) for data in episode_data]
+    original_actions = [data.get('original_action', data.get('action', 0)) for data in episode_data]
+    safe_actions = [data.get('safe_action', data.get('action', 0)) for data in episode_data]
+    actions_modified = [data.get('action_modified', False) for data in episode_data]
+    rewards = [data['reward'] for data in episode_data]
     
-    # New metrics
-    price_24h_avgs = [data.get('price_24h_avg', None) for data in episode_data]
-    price_168h_avgs = [data.get('price_168h_avg', None) for data in episode_data]
+    # Create a DataFrame for hourly resampling of naturally hourly data
+    df_15min = pd.DataFrame({
+        'timestamp': pd.to_datetime(timestamps_15min),
+        'current_price': [data.get('current_price', 0) for data in episode_data],
+        'grid_power_kw': [data.get('grid_power_kw', 0) for data in episode_data],
+        'base_demand_kw': [data.get('base_demand_kw', 0) for data in episode_data],
+        'current_solar_production_kw': [data.get('current_solar_production_kw', 0) for data in episode_data],
+        'is_night_discount': [data.get('is_night_discount', False) for data in episode_data],
+    })
+    df_15min.set_index('timestamp', inplace=True)
     
-    # If price averages weren't captured, filter out None values
-    if all(avg is None for avg in price_24h_avgs):
-        price_24h_avgs = None
-    else:
-        price_24h_avgs = [avg if avg is not None else 0 for avg in price_24h_avgs]
-        
-    if all(avg is None for avg in price_168h_avgs):
-        price_168h_avgs = None
-    else:
-        price_168h_avgs = [avg if avg is not None else 0 for avg in price_168h_avgs]
+    # Resample to hourly data - using appropriate aggregation for each type of data
+    hourly_data = df_15min.resample('h').agg({
+        'current_price': 'first',  # Prices are hourly, take first value of each hour
+        'grid_power_kw': 'mean',   # Average power over the hour
+        'base_demand_kw': 'mean',  # Average consumption
+        'current_solar_production_kw': 'mean',  # Average solar
+        'is_night_discount': 'first'  # Night discount doesn't change within hour
+    }).fillna(0)
     
-    # Get config for night discount factor
+    # Extract hourly timestamps and data
+    timestamps_hourly = hourly_data.index.tolist()
+    prices_hourly = hourly_data['current_price'].tolist()
+    grid_powers_hourly = hourly_data['grid_power_kw'].tolist()
+    base_demands_hourly = hourly_data['base_demand_kw'].tolist()
+    solar_productions_hourly = hourly_data['current_solar_production_kw'].tolist()
+    
+    # Calculate discounted grid power for capacity fee
     from src.rl.config import get_config_dict
     config = get_config_dict()
-    night_capacity_discount = config.get('night_capacity_discount', 0.5)  # Default to 0.5 if not found
+    night_capacity_discount = config.get('night_capacity_discount', 0.5)
     
-    # Calculate discounted grid power for night hours
-    discounted_grid_powers = []
-    for i, power in enumerate(grid_powers):
-        if night_discounts[i] and power > 0:  # Only apply discount to positive grid power (imports)
-            discounted_grid_powers.append(power * night_capacity_discount)
-        else:
-            discounted_grid_powers.append(power)
+    hourly_data['discounted_grid_power_kw'] = hourly_data.apply(
+        lambda row: row['grid_power_kw'] * night_capacity_discount if row['is_night_discount'] and row['grid_power_kw'] > 0 
+        else row['grid_power_kw'], axis=1
+    )
+    discounted_grid_powers_hourly = hourly_data['discounted_grid_power_kw'].tolist()
     
     # Calculate cumulative reward
     cum_rewards = np.cumsum(rewards)
-    
-    # --- Start of HOURLY RESAMPLING for PLOTTING specific series ---
-    hourly_timestamps = []
-    grid_powers_hourly = []
-    discounted_grid_powers_hourly = []
-    base_demands_hourly = []
-    solar_productions_hourly = []
-
-    if timestamps: # Ensure there is data to process
-        # Create a DataFrame with original 15-minute data for resampling
-        plot_data_df = pd.DataFrame({
-            'timestamp': pd.to_datetime(timestamps), # Ensure timestamps are datetime objects for indexing
-            'grid_power_kw': grid_powers,
-            'discounted_grid_power_kw': discounted_grid_powers, # This list is already available
-            'base_demand_kw': base_demands,
-            'current_solar_production_kw': solar_productions
-        }).set_index('timestamp')
-
-        # Resample to hourly mean, fill NaN with 0 (e.g., if an hour has no 15-min data points)
-        hourly_resampled_data = plot_data_df.resample('h').mean().fillna(0)
-        
-        hourly_timestamps = hourly_resampled_data.index.to_list()
-        grid_powers_hourly = hourly_resampled_data['grid_power_kw'].tolist()
-        discounted_grid_powers_hourly = hourly_resampled_data['discounted_grid_power_kw'].tolist()
-        base_demands_hourly = hourly_resampled_data['base_demand_kw'].tolist()
-        solar_productions_hourly = hourly_resampled_data['current_solar_production_kw'].tolist()
-    # --- End of HOURLY RESAMPLING for PLOTTING ---
     
     # Create figure with subplots
     fig, axs = plt.subplots(5, 1, figsize=(15, 15), sharex=True, gridspec_kw={'height_ratios': [1, 1, 1, 1, 1]})
@@ -108,127 +91,88 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
     else:
         fig.suptitle("Agent Performance Analysis", fontsize=10)
     
-    # Subplot 1: Battery SoC and Electricity Price
+    # Subplot 1: Battery SoC and Electricity Price (different resolutions)
     ax1 = axs[0]
     ax1.set_title("Battery SoC and Electricity Price")
     ax1.set_ylabel("SoC")
     
-    # Plot SoC
-    ax1.step(timestamps, soc_values, 'r-', label="Battery SoC", linewidth=1)
+    # Plot SoC at 15-min resolution
+    ax1.step(timestamps_15min, soc_values, 'r-', label="Battery SoC", linewidth=1)
     ax1.set_ylim(0, 1.05)
     
-    # Plot Price on secondary y-axis
+    # Plot Price on secondary y-axis at HOURLY resolution
     ax2 = ax1.twinx()
     ax2.set_ylabel("Electricity Price (öre/kWh)")
     
-    # Plot prices
-    ax2.step(timestamps, prices, 'b-', label="Electricity Price",linewidth=1)
-    
-    # # Plot price averages if available
-    # if price_24h_avgs:
-    #     ax2.step(timestamps, price_24h_avgs, 'g-.', alpha=0.7, label="24h Avg Price",linewidth=1)
-    # if price_168h_avgs:
-    #     ax2.step(timestamps, price_168h_avgs, 'm-.', alpha=0.7, label="168h Avg Price",linewidth=1)
+    # Plot prices at hourly resolution
+    ax2.step(timestamps_hourly, prices_hourly, 'b-', label="Electricity Price", linewidth=1)
     
     # Create combined legend for both axes
     lines_1, labels_1 = ax1.get_legend_handles_labels()
     lines_2, labels_2 = ax2.get_legend_handles_labels()
     ax2.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right')
     
-    # Subplot 2: Agent Actions and Battery Power
+    # Subplot 2: Agent Actions and Battery Power (15-min resolution)
     ax3 = axs[1]
-    ax3.set_title("Agent Actions and Battery Power (Battery: Positive Power = Discharging, Negative = Charging)")
+    ax3.set_title("Agent Actions and Battery Power (+ = Discharging, - = Charging; Action Masking Shown)")
     ax3.set_ylabel("Action (-1 to 1)")
-    ax3.step(timestamps, actions, 'g-', label="Agent Action (Normalized)",linewidth=1)
+    
+    # Plot original and safe actions - all at 15-min resolution
+    ax3.step(timestamps_15min, original_actions, 'g-', alpha=0.7, label="Original Agent Action", linewidth=1)
+    ax3.step(timestamps_15min, safe_actions, 'g--', alpha=1.0, label="Safe Action (After Masking)", linewidth=1)
+    
+    # Highlight points where action was modified
+    modified_timestamps = [timestamps_15min[i] for i in range(len(timestamps_15min)) if actions_modified[i]]
+    modified_actions = [original_actions[i] for i in range(len(original_actions)) if actions_modified[i]]
+    
+    if modified_timestamps:
+        ax3.scatter(modified_timestamps, modified_actions, c='r', s=10, alpha=0.7, label="Modified Actions")
+    
     ax3.set_ylim(-1.1, 1.1)
     ax3.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
     
-    # Plot Battery Power on secondary y-axis
+    # Plot Battery Power on secondary y-axis at 15-min resolution
     ax4 = ax3.twinx()
     ax4.set_ylabel("Battery Power (kW)")
-    # Note that in our convention, negative battery power means charging
-    ax4.step(timestamps, battery_powers, 'm-', label="Battery Power (kW)",linewidth=1)
+    ax4.step(timestamps_15min, battery_powers, 'm-', label="Battery Power (kW)", linewidth=1)
+    
     # Create combined legend for both axes
     lines_3, labels_3 = ax3.get_legend_handles_labels()
     lines_4, labels_4 = ax4.get_legend_handles_labels()
     ax3.legend(lines_3 + lines_4, labels_3 + labels_4, loc='upper right')
     
-    # --- Start of new calculation for hourly peaks ---
-    # Create DataFrame for hourly resampling
-    df_episode = pd.DataFrame(episode_data)
-    if not df_episode.empty:
-        df_episode['timestamp_col'] = pd.to_datetime(df_episode['timestamp']) # Keep original timestamp column for joining
-        df_episode_indexed = df_episode.set_index('timestamp_col')
-
-        # Calculate hourly mean grid power, considering only positive values for peaks
-        hourly_mean_grid_power = df_episode_indexed['grid_power_kw'].clip(lower=0).resample('h').mean().fillna(0)
-        hourly_mean_grid_power_sorted = hourly_mean_grid_power.sort_index()
-
-        # Initialize lists for plotting hourly-based peaks, corresponding to original 15-min steps
-        peak1_values_hourly = []
-        peak2_values_hourly = []
-        peak3_values_hourly = []
-        rolling_avg_hourly_values = []
-
-        for current_step_original_timestamp_obj in timestamps: # Iterate using the original 15-min timestamps
-            current_step_timestamp = pd.to_datetime(current_step_original_timestamp_obj)
-            current_month_start = current_step_timestamp.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            
-            # Filter hourly_mean_grid_power for current month and up to current_step_timestamp's hour
-            relevant_hourly_means_series = hourly_mean_grid_power_sorted[
-                (hourly_mean_grid_power_sorted.index >= current_month_start) &
-                (hourly_mean_grid_power_sorted.index <= current_step_timestamp.replace(minute=0,second=0,microsecond=0))
-            ]
-            
-            positive_hourly_means = relevant_hourly_means_series[relevant_hourly_means_series > 0].tolist()
-            
-            top_3_for_this_step = sorted(positive_hourly_means, reverse=True)[:3]
-            while len(top_3_for_this_step) < 3:
-                top_3_for_this_step.append(0.0)
-            
-            peak1_values_hourly.append(top_3_for_this_step[0])
-            peak2_values_hourly.append(top_3_for_this_step[1])
-            peak3_values_hourly.append(top_3_for_this_step[2])
-            rolling_avg_hourly_values.append(sum(top_3_for_this_step) / 3.0 if top_3_for_this_step else 0.0)
-    else: # Handle empty episode_data
-        peak1_values_hourly = []
-        peak2_values_hourly = []
-        peak3_values_hourly = []
-        rolling_avg_hourly_values = []
-        
-    # --- End of new calculation for hourly peaks ---
-
-    # Subplot 3: Household Consumption, Grid Power, and Solar Production
+    # Subplot 3: Household Consumption, Grid Power, and Solar Production (HOURLY)
     ax5 = axs[2]
     ax5.set_title("Household Consumption, Net Grid Power, and Solar Production (Hourly)")
     ax5.set_ylabel("Power (kW)")
-    ax5.step(hourly_timestamps, base_demands_hourly, 'c-', label="Household Consumption (kW)",linewidth=1)
-    ax5.step(hourly_timestamps, grid_powers_hourly, 'r-', label="Net Grid Power (kW)",linewidth=1)
-    ax5.step(hourly_timestamps, solar_productions_hourly, 'orange', label="Solar Production (kW)",linewidth=1)
+    ax5.step(timestamps_hourly, base_demands_hourly, 'c-', label="Household Consumption (kW)", linewidth=1)
+    ax5.step(timestamps_hourly, grid_powers_hourly, 'r-', label="Net Grid Power (kW)", linewidth=1)
+    ax5.step(timestamps_hourly, solar_productions_hourly, 'orange', label="Solar Production (kW)", linewidth=1)
     
     ax5.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
     ax5.legend(loc='upper right')
     
-    # Subplot 4: Grid Peaks and Capacity Fee with Night Discount Highlight
+    # Subplot 4: Grid Peaks and Capacity Fee with Night Discount (HOURLY)
     ax7 = axs[3]
     ax7.set_ylabel("Power (kW)")
     
     # Add grid power for comparison (hourly)
-    ax7.step(hourly_timestamps, grid_powers_hourly, 'black', alpha=0.3, label="Current Grid Power (Hourly)",linewidth=1)
+    ax7.step(timestamps_hourly, grid_powers_hourly, 'black', alpha=0.3, 
+             label="Current Grid Power (Hourly)", linewidth=1)
     
     # Add discounted grid power (hourly)
-    ax7.step(hourly_timestamps, discounted_grid_powers_hourly, 'purple', alpha=0.6,linewidth=1, label=f"Discounted Grid Power (Hourly, Night Factor: {config.get('night_capacity_discount',0.5)})")
+    ax7.step(timestamps_hourly, discounted_grid_powers_hourly, 'purple', alpha=0.6, linewidth=1, 
+             label=f"Discounted Grid Power (Hourly, Night Factor: {night_capacity_discount})")
     
-    # Find the 3 highest HOURLY peak events from discounted_grid_powers_hourly and mark them
-    monthly_capacity_cost_from_env = 0.0 # Default value
+    # Find the 3 highest HOURLY peak events from discounted_grid_powers_hourly
+    monthly_capacity_cost_from_env = 0.0  # Default value
     if episode_data:
         last_step_data = episode_data[-1]
-        # This is the capacity fee in SEK calculated by the environment based on hourly peaks
         monthly_capacity_cost_from_env = last_step_data.get('current_capacity_fee', 0.0)
 
-    if hourly_timestamps and discounted_grid_powers_hourly:
+    if timestamps_hourly and discounted_grid_powers_hourly:
         # Create a list of (timestamp, discounted_hourly_power) tuples
-        hourly_power_events = list(zip(hourly_timestamps, discounted_grid_powers_hourly))
+        hourly_power_events = list(zip(timestamps_hourly, discounted_grid_powers_hourly))
 
         # Sort by power value in descending order, considering only positive peaks
         sorted_hourly_power_events = sorted(
@@ -244,15 +188,14 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
         # Calculate capacity cost based on the peaks identified for plotting
         plot_derived_capacity_cost = 0.0
         if top_hourly_peak_events:
-            # Ensure we have 3 peak values for averaging, using only positive peaks shown.
-            # The top_hourly_peak_events already contains up to 3 positive peaks.
+            # Ensure we have 3 peak values for averaging, using only positive peaks shown
             peak_values_for_avg = [p_val for _, p_val in top_hourly_peak_events]
             while len(peak_values_for_avg) < 3:
-                peak_values_for_avg.append(0.0) # Pad if less than 3 peaks found
+                peak_values_for_avg.append(0.0)  # Pad if less than 3 peaks found
             
-            if peak_values_for_avg: # Should always be true if top_hourly_peak_events was populated
-                average_of_plotted_peaks = sum(peak_values_for_avg) / len(peak_values_for_avg) if peak_values_for_avg else 0.0
-                capacity_fee_rate = config.get('capacity_fee_sek_per_kw', 81.25) # config is loaded at func start
+            if peak_values_for_avg:  # Should always be true if top_hourly_peak_events was populated
+                average_of_plotted_peaks = sum(peak_values_for_avg) / len(peak_values_for_avg)
+                capacity_fee_rate = config.get('capacity_fee_sek_per_kw', 81.25)
                 plot_derived_capacity_cost = round(average_of_plotted_peaks * capacity_fee_rate, 2)
 
             for i, (peak_ts, peak_val) in enumerate(top_hourly_peak_events):
@@ -269,25 +212,22 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
                             fontsize=6)
 
     ax7.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
-    
-    # Add a legend with better placement and formatting
     ax7.legend(loc='upper right', fontsize=6)    
-    # Use the capacity cost derived from the plotted hourly peaks for the title
     ax7.set_title(f"Grid Power Peaks (Hourly Discounted). Capacity Cost: {plot_derived_capacity_cost:.2f} kr")
-
     
-    # Subplot 5: Cumulative Reward
+    # Subplot 5: Cumulative Reward (15-min to match timestamps)
     ax6 = axs[4]
     ax6.set_title("Cumulative Reward Over Episode")
     ax6.set_ylabel("Reward")
-    ax6.step(timestamps, cum_rewards, 'brown', label="Cumulative Reward", linewidth=1)
-    ax6.legend(loc='upper left', fontsize=6)
+    ax6.step(timestamps_15min, cum_rewards, 'brown', label="Cumulative Reward", linewidth=1)
+    ax6.legend(loc='upper left')
     
     # Add shaded regions for night discount periods to ALL subplots
     night_periods = []
     in_night_period = False
     start_idx = None
     
+    night_discounts = [data.get('is_night_discount', False) for data in episode_data]
     for i, is_night in enumerate(night_discounts):
         if is_night and not in_night_period:
             in_night_period = True
@@ -302,70 +242,38 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
     
     # Draw shaded regions for night discount periods on all subplots
     if night_periods:
-        # Add night discount shade to each subplot
         for ax in axs:
-            for i, (start, end) in enumerate(night_periods):
-                if start < len(timestamps) and end < len(timestamps):
-                    # No label needed here to avoid cluttering legends
-                    ax.axvspan(timestamps[start], timestamps[end], alpha=0.15, color='grey', zorder=0)  # zorder=0 ensures it's drawn behind other elements
+            for start, end in night_periods:
+                if start < len(timestamps_15min) and end < len(timestamps_15min):
+                    ax.axvspan(timestamps_15min[start], timestamps_15min[end], 
+                               alpha=0.15, color='grey', zorder=0)
     
-    # Recreate legend for subplot 1 to include night discount
-    lines_1, labels_1 = axs[0].get_legend_handles_labels()
-    lines_2, labels_2 = ax2.get_legend_handles_labels()
-    # Add night discount to the legend
+    # Add legend for night discount to first subplot
     import matplotlib.patches as mpatches
     night_patch = mpatches.Patch(color='grey', alpha=0.15, label='Night (22-06) Discount')
-    axs[0].legend(lines_1 + lines_2 + [night_patch], labels_1 + labels_2 + ['Night (22-06) Discount'], loc='upper right', fontsize=6)
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2 + [night_patch], labels_1 + labels_2 + ['Night (22-06) Discount'], 
+               loc='upper right', fontsize=6)
     
-    # Improved x-axis formatting for all subplots
-    # Import required formatter if not already at the top
-    import matplotlib.dates as mdates
-    
-    # Get episode duration to determine appropriate tick spacing
-    episode_duration = max(timestamps) - min(timestamps)
-    days_in_episode = episode_duration.days + episode_duration.seconds / 86400
-    
-    # Format the x-axis with better date/time display based on episode length
+    # Format x-axis with proper date formatting
     for ax in axs:
-        if days_in_episode <= 7:  # Short episode (up to a week)
-            # Show date every day
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-            ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
-            # Show hours only at noon
-            ax.xaxis.set_minor_formatter(mdates.DateFormatter('%h'))
-            ax.xaxis.set_minor_locator(mdates.HourLocator(byhour=[12]))
-        elif days_in_episode <= 14:  # Medium episode (up to two weeks)
-            # Show date every two days
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-            ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
-            # No minor ticks for hours
-            ax.xaxis.set_minor_locator(plt.NullLocator())
-        else:  # Long episode (more than two weeks)
-            # Show date every three days
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-            ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
-            # No minor ticks for hours
-            ax.xaxis.set_minor_locator(plt.NullLocator())
-        
-        # Rotate date labels for better readability and prevent overlap
-        ax.tick_params(which='major', axis='x', rotation=20, labelsize=10)
-        ax.tick_params(which='minor', axis='x', rotation=0, labelsize=8)
-        
-        # Add grid lines
-        ax.grid(True, which='major', axis='x', linestyle='-', alpha=0.7)
-        ax.grid(True, which='minor', axis='x', linestyle=':', alpha=0.4)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+        ax.grid(True, alpha=0.3)
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=20)
     
-    # Add a clear x-axis label for the bottom subplot
-    axs[4].set_xlabel("Date/Time", fontsize=6)
+    # Add bottom x-axis label
+    axs[4].set_xlabel("Date", fontsize=6)
     
-    
-    # Adjust layout to prevent overlap
+    # Adjust layout
     plt.tight_layout()
     
     # Save figure if a directory is specified
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
-        filename = os.path.join(save_dir, f"agent_performance_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+        filename = os.path.join(save_dir, 
+                              f"agent_performance_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
         plt.savefig(filename, dpi=300, bbox_inches='tight')
         print(f"Plot saved to {filename}")
     
@@ -403,21 +311,24 @@ def plot_reward_components(episode_data, model_name=None, save_dir=None):
     # Calculate cumulative total reward
     cum_rewards = np.cumsum(rewards)
     
-    # Group components by category
-    cost_components = ['reward_grid_cost', 'reward_battery_cost', 'reward_capacity_fee']
-    battery_components = ['reward_soc_limit_penalty', 'reward_preferred_soc']
-    grid_components = ['reward_peak_penalty', 'reward_arbitrage_bonus', 'reward_export_bonus']
+    # Group components by category - Updated for new component structure
+    cost_components = ['reward_grid_cost', 'reward_battery_cost', 'reward_capacity_penalty']
+    battery_components = ['reward_soc_limit_penalty', 'reward_soc_reward', 'reward_shaping', 'reward_preferred_soc']
+    grid_components = ['reward_peak_penalty', 'reward_arbitrage_bonus', 'reward_export_bonus', 'reward_night_charging']
     
-    # Colors for different components
+    # Colors for different components - Updated with new components
     colors = {
         'reward_grid_cost': 'red',
         'reward_battery_cost': 'green',
-        'reward_capacity_fee': 'purple',
+        'reward_capacity_penalty': 'purple',
         'reward_soc_limit_penalty': 'blue',
-        'reward_preferred_soc': 'forestgreen',
+        'reward_soc_reward': 'forestgreen',
+        'reward_shaping': 'teal',
+        'reward_preferred_soc': 'royalblue',
         'reward_peak_penalty': 'darkgreen',
         'reward_arbitrage_bonus': 'orange',
-        'reward_export_bonus': 'deepskyblue'
+        'reward_export_bonus': 'deepskyblue',
+        'reward_night_charging': 'mediumpurple'
     }
     
     # Create figure with subplots that share the same x-axis
@@ -476,9 +387,9 @@ def plot_reward_components(episode_data, model_name=None, save_dir=None):
     if all_lines:
         ax2.legend(all_lines, all_labels, loc='upper left', fontsize=6)
     
-    # Plot 3: Battery Management Components
+    # Plot 3: Battery Management Components - Updated for new structure
     ax3 = axs[2]
-    ax3.set_title("Battery Management Components (SoC Management, Preferred SoC)")
+    ax3.set_title("Battery Management Components (SoC Reward, Shaping, Preferred Range)")
     
     # Create a twin axis for each battery component
     component_axes = {}
@@ -507,9 +418,9 @@ def plot_reward_components(episode_data, model_name=None, save_dir=None):
     if all_lines:
         ax3.legend(all_lines, all_labels, loc='upper left', fontsize=6)
     
-    # Plot 4: Grid Optimization Components
+    # Plot 4: Grid Optimization Components - Updated for new structure
     ax4 = axs[3]
-    ax4.set_title("Grid Optimization Components (Peak Penalty, Arbitrage Bonus, Export Bonus)")
+    ax4.set_title("Grid Optimization Components (Peak, Arbitrage, Export, Night Charging)")
     
     # Create a twin axis for each grid component
     component_axes = {}
@@ -759,6 +670,22 @@ def calculate_performance_metrics(episode_data, config=None):
                            for data in episode_data if data.get('grid_power_kw', 0) < 0)
     export_revenue = sum(data.get('export_bonus', 0) for data in episode_data)
     
+    # Action masking metrics - new
+    actions_modified = [data.get('action_modified', False) for data in episode_data]
+    num_modified_actions = sum(1 for modified in actions_modified if modified)
+    pct_modified_actions = (num_modified_actions / len(actions_modified) * 100) if actions_modified else 0
+    
+    # Calculate deltas between original and safe actions where modified
+    action_modification_deltas = []
+    for data in episode_data:
+        if data.get('action_modified', False):
+            original = data.get('original_action', 0)
+            safe = data.get('safe_action', 0)
+            action_modification_deltas.append(abs(original - safe))
+    
+    avg_action_delta = sum(action_modification_deltas) / len(action_modification_deltas) if action_modification_deltas else 0
+    max_action_delta = max(action_modification_deltas) if action_modification_deltas else 0
+    
     # Identify all reward components dynamically
     reward_components = {}
     for data in episode_data:
@@ -845,6 +772,13 @@ def calculate_performance_metrics(episode_data, config=None):
     print(f"Number of significant peaks during night hours: {night_peaks}")
     print(f"Number of significant peaks during day hours: {day_peaks}")
     
+    # New: Print action masking metrics
+    print(f"\n--- Action Masking Metrics ---")
+    print(f"Actions modified by safety mask: {num_modified_actions} ({pct_modified_actions:.1f}%)")
+    if action_modification_deltas:
+        print(f"Average modification magnitude: {avg_action_delta:.4f}")
+        print(f"Maximum modification magnitude: {max_action_delta:.4f}")
+    
     # Print reward component metrics
     print(f"\n--- Reward Component Contributions ---")
     for key, value in reward_components.items():
@@ -895,6 +829,12 @@ def calculate_performance_metrics(episode_data, config=None):
             "night_peaks": night_peaks,
             "day_peaks": day_peaks
         },
+        "action_masking_metrics": {
+            "num_modified": num_modified_actions,
+            "pct_modified": pct_modified_actions,
+            "avg_delta": avg_action_delta,
+            "max_delta": max_action_delta
+        },
         "price_power_correlation": price_power_correlation,
         "reward_components": reward_components
     }
@@ -932,6 +872,10 @@ def evaluate_episode(agent, config):
     """
     from src.rl.custom_env import HomeEnergyEnv
     
+    # Ensure data augmentation is disabled for evaluation
+    # This is important to evaluate the agent on real, non-augmented data
+    config["use_data_augmentation"] = False
+    
     # Create environment
     env = HomeEnergyEnv(config=config)
     
@@ -965,7 +909,21 @@ def evaluate_episode(agent, config):
             'base_demand_kw': info.get('base_demand_kw', 0),
             'current_solar_production_kw': info.get('current_solar_production_kw', 0),
             'is_night_discount': info.get('is_night_discount', False),
+            # New fields for action masking information
+            'action_modified': info.get('action_modified', False),
+            'original_action': info.get('original_action', action[0]),
+            'safe_action': info.get('safe_action', action[0]),
         }
+        
+        # Add capacity related metrics if available
+        for capacity_key in ['top3_peaks', 'peak_rolling_average', 'current_capacity_fee']:
+            if capacity_key in info:
+                step_data[capacity_key] = info[capacity_key]
+        
+        # Add price average metrics if available
+        for price_key in ['price_24h_avg', 'price_168h_avg']:
+            if price_key in info:
+                step_data[price_key] = info[price_key]
         
         # Add all reward components from the info dictionary
         for key, value in reward_components.items():
@@ -983,153 +941,202 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate a trained RL agent for home energy management")
     parser.add_argument("--render", action="store_true", help="Whether to render the environment")
     
+    # Add episode start date options (mutually exclusive group)
+    start_group = parser.add_mutually_exclusive_group()
+    start_group.add_argument(
+        "--start-month", 
+        type=str, 
+        help="Specific month to evaluate (format: YYYY-MM). Takes precedence over random selection."
+    )
+    start_group.add_argument(
+        "--random-start", 
+        action="store_true", 
+        help="Use random episode start dates instead of selecting a random month."
+    )
+    
     args = parser.parse_args()
     
     # Get configuration from config.py
     from src.rl.config import get_config_dict
     config = get_config_dict()
 
-    # --- Start of new logic to select a random full month ---
-    
-    # Determine required data sources and their paths
-    price_predictions_path_str = config.get("price_predictions_path", "src/predictions/prices/plots/predictions/merged")
-    price_file_path = Path(PROJECT_ROOT) / price_predictions_path_str
-
-    use_variable_consumption = config.get("use_variable_consumption", False)
-    consumption_file_path = None
-    if use_variable_consumption:
-        consumption_data_path_str = config.get("consumption_data_path")
-        if consumption_data_path_str:
-            consumption_file_path = Path(PROJECT_ROOT) / consumption_data_path_str
-        else:
-            print("Warning: Variable consumption is enabled but no consumption_data_path is specified in config. Cannot check consumption data range.")
-            use_variable_consumption = False # Disable if path is missing
-
-    use_solar_predictions = config.get("use_solar_predictions", False)
-    solar_file_path = None
-    if use_solar_predictions:
-        solar_data_path_str = config.get("solar_data_path")
-        if solar_data_path_str:
-            solar_file_path = Path(PROJECT_ROOT) / solar_data_path_str
-        else:
-            print("Warning: Solar prediction is enabled but no solar_data_path is specified in config. Cannot check solar data range.")
-            use_solar_predictions = False # Disable if path is missing
-
-    all_min_dates = []
-    all_max_dates = []
-
-    # 1. Get Price Data Range
-    if price_file_path.exists():
+    # Process the date/start options
+    if args.start_month:
         try:
-            price_df = pd.read_csv(price_file_path, index_col='HourSE', parse_dates=True)
-            if not price_df.empty:
-                if price_df.index.tzinfo is None:
-                    try:
-                        price_df.index = price_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
-                        price_df = price_df[~pd.isna(price_df.index)]
-                    except Exception as loc_e:
-                        print(f"Warning: Could not localize price data timestamps: {loc_e}.")
-                if not price_df.empty:
-                    all_min_dates.append(price_df.index.min())
-                    all_max_dates.append(price_df.index.max())
+            # Parse the YYYY-MM format
+            year_month = args.start_month.split('-')
+            if len(year_month) != 2:
+                raise ValueError("Invalid format. Use YYYY-MM format.")
+                
+            start_year = int(year_month[0])
+            start_month = int(year_month[1])
+            
+            if start_month < 1 or start_month > 12:
+                raise ValueError(f"Invalid month: {start_month}. Month must be between 1 and 12.")
+                
+            from calendar import monthrange
+            days_in_month = monthrange(start_year, start_month)[1]
+            
+            print(f"Using specified month for evaluation: {start_year}-{start_month:02d} ({days_in_month} days)")
+            
+            # Set configuration for specific month
+            config["simulation_days"] = days_in_month
+            config["force_specific_start_month"] = True
+            config["start_year"] = start_year
+            config["start_month"] = start_month
+            
         except Exception as e:
-            print(f"Error: Could not read price data from {price_file_path} for date range determination: {e}")
-            sys.exit(1) # Price data is essential
-    else:
-        print(f"Error: Price data file not found at {price_file_path}. Exiting.")
-        sys.exit(1)
-
-    # 2. Get Consumption Data Range (if used)
-    if use_variable_consumption and consumption_file_path:
-        if consumption_file_path.exists():
-            try:
-                # Assuming consumption CSV has a 'timestamp' column
-                consum_df = pd.read_csv(consumption_file_path, parse_dates=['timestamp'], index_col='timestamp')
-                if not consum_df.empty:
-                    if consum_df.index.tzinfo is None: # Similar localization as in custom_env
-                        try:
-                            consum_df.index = consum_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
-                            consum_df = consum_df[~pd.isna(consum_df.index)]
-                        except Exception as loc_e:
-                             print(f"Warning: Could not localize consumption data timestamps: {loc_e}.")
-                    if not consum_df.empty:
-                        all_min_dates.append(consum_df.index.min())
-                        all_max_dates.append(consum_df.index.max())
-                    else: # Empty after localization
-                        print(f"Warning: Consumption data file {consumption_file_path} is empty after localization. Cannot use its date range.")
-                else: # Empty before localization
-                    print(f"Warning: Consumption data file {consumption_file_path} is empty. Cannot use its date range.")
-            except Exception as e:
-                print(f"Warning: Could not read consumption data from {consumption_file_path} for date range: {e}. Proceeding without its range.")
-        else:
-            print(f"Warning: Consumption data file not found at {consumption_file_path}. Proceeding without its range.")
-
-    # 3. Get Solar Data Range (if used)
-    if use_solar_predictions and solar_file_path:
-        if solar_file_path.exists():
-            try:
-                # Assuming solar CSV has a 'Timestamp' column
-                solar_df = pd.read_csv(solar_file_path, parse_dates=['Timestamp'], index_col='Timestamp')
-                if not solar_df.empty:
-                    if solar_df.index.tzinfo is None: # Similar localization
-                        try:
-                            # Solar data often comes in UTC then converted
-                            solar_df.index = solar_df.index.tz_localize('UTC').tz_convert('Europe/Stockholm')
-                        except Exception as loc_e:
-                            print(f"Warning: Could not localize/convert solar data timestamps: {loc_e}.")
-                    elif str(solar_df.index.tz) != 'Europe/Stockholm': # If already localized but not to Stockholm
-                         solar_df.index = solar_df.index.tz_convert('Europe/Stockholm')
-                    
-                    if not solar_df.empty: # Check again after potential conversion issues
-                        all_min_dates.append(solar_df.index.min())
-                        all_max_dates.append(solar_df.index.max())
-                    else:
-                        print(f"Warning: Solar data file {solar_file_path} is empty after localization/conversion. Cannot use its date range.")
-                else:
-                     print(f"Warning: Solar data file {solar_file_path} is empty. Cannot use its date range.")
-            except Exception as e:
-                print(f"Warning: Could not read solar data from {solar_file_path} for date range: {e}. Proceeding without its range.")
-        else:
-            print(f"Warning: Solar data file not found at {solar_file_path}. Proceeding without its range.")
-
-    if not all_min_dates or not all_max_dates:
-        print("Error: Could not establish any valid data date ranges. Exiting.")
-        sys.exit(1)
+            print(f"Error parsing start-month argument: {e}")
+            print("Please use format YYYY-MM (e.g., 2023-06)")
+            sys.exit(1)
+            
+    elif args.random_start:
+        print("Using random episode start dates for evaluation")
+        # Disable the force_specific_start_month to allow random starts
+        config["force_specific_start_month"] = False
         
-    # Calculate effective overall date range (intersection)
-    effective_min_data_date = max(all_min_dates)
-    effective_max_data_date = min(all_max_dates)
+    else:
+        # --- Start of existing logic to select a random full month ---
+    
+        # Determine required data sources and their paths
+        price_predictions_path_str = config.get("price_predictions_path", "src/predictions/prices/plots/predictions/merged")
+        price_file_path = Path(PROJECT_ROOT) / price_predictions_path_str
 
-    if effective_min_data_date >= effective_max_data_date:
-        print(f"Error: No overlapping data range found across all required sources. Min: {effective_min_data_date}, Max: {effective_max_data_date}. Exiting.")
-        sys.exit(1)
+        use_variable_consumption = config.get("use_variable_consumption", False)
+        consumption_file_path = None
+        if use_variable_consumption:
+            consumption_data_path_str = config.get("consumption_data_path")
+            if consumption_data_path_str:
+                consumption_file_path = Path(PROJECT_ROOT) / consumption_data_path_str
+            else:
+                print("Warning: Variable consumption is enabled but no consumption_data_path is specified in config. Cannot check consumption data range.")
+                use_variable_consumption = False # Disable if path is missing
 
-    print(f"Effective data range for selecting simulation month: {effective_min_data_date} to {effective_max_data_date}")
+        use_solar_predictions = config.get("use_solar_predictions", False)
+        solar_file_path = None
+        if use_solar_predictions:
+            solar_data_path_str = config.get("solar_data_path")
+            if solar_data_path_str:
+                solar_file_path = Path(PROJECT_ROOT) / solar_data_path_str
+            else:
+                print("Warning: Solar prediction is enabled but no solar_data_path is specified in config. Cannot check solar data range.")
+                use_solar_predictions = False # Disable if path is missing
 
-    possible_months = []
-    current_month_start = pd.Timestamp(effective_min_data_date.year, effective_min_data_date.month, 1, tzinfo=effective_min_data_date.tzinfo)
+        all_min_dates = []
+        all_max_dates = []
 
-    while current_month_start <= effective_max_data_date:
-        month_end = current_month_start + pd.offsets.MonthEnd(0)
-        if month_end <= effective_max_data_date and current_month_start >= effective_min_data_date:
-            possible_months.append((current_month_start.year, current_month_start.month))
-        current_month_start += pd.offsets.MonthBegin(1)
+        # 1. Get Price Data Range
+        if price_file_path.exists():
+            try:
+                price_df = pd.read_csv(price_file_path, index_col='HourSE', parse_dates=True)
+                if not price_df.empty:
+                    if price_df.index.tzinfo is None:
+                        try:
+                            price_df.index = price_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
+                            price_df = price_df[~pd.isna(price_df.index)]
+                        except Exception as loc_e:
+                            print(f"Warning: Could not localize price data timestamps: {loc_e}.")
+                    if not price_df.empty:
+                        all_min_dates.append(price_df.index.min())
+                        all_max_dates.append(price_df.index.max())
+            except Exception as e:
+                print(f"Error: Could not read price data from {price_file_path} for date range determination: {e}")
+                sys.exit(1) # Price data is essential
+        else:
+            print(f"Error: Price data file not found at {price_file_path}. Exiting.")
+            sys.exit(1)
 
-    if not possible_months:
-        print(f"Error: No full months available in the effective data range {effective_min_data_date} to {effective_max_data_date}. Exiting.")
-        sys.exit(1)
+        # 2. Get Consumption Data Range (if used)
+        if use_variable_consumption and consumption_file_path:
+            if consumption_file_path.exists():
+                try:
+                    # Assuming consumption CSV has a 'timestamp' column
+                    consum_df = pd.read_csv(consumption_file_path, parse_dates=['timestamp'], index_col='timestamp')
+                    if not consum_df.empty:
+                        if consum_df.index.tzinfo is None: # Similar localization as in custom_env
+                            try:
+                                consum_df.index = consum_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
+                                consum_df = consum_df[~pd.isna(consum_df.index)]
+                            except Exception as loc_e:
+                                 print(f"Warning: Could not localize consumption data timestamps: {loc_e}.")
+                        if not consum_df.empty:
+                            all_min_dates.append(consum_df.index.min())
+                            all_max_dates.append(consum_df.index.max())
+                        else: # Empty after localization
+                            print(f"Warning: Consumption data file {consumption_file_path} is empty after localization. Cannot use its date range.")
+                    else: # Empty before localization
+                        print(f"Warning: Consumption data file {consumption_file_path} is empty. Cannot use its date range.")
+                except Exception as e:
+                    print(f"Warning: Could not read consumption data from {consumption_file_path} for date range: {e}. Proceeding without its range.")
+            else:
+                print(f"Warning: Consumption data file not found at {consumption_file_path}. Proceeding without its range.")
 
-    selected_year, selected_month = random.choice(possible_months)
-    days_in_selected_month = monthrange(selected_year, selected_month)[1]
+        # 3. Get Solar Data Range (if used)
+        if use_solar_predictions and solar_file_path:
+            if solar_file_path.exists():
+                try:
+                    # Assuming solar CSV has a 'Timestamp' column
+                    solar_df = pd.read_csv(solar_file_path, parse_dates=['Timestamp'], index_col='Timestamp')
+                    if not solar_df.empty:
+                        if solar_df.index.tzinfo is None: # Similar localization
+                            try:
+                                # Solar data often comes in UTC then converted
+                                solar_df.index = solar_df.index.tz_localize('UTC').tz_convert('Europe/Stockholm')
+                            except Exception as loc_e:
+                                print(f"Warning: Could not localize/convert solar data timestamps: {loc_e}.")
+                        elif str(solar_df.index.tz) != 'Europe/Stockholm': # If already localized but not to Stockholm
+                             solar_df.index = solar_df.index.tz_convert('Europe/Stockholm')
+                        
+                        if not solar_df.empty: # Check again after potential conversion issues
+                            all_min_dates.append(solar_df.index.min())
+                            all_max_dates.append(solar_df.index.max())
+                        else:
+                            print(f"Warning: Solar data file {solar_file_path} is empty after localization/conversion. Cannot use its date range.")
+                    else:
+                         print(f"Warning: Solar data file {solar_file_path} is empty. Cannot use its date range.")
+                except Exception as e:
+                    print(f"Warning: Could not read solar data from {solar_file_path} for date range: {e}. Proceeding without its range.")
+            else:
+                print(f"Warning: Solar data file not found at {solar_file_path}. Proceeding without its range.")
 
-    print(f"Selected random month for evaluation: {selected_year}-{selected_month:02d} ({days_in_selected_month} days)")
+        if not all_min_dates or not all_max_dates:
+            print("Error: Could not establish any valid data date ranges. Exiting.")
+            sys.exit(1)
+        
+        # Calculate effective overall date range (intersection)
+        effective_min_data_date = max(all_min_dates)
+        effective_max_data_date = min(all_max_dates)
 
-    config["simulation_days"] = days_in_selected_month
-    config["force_specific_start_month"] = True
-    config["start_year"] = selected_year
-    config["start_month"] = selected_month
-    # --- End of new logic ---
+        if effective_min_data_date >= effective_max_data_date:
+            print(f"Error: No overlapping data range found across all required sources. Min: {effective_min_data_date}, Max: {effective_max_data_date}. Exiting.")
+            sys.exit(1)
 
+        print(f"Effective data range for selecting simulation month: {effective_min_data_date} to {effective_max_data_date}")
+
+        possible_months = []
+        current_month_start = pd.Timestamp(effective_min_data_date.year, effective_min_data_date.month, 1, tzinfo=effective_min_data_date.tzinfo)
+
+        while current_month_start <= effective_max_data_date:
+            month_end = current_month_start + pd.offsets.MonthEnd(0)
+            if month_end <= effective_max_data_date and current_month_start >= effective_min_data_date:
+                possible_months.append((current_month_start.year, current_month_start.month))
+            current_month_start += pd.offsets.MonthBegin(1)
+
+        if not possible_months:
+            print(f"Error: No full months available in the effective data range {effective_min_data_date} to {effective_max_data_date}. Exiting.")
+            sys.exit(1)
+
+        selected_year, selected_month = random.choice(possible_months)
+        days_in_selected_month = monthrange(selected_year, selected_month)[1]
+
+        print(f"Selected random month for evaluation: {selected_year}-{selected_month:02d} ({days_in_selected_month} days)")
+
+        config["simulation_days"] = days_in_selected_month
+        config["force_specific_start_month"] = True
+        config["start_year"] = selected_year
+        config["start_month"] = selected_month
+        # --- End of existing logic ---
+    
     if args.render:
         config["render_mode"] = "human"
     
@@ -1143,10 +1150,10 @@ if __name__ == "__main__":
         sys.exit(1)
     
     # Evaluate the agent
-    print(f"Evaluating agent for {selected_year}-{selected_month:02d}...")
+    print(f"Evaluating agent for {config['start_year']}-{config['start_month']:02d}...")
     episode_data = evaluate_episode(agent, config)
     
-    plot_dir = f"src/rl/simulations/results/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{selected_year}_{selected_month:02d}" # Added year/month to dir name
+    plot_dir = f"src/rl/simulations/results/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{config['start_year']}_{config['start_month']:02d}" # Added year/month to dir name
     # Plot the performance
     fig, axs = plot_agent_performance(episode_data, model_name=model_name, save_dir=plot_dir)
     

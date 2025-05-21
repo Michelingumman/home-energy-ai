@@ -74,12 +74,17 @@ def check_and_fill_gaps(df, source_name):
         df = df[~df.index.duplicated(keep='last')]
         logger.info(f"Removed {dup_count} duplicate rows from {source_name} data")
     
+    if isinstance(df.index, pd.DatetimeIndex):
+        tz = df.index.tz
+    else:
+        tz = None
+    
     # Build complete hourly index
     full_idx = pd.date_range(
         start=df.index.min(),
         end=df.index.max(),
         freq='h',
-        tz=df.index.tz
+        tz=tz
     )
     
     # Check for missing timestamps
@@ -340,12 +345,27 @@ def calculate_actual_load():
 
     # 1) Check for gaps in the hourly index
     # -------------------------------------
+    # Ensure index is DatetimeIndex with proper timezone
+    if not isinstance(df.index, pd.DatetimeIndex):
+        logger.warning("Index is not a DatetimeIndex. Converting...")
+        # Convert to datetime index with UTC timezone first
+        df.index = pd.to_datetime(df.index, utc=True)
+        # Then convert to Europe/Stockholm if needed
+        if str(df.index.tz) != 'Europe/Stockholm':
+            try:
+                df.index = df.index.tz_convert('Europe/Stockholm')
+            except Exception as e:
+                logger.warning(f"Could not convert timezone to Europe/Stockholm: {e}. Using UTC timezone.")
+    
+    # Get timezone from index for date_range
+    tz_info = df.index.tz if hasattr(df.index, 'tz') else 'Europe/Stockholm'
+    
     # Build the complete hourly index over the observed timespan
     full_idx = pd.date_range(
         start=df.index.min(),
         end=df.index.max(),
         freq='h',
-        tz=df.index.tz
+        tz=tz_info
     )
     # Identify missing timestamps
     missing = full_idx.difference(df.index)

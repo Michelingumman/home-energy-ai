@@ -20,8 +20,8 @@ model_dir: str = "src/rl/saved_models"                # Directory to save traine
 log_dir: str = "src/rl/logs"  
 # Directory for logs
 price_predictions_path: str = "data/processed/SE3prices.csv"  # Price predictions/historical data
-# consumption_data_path: str = "data/processed/villamichelin/VillamichelinConsumption.csv"  # Household consumption
-consumption_data_path: str = "data/processed/villamichelin/synthetic/VillamichelinConsumption.csv"  # Synthetic Household consumption
+# consumption_data_path: str = "data/processed/villamichelin/VillamichelinEnergyData.csv"  # Household consumption
+consumption_data_path: str = "data/processed/villamichelin/VillamichelinActualLoad.csv"  # Synthetic Household consumption
 
 
 # solar_data_path: str = "src/predictions/solar/actual_data/ActualSolarProductionData.csv"  # Solar production data
@@ -191,10 +191,10 @@ reward_scaling_factor: float = 0.01            # Global multiplier for all rewar
 
 # Multi-Objective Reward Component Weights
 w_grid: float = 1.0
-w_cap: float = 1.0           # Increased from 0.1 to make peak penalties more visible
+w_cap: float = 2.0           # Increased from 0.1 to make peak penalties more visible
 w_deg: float = 1.0
 w_soc: float = 1.0
-w_shape: float = 0.7
+w_shape: float = 1.0
 w_night: float = 1.0
 w_arbitrage: float = 1.0
 w_export: float = 1.0
@@ -217,7 +217,7 @@ short_term_batch_size: int = 128              # Minibatch size for updates
 short_term_n_epochs: int = 15                 # Number of epochs per update
 short_term_ent_coeff: float = 0.1           # Entropy coefficient (exploration)
 short_term_gae_lambda: float = 0.97           # GAE lambda parameter, higher means more credit is given to future rewards
-short_term_timesteps: int = 1000000            # Total timesteps for training
+short_term_timesteps: int = 100000            # Total timesteps for training
 
 # ==============================================================================
 #                           HELPER FUNCTION

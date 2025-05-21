@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # Load data
 price_path = r"C:\_Projects\home-energy-ai\data\processed\SE3prices.csv"
-cons_path = r"C:\_Projects\home-energy-ai\data\processed\villamichelin\VillamichelinConsumption.csv"
+cons_path = r"C:\_Projects\home-energy-ai\data\processed\villamichelin\VillamichelinEnergyData.csv"
 solar_path = r"C:\_Projects\home-energy-ai\src\predictions\solar\actual_data\ActualSolarProductionData.csv"
 
 price_df = pd.read_csv(price_path, parse_dates=['HourSE'], index_col='HourSE')

@@ -45,7 +45,7 @@ price_predictions_path: str = "data/processed/SE3prices.csv"  # Path to the CSV 
 
 # --- Consumption Data Configuration (Training) ---
 use_variable_consumption: bool = True     # If True, use a variable consumption profile from a CSV file
-consumption_data_path: str = "data/processed/villamichelin/VillamichelinConsumption.csv" # Path to consumption data
+consumption_data_path: str = "data/processed/villamichelin/VillamichelinEnergyData.csv" # Path to consumption data
 
 # --- Solar Data Configuration (Training) ---
 use_solar_predictions_train: bool = True # If True, use solar production forecasts/actuals from a CSV file

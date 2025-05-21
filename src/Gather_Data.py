@@ -20,8 +20,10 @@ Co2GasCoal_update_script = "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py"
 # Weather script to fetch the weather data from OpenMeteo API
 weather_updateData_script = "C:/_Projects/home-energy-ai/data/FetchWeatherData.py"
 
-HomeConsumption_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/demand/FetchConsumptionData.py"
+HomeConsumption_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/demand/FetchEnergyData.py"
 
+# This script fetches the heat pump data from the Thermia API
+Thermia_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/demand/Thermia/UpdateHeatPumpData.py"
 
 # Log file paths
 log_file = "C:/_Projects/home-energy-ai/src/logs/Gather_Data_log.log"
@@ -121,6 +123,7 @@ run_script(price_updateData_script, "Price Data Update")
 run_script(Co2GasCoal_update_script, "CO2, Gas and Coal Data Update")
 run_script(weather_updateData_script, "Weather Data Update")
 run_script(HomeConsumption_updateData_script, "Consumption Data Update")
+run_script(Thermia_updateData_script, "Thermia Data Update")
 
 log_message(f"################################## END OF SCRIPT  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ##################################")
 log_summary(f"################################## END OF SCRIPT  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ##################################")

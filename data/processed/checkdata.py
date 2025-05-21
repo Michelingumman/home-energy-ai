@@ -12,10 +12,10 @@ y = "consumption"
 
 
 
-files = ["SE3prices", "SwedenGrid", "time_features", "weather_data", "holidays", "VillamichelinConsumption", "heat_pump_power_15min_20191211_to_20250513"]
+files = ["SE3prices", "SwedenGrid", "time_features", "weather_data", "holidays", "VillamichelinEnergyData", "heat_pump_power_15min_20191211_to_20250513"]
 
 def check_data(file_name: str):
-    if file_name == "VillamichelinConsumption":
+    if file_name == "VillamichelinEnergyData":
         file_path = pathlib.Path(__file__).parent / "villamichelin" / (file_name + ".csv")
     
     elif file_name.startswith("heat_pump_power_15min"): #any file that starts with heat_pump_power_15min
@@ -38,7 +38,7 @@ def check_data(file_name: str):
 
 
 def plot(file_name: str, amount: int):
-    if file_name == "VillamichelinConsumption":
+    if file_name == "VillamichelinEnergyData":
         file_path = pathlib.Path(__file__).parent  / "villamichelin" / (file_name + ".csv")
         
     elif file_name.startswith("heat_pump_power_15min"): #any file that starts with heat_pump_power_15min
@@ -122,7 +122,7 @@ args = argparse.ArgumentParser()
 args.add_argument("--neg_prices", action="store_true")
 args.add_argument("--check-all", action="store_true")
 args.add_argument("--check", action="store_true")
-args.add_argument("--file", type=str, default="VillamichelinConsumption")
+args.add_argument("--file", type=str, default="VillamichelinEnergyData")
 
 args.add_argument("--plot", action="store_true")
 args.add_argument("--amount", type=int, default=1000)

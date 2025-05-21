@@ -1,3 +1,21 @@
+"""
+This script fetches weather data from the Open-Meteo API and saves it to a CSV file.
+
+The script is designed to be run daily to update the weather data.
+
+The script is designed to be run daily to update the weather data.
+
+Usage: 
+
+- python FetchWeatherData.py --forecast --days N 
+
+
+- python FetchWeatherData.py # This will update the weather data and store in data/processed/weather_data.csv
+
+predictions is saved to `data/processed/forecasts/weather/`
+"""
+
+
 import openmeteo_requests
 import requests_cache
 import pandas as pd
@@ -10,7 +28,9 @@ from pathlib import Path
 import argparse
 import sys
 
-project_root = Path(__file__).resolve().parents[1]
+
+
+project_root = Path(__file__).resolve().parents[3]
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

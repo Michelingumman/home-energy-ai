@@ -25,18 +25,18 @@ if not TIBBER_TOKEN:
     sys.exit(1)
 
 # File paths
-CSV_FILE_PATH = 'data/processed/villamichelin/VillamichelinConsumption.csv'
+CSV_FILE_PATH = 'data/processed/villamichelin/VillamichelinEnergyData.csv'
 
 def fetch_tibber_data_paginated(after=None, first=1000):
     """
-    Fetch a single page of consumption data from Tibber API
+    Fetch a single page of consumption and production data from Tibber API
     
     Args:
         after (str, optional): Cursor to fetch data after
         first (int): Number of records to fetch
     
     Returns:
-        tuple: (list of consumption nodes, end cursor, has next page)
+        tuple: (dict of consumption and production nodes, end cursor, has next page)
     """
     url = 'https://api.tibber.com/v1-beta/gql'
     
@@ -45,8 +45,7 @@ def fetch_tibber_data_paginated(after=None, first=1000):
         'Content-Type': 'application/json'
     }
     
-    # Build the GraphQL query with pagination
-    # The Tibber API only supports cursor-based pagination with 'after'
+    # Build the GraphQL query with pagination that includes both consumption and production
     if after:
         query = """
         {
@@ -70,10 +69,27 @@ def fetch_tibber_data_paginated(after=None, first=1000):
                   }
                 }
               }
+              production(resolution: HOURLY, first: %d, after: "%s") {
+                pageInfo {
+                  endCursor
+                  hasNextPage
+                }
+                edges {
+                  cursor
+                  node {
+                    from
+                    to
+                    profit
+                    unitPrice
+                    production
+                    productionUnit
+                  }
+                }
+              }
             }
           }
         }
-        """ % (first, after)
+        """ % (first, after, first, after)
     else:
         query = """
         {
@@ -97,10 +113,27 @@ def fetch_tibber_data_paginated(after=None, first=1000):
                   }
                 }
               }
+              production(resolution: HOURLY, first: %d) {
+                pageInfo {
+                  endCursor
+                  hasNextPage
+                }
+                edges {
+                  cursor
+                  node {
+                    from
+                    to
+                    profit
+                    unitPrice
+                    production
+                    productionUnit
+                  }
+                }
+              }
             }
           }
         }
-        """ % first
+        """ % (first, first)
     
     data = {'query': query}
     
@@ -110,10 +143,10 @@ def fetch_tibber_data_paginated(after=None, first=1000):
         
         result = response.json()
         
-        # Extract consumption data from the response
-        consumption_nodes = []
-        end_cursor = None
-        has_next_page = False
+        # Extract data from the response
+        data_nodes = {'consumption': [], 'production': []}
+        end_cursor = {'consumption': None, 'production': None}
+        has_next_page = {'consumption': False, 'production': False}
         
         if ('data' in result and 
             'viewer' in result['data'] and 
@@ -123,71 +156,94 @@ def fetch_tibber_data_paginated(after=None, first=1000):
             homes = result['data']['viewer']['homes']
             
             for home in homes:
+                # Process consumption data
                 if 'consumption' in home and 'edges' in home['consumption']:
                     # Get page info
                     if 'pageInfo' in home['consumption']:
-                        end_cursor = home['consumption']['pageInfo'].get('endCursor')
-                        has_next_page = home['consumption']['pageInfo'].get('hasNextPage', False)
+                        end_cursor['consumption'] = home['consumption']['pageInfo'].get('endCursor')
+                        has_next_page['consumption'] = home['consumption']['pageInfo'].get('hasNextPage', False)
                     
                     # Get consumption nodes
                     for edge in home['consumption']['edges']:
                         if 'node' in edge:
-                            consumption_nodes.append(edge['node'])
+                            data_nodes['consumption'].append(edge['node'])
+                
+                # Process production data
+                if 'production' in home and 'edges' in home['production']:
+                    # Get page info
+                    if 'pageInfo' in home['production']:
+                        end_cursor['production'] = home['production']['pageInfo'].get('endCursor')
+                        has_next_page['production'] = home['production']['pageInfo'].get('hasNextPage', False)
+                    
+                    # Get production nodes
+                    for edge in home['production']['edges']:
+                        if 'node' in edge:
+                            data_nodes['production'].append(edge['node'])
             
-        return consumption_nodes, end_cursor, has_next_page
+        # Determine overall pagination status (continue if either has more pages)
+        overall_end_cursor = after
+        if end_cursor['consumption']:
+            overall_end_cursor = end_cursor['consumption']
+        elif end_cursor['production']:
+            overall_end_cursor = end_cursor['production']
+            
+        overall_has_next_page = has_next_page['consumption'] or has_next_page['production']
+            
+        return data_nodes, overall_end_cursor, overall_has_next_page
             
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching data from Tibber API: {e}")
         if hasattr(e, 'response') and e.response is not None:
             logger.error(f"Response content: {e.response.text}")
-        return [], None, False
+        return {'consumption': [], 'production': []}, None, False
 
 def fetch_all_tibber_data():
     """
-    Fetch all available consumption data from Tibber API with pagination
+    Fetch all available consumption and production data from Tibber API with pagination
     
     Returns:
-        list: List of consumption data points
+        dict: Dictionary with lists of consumption and production data points
     """
-    all_consumption_nodes = []
+    all_data_nodes = {'consumption': [], 'production': []}
     after_cursor = None
     has_more_pages = True
     page_count = 0
     
-    logger.info("Fetching all available historical consumption data")
+    logger.info("Fetching all available historical consumption and production data")
     
     # Use cursor-based pagination 
     while has_more_pages:
         page_count += 1
-        logger.info(f"Fetching page {page_count} of consumption data...")
+        logger.info(f"Fetching page {page_count} of data...")
         
-        consumption_nodes, end_cursor, has_next_page = fetch_tibber_data_paginated(
+        data_nodes, end_cursor, has_next_page = fetch_tibber_data_paginated(
             after=after_cursor,
             first=1000
         )
         
-        if not consumption_nodes:
+        if not data_nodes['consumption'] and not data_nodes['production']:
             logger.warning(f"No data found on page {page_count}")
             break
         
         # Add all nodes
-        all_consumption_nodes.extend(consumption_nodes)
+        all_data_nodes['consumption'].extend(data_nodes['consumption'])
+        all_data_nodes['production'].extend(data_nodes['production'])
         
         # Update for next page
         after_cursor = end_cursor
         has_more_pages = has_next_page
         
         # Log progress
-        logger.info(f"Retrieved {len(consumption_nodes)} records on page {page_count}")
-        logger.info(f"Total records so far: {len(all_consumption_nodes)}")
+        logger.info(f"Retrieved {len(data_nodes['consumption'])} consumption records and {len(data_nodes['production'])} production records on page {page_count}")
+        logger.info(f"Total records so far: {len(all_data_nodes['consumption'])} consumption, {len(all_data_nodes['production'])} production")
         
         # Break if we've reached the maximum pages to fetch (safety measure)
         if page_count >= 100:  # Limit to 100 pages as a safety measure
             logger.warning("Reached maximum page count (100). Breaking pagination loop.")
             break
     
-    logger.info(f"Fetched a total of {len(all_consumption_nodes)} records from {page_count} pages")
-    return all_consumption_nodes
+    logger.info(f"Fetched a total of {len(all_data_nodes['consumption'])} consumption records and {len(all_data_nodes['production'])} production records from {page_count} pages")
+    return all_data_nodes
 
 def parse_timestamp_strip_timezone(timestamp_str):
     """
@@ -233,7 +289,7 @@ def fetch_recent_tibber_data(from_datetime):
         from_datetime (datetime): Datetime to fetch data from (naive)
     
     Returns:
-        list: List of consumption data points
+        dict: Dictionary with lists of consumption and production data points
     """
     # Convert to UTC for API request (required for comparison with API data)
     from_datetime_utc = from_datetime.replace(tzinfo=timezone.utc)
@@ -246,7 +302,7 @@ def fetch_recent_tibber_data(from_datetime):
     target_date = from_datetime
     
     # Initialize variables
-    new_consumption_nodes = []
+    new_data_nodes = {'consumption': [], 'production': []}
     after_cursor = None
     has_more_pages = True
     page_count = 0
@@ -268,51 +324,78 @@ def fetch_recent_tibber_data(from_datetime):
     while has_more_pages and not found_new_data:
         page_count += 1
         
-        consumption_nodes, end_cursor, has_next_page = fetch_tibber_data_paginated(
+        data_nodes, end_cursor, has_next_page = fetch_tibber_data_paginated(
             after=after_cursor,
             first=records_per_request
         )
         
-        if not consumption_nodes:
+        if not data_nodes['consumption'] and not data_nodes['production']:
             logger.warning(f"No data found on page {page_count}")
             break
         
-        # Check first and last record in this batch to see if we're close to target date
-        first_node = consumption_nodes[0]
-        last_node = consumption_nodes[-1]
-        
-        # Parse dates, stripping timezone info
-        first_date = parse_timestamp_strip_timezone(first_node['from'])
-        last_date = parse_timestamp_strip_timezone(last_node['from'])
-        
-        # Skip this page if we couldn't parse the dates
-        if first_date is None or last_date is None:
-            logger.warning(f"Skipping page {page_count} due to unparseable dates")
-            after_cursor = end_cursor
-            has_more_pages = has_next_page
-            continue
-        
-        # If last record is still before our target date, continue skipping
-        if last_date < target_date:
-            after_cursor = end_cursor
-            has_more_pages = has_next_page
-            continue
+        # Check consumption data
+        if data_nodes['consumption']:
+            # Check first and last record in this batch to see if we're close to target date
+            first_node = data_nodes['consumption'][0]
+            last_node = data_nodes['consumption'][-1]
             
-        # If first record is after our target date, we've found new data
-        if first_date >= target_date:
-            logger.info(f"All records on page {page_count} are after target date. Starting collection.")
-            new_consumption_nodes.extend(consumption_nodes)
-            found_new_data = True
-        else:
-            # We're in the transition page where some records are before and some after
-            # Filter and keep only records that are >= target date
-            logger.info(f"Found transition page {page_count} with some records after target date.")
-            for node in consumption_nodes:
-                # Parse timestamp, strip timezone
-                node_date = parse_timestamp_strip_timezone(node['from'])
-                if node_date is not None and node_date >= target_date:
-                    new_consumption_nodes.append(node)
-            found_new_data = True
+            # Parse dates, stripping timezone info
+            first_date = parse_timestamp_strip_timezone(first_node['from'])
+            last_date = parse_timestamp_strip_timezone(last_node['from'])
+            
+            # If last record is still before our target date, continue skipping
+            if last_date < target_date:
+                after_cursor = end_cursor
+                has_more_pages = has_next_page
+                continue
+                
+            # If first record is after our target date, we've found new data
+            if first_date >= target_date:
+                logger.info(f"All consumption records on page {page_count} are after target date. Starting collection.")
+                new_data_nodes['consumption'].extend(data_nodes['consumption'])
+                found_new_data = True
+            else:
+                # We're in the transition page where some records are before and some after
+                # Filter and keep only records that are >= target date
+                logger.info(f"Found transition page {page_count} with some consumption records after target date.")
+                for node in data_nodes['consumption']:
+                    # Parse timestamp, strip timezone
+                    node_date = parse_timestamp_strip_timezone(node['from'])
+                    if node_date is not None and node_date >= target_date:
+                        new_data_nodes['consumption'].append(node)
+                found_new_data = True
+        
+        # Check production data
+        if data_nodes['production']:
+            # Check first and last record in this batch to see if we're close to target date
+            first_node = data_nodes['production'][0]
+            last_node = data_nodes['production'][-1]
+            
+            # Parse dates, stripping timezone info
+            first_date = parse_timestamp_strip_timezone(first_node['from'])
+            last_date = parse_timestamp_strip_timezone(last_node['from'])
+            
+            # If last record is still before our target date, continue skipping (unless we already found consumption data)
+            if last_date < target_date and not found_new_data:
+                after_cursor = end_cursor
+                has_more_pages = has_next_page
+                continue
+                
+            # If first record is after our target date, we've found new data
+            if first_date >= target_date:
+                logger.info(f"All production records on page {page_count} are after target date. Starting collection.")
+                new_data_nodes['production'].extend(data_nodes['production'])
+                found_new_data = True
+            else:
+                # We're in the transition page where some records are before and some after
+                # Filter and keep only records that are >= target date
+                logger.info(f"Found transition page {page_count} with some production records after target date.")
+                for node in data_nodes['production']:
+                    # Parse timestamp, strip timezone
+                    node_date = parse_timestamp_strip_timezone(node['from'])
+                    if node_date is not None and node_date >= target_date:
+                        new_data_nodes['production'].append(node)
+                found_new_data = True
         
         # Update for next page
         after_cursor = end_cursor
@@ -325,25 +408,26 @@ def fetch_recent_tibber_data(from_datetime):
         while has_more_pages:
             page_count += 1
             
-            consumption_nodes, end_cursor, has_next_page = fetch_tibber_data_paginated(
+            data_nodes, end_cursor, has_next_page = fetch_tibber_data_paginated(
                 after=after_cursor,
                 first=records_per_request
             )
             
-            if not consumption_nodes:
+            if not data_nodes['consumption'] and not data_nodes['production']:
                 logger.warning(f"No data found on collection page {page_count}")
                 break
                 
             # Add all nodes (all must be after our target date)
-            new_consumption_nodes.extend(consumption_nodes)
+            new_data_nodes['consumption'].extend(data_nodes['consumption'])
+            new_data_nodes['production'].extend(data_nodes['production'])
             
             # Update for next page
             after_cursor = end_cursor
             has_more_pages = has_next_page
             
             # Log progress
-            logger.info(f"Collected {len(consumption_nodes)} records on page {page_count}")
-            logger.info(f"Total new records so far: {len(new_consumption_nodes)}")
+            logger.info(f"Collected {len(data_nodes['consumption'])} consumption records and {len(data_nodes['production'])} production records on page {page_count}")
+            logger.info(f"Total new records so far: {len(new_data_nodes['consumption'])} consumption, {len(new_data_nodes['production'])} production")
             
             # Break if we've reached the maximum pages to fetch (safety measure)
             if page_count >= 100:  # Limit to 100 pages as a safety measure
@@ -354,48 +438,95 @@ def fetch_recent_tibber_data(from_datetime):
     if not found_new_data:
         logger.info("No new data found since the target date.")
     else:
-        logger.info(f"Fetched a total of {len(new_consumption_nodes)} new records")
+        logger.info(f"Fetched a total of {len(new_data_nodes['consumption'])} new consumption records and {len(new_data_nodes['production'])} new production records")
     
-    return new_consumption_nodes
+    return new_data_nodes
 
-def process_consumption_data(consumption_data):
+def process_energy_data(data):
     """
-    Process consumption data into a pandas DataFrame
+    Process consumption and production data into a pandas DataFrame
     
     Args:
-        consumption_data (list): List of consumption data points from Tibber API
+        data (dict): Dictionary with lists of consumption and production data from Tibber API
     
     Returns:
         pd.DataFrame: Processed data
     """
-    if not consumption_data:
+    if not data or (not data['consumption'] and not data['production']):
         return pd.DataFrame()
     
-    data_list = []
-    for item in consumption_data:
+    # Process consumption data
+    consumption_list = []
+    for item in data['consumption']:
         if item and 'from' in item and 'consumption' in item:
             try:
                 # Parse timestamp and strip timezone
                 dt = parse_timestamp_strip_timezone(item['from'])
                 if dt is None:
-                    logger.warning(f"Skipping data point with invalid timestamp: {item['from']}")
+                    logger.warning(f"Skipping consumption data point with invalid timestamp: {item['from']}")
                     continue
                 
-                data_list.append({
+                consumption_list.append({
                     'timestamp': dt,
                     'consumption': float(item.get('consumption', 0)),
-                    'cost': float(item.get('cost', 0)),
-                    'unit_price': float(item.get('unitPrice', 0)),
-                    'unit_price_vat': float(item.get('unitPriceVAT', 0)),
-                    'unit': item.get('consumptionUnit', 'kWh')
+                    'consumption_cost': float(item.get('cost', 0)),
+                    'consumption_unit_price': float(item.get('unitPrice', 0)),
+                    'consumption_unit_price_vat': float(item.get('unitPriceVAT', 0)),
+                    'consumption_unit': item.get('consumptionUnit', 'kWh'),
+                    'production': 0,  # Default value for merging
+                    'production_profit': 0,  # Default value for merging
+                    'production_unit_price': 0,  # Default value for merging
+                    'production_unit': 'kWh'  # Default value for merging
                 })
             except (ValueError, TypeError) as e:
-                logger.warning(f"Error processing data point: {e}, data: {item}")
+                logger.warning(f"Error processing consumption data point: {e}, data: {item}")
+    
+    # Process production data
+    production_list = []
+    for item in data['production']:
+        if item and 'from' in item and 'production' in item:
+            try:
+                # Parse timestamp and strip timezone
+                dt = parse_timestamp_strip_timezone(item['from'])
+                if dt is None:
+                    logger.warning(f"Skipping production data point with invalid timestamp: {item['from']}")
+                    continue
+                
+                production_list.append({
+                    'timestamp': dt,
+                    'consumption': 0,  # Default value for merging
+                    'consumption_cost': 0,  # Default value for merging
+                    'consumption_unit_price': 0,  # Default value for merging
+                    'consumption_unit_price_vat': 0,  # Default value for merging
+                    'consumption_unit': 'kWh',  # Default value for merging
+                    'production': float(item.get('production', 0)),
+                    'production_profit': float(item.get('profit', 0)),
+                    'production_unit_price': float(item.get('unitPrice', 0)),
+                    'production_unit': item.get('productionUnit', 'kWh')
+                })
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error processing production data point: {e}, data: {item}")
+    
+    # Combine consumption and production data
+    data_list = consumption_list + production_list
     
     if not data_list:
         return pd.DataFrame()
         
     df = pd.DataFrame(data_list)
+    
+    # Combine records with the same timestamp (merge consumption and production data)
+    df = df.groupby('timestamp').agg({
+        'consumption': 'sum',
+        'consumption_cost': 'sum',
+        'consumption_unit_price': 'mean',
+        'consumption_unit_price_vat': 'mean',
+        'consumption_unit': 'first',
+        'production': 'sum',
+        'production_profit': 'sum',
+        'production_unit_price': 'mean',
+        'production_unit': 'first'
+    }).reset_index()
     
     # Remove duplicates here before sorting
     before_dedup = len(df)
@@ -457,11 +588,16 @@ def check_data_quality(df):
     if nan_counts.sum() == 0:
         logger.info("No NaN values found in the data")
     
-    # Check for zero consumption values (could indicate data issues)
+    # Check for zero consumption and production values
     zero_consumption = (df['consumption'] == 0).sum()
     if zero_consumption > 0:
         percent = (zero_consumption / total_rows) * 100
         logger.info(f"Found {zero_consumption} records with zero consumption ({percent:.2f}%)")
+    
+    zero_production = (df['production'] == 0).sum()
+    if zero_production > 0:
+        percent = (zero_production / total_rows) * 100
+        logger.info(f"Found {zero_production} records with zero production ({percent:.2f}%)")
     
     # Check for missing hours (gaps in time series)
     df_sorted = df.sort_values('timestamp')
@@ -481,14 +617,14 @@ def check_data_quality(df):
             logger.warning(f"Gap of {gap_size} between {prev_time} and {curr_time}")
 
 def main():
-    logger.info("Starting to fetch consumption data from Tibber API")
+    logger.info("Starting to fetch consumption and production data from Tibber API")
     logger.warning("Using simple approach: timestamps stored without timezone information")
     
     try:
         # Check if the CSV file exists and has data
         if os.path.exists(CSV_FILE_PATH) and os.path.getsize(CSV_FILE_PATH) > 0:
             # Read existing data
-            logger.info("Reading existing consumption data")
+            logger.info("Reading existing energy data")
             existing_data = pd.read_csv(CSV_FILE_PATH)
             
             # Convert timestamp to datetime without timezone
@@ -502,14 +638,14 @@ def main():
             next_timestamp = latest_timestamp + timedelta(hours=1)
             
             # Use the optimized approach to fetch only recent data
-            consumption_data = fetch_recent_tibber_data(next_timestamp)
+            energy_data = fetch_recent_tibber_data(next_timestamp)
             
-            if not consumption_data:
+            if not energy_data['consumption'] and not energy_data['production']:
                 logger.info("No new data available")
                 return
             
             # Process new data
-            new_data_df = process_consumption_data(consumption_data)
+            new_data_df = process_energy_data(energy_data)
             
             if new_data_df.empty:
                 logger.info("No new data to add after processing")
@@ -519,6 +655,20 @@ def main():
             min_date = new_data_df['timestamp'].min()
             max_date = new_data_df['timestamp'].max()
             logger.info(f"New data covers period: {min_date} to {max_date}")
+            
+            # Check if existing data has all the required columns
+            required_columns = ['consumption', 'consumption_cost', 'consumption_unit_price',
+                               'consumption_unit_price_vat', 'consumption_unit',
+                               'production', 'production_profit', 'production_unit_price',
+                               'production_unit']
+            
+            # Add missing columns with default values if needed
+            for col in required_columns:
+                if col not in existing_data.columns:
+                    if 'cost' in col or 'price' in col or 'production' in col or 'consumption' in col:
+                        existing_data[col] = 0.0
+                    else:
+                        existing_data[col] = 'kWh'
             
             # Merge with existing data
             logger.info(f"Adding {len(new_data_df)} new data points")
@@ -536,7 +686,7 @@ def main():
             
             # Save to CSV
             combined_df.to_csv(CSV_FILE_PATH, index=False)
-            logger.info(f"Updated consumption data saved to {CSV_FILE_PATH}")
+            logger.info(f"Updated energy data saved to {CSV_FILE_PATH}")
             logger.info(f"Total records in the updated file: {len(combined_df)}")
             logger.info(f"Data now covers: {combined_df['timestamp'].min()} to {combined_df['timestamp'].max()}")
             
@@ -545,18 +695,18 @@ def main():
             
         else:
             # Fetch all available data
-            logger.info("No existing data found. Fetching all available consumption data")
-            consumption_data = fetch_all_tibber_data()
+            logger.info("No existing data found. Fetching all available consumption and production data")
+            energy_data = fetch_all_tibber_data()
             
-            if not consumption_data:
+            if not energy_data['consumption'] and not energy_data['production']:
                 logger.error("No data available from Tibber API")
                 return
                 
             # Process data
-            data_df = process_consumption_data(consumption_data)
+            data_df = process_energy_data(energy_data)
             
             if data_df.empty:
-                logger.error("Failed to process consumption data")
+                logger.error("Failed to process energy data")
                 return
                 
             # Make sure the directory exists
@@ -564,7 +714,7 @@ def main():
                 
             # Save to CSV
             data_df.to_csv(CSV_FILE_PATH, index=False)
-            logger.info(f"Consumption data saved to {CSV_FILE_PATH}")
+            logger.info(f"Energy data saved to {CSV_FILE_PATH}")
             logger.info(f"Total records: {len(data_df)}")
             logger.info(f"Data covers period: {data_df['timestamp'].min()} to {data_df['timestamp'].max()}")
             

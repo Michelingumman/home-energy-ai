@@ -42,7 +42,7 @@ keras-tcn==3.5.6  # library for building neural networks
 tqdm==4.67.1 # library for displaying progress bars
 
 
-xgboost==2.1.4 # library for gradient boosting
+xgboost==3.0.1 # library for gradient boosting
 
 yfinance==0.2.59 # library for fetching financial data from Yahoo Finance
 

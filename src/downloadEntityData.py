@@ -83,14 +83,6 @@ import sys
 # Check system time
 current_time = datetime.now()
 print(f"System time check: Current date and time is {current_time}")
-# Check if year seems reasonable (2023-2024 would be expected)
-if current_time.year > 2023:
-    print("WARNING: Your system clock appears to be set to a future date!")
-    print(f"Current year is set to {current_time.year}, which is likely incorrect.")
-    print("This will affect timestamp handling in the script.")
-    print("Consider correcting your system time before continuing.")
-    # We'll continue anyway, but with a warning
-
 # Parse command line arguments
 parser = argparse.ArgumentParser(
     description='Download entity data from Home Assistant and calculate hourly/daily averages',

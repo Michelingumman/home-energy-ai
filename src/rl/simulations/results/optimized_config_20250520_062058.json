@@ -2,7 +2,7 @@
   "model_dir": "src/rl/saved_models",
   "log_dir": "src/rl/logs",
   "price_predictions_path": "data/processed/SE3prices.csv",
-  "consumption_data_path": "data/processed/villamichelin/synthetic/VillamichelinConsumption.csv",
+  "consumption_data_path": "data/processed/villamichelin/synthetic/VillamichelinEnergyData.csv",
   "solar_data_path": "data/processed/villamichelin/synthetic/ActualSolarProductionData.csv",
   "demand_model_path": "src/models/demand_model.keras",
   "price_model_path": "src/models/price_model.keras",

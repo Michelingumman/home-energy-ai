@@ -196,7 +196,7 @@ def shaping_reward(soc_t: float, soc_tp1: float, gamma: float,
 
 
 def soc_reward(soc: float, min_soc: float, low_pref: float, high_pref: float, max_soc: float,
-              violation_scale: float, soft_scale: float, preferred_scale: float) -> float:
+              soc_limit_penalty_factor: float, preferred_soc_reward_factor: float) -> float:
     """
     Unified SoC reward function that provides graduated rewards/penalties based on SoC position.
     Includes extra penalties for very high SoC to discourage constant high-SoC operation.
@@ -207,9 +207,8 @@ def soc_reward(soc: float, min_soc: float, low_pref: float, high_pref: float, ma
         low_pref: Lower bound of preferred SoC range (soft constraint, e.g., 0.3)
         high_pref: Upper bound of preferred SoC range (soft constraint, e.g., 0.7)
         max_soc: Maximum allowed SoC (hard constraint, e.g., 0.8)
-        violation_scale: Scaling factor for hard limit violations
-        soft_scale: Scaling factor for soft limit violations
-        preferred_scale: Scaling factor for rewards inside preferred range
+        soc_limit_penalty_factor: Base penalty for hard limit violations
+        preferred_soc_reward_factor: Base reward for being in preferred range
         
     Returns:
         float: SoC-related reward component
@@ -217,30 +216,36 @@ def soc_reward(soc: float, min_soc: float, low_pref: float, high_pref: float, ma
     # Get high SoC penalty parameters from config
     from src.rl.config import get_config_dict
     config = get_config_dict()
-    high_soc_multiplier = config.get("high_soc_penalty_multiplier", 10.0)  # Increased from 3.0
-    very_high_threshold = config.get("very_high_soc_threshold", 0.85)
+    high_soc_multiplier = config.get("high_soc_penalty_multiplier", 2.0)
+    very_high_threshold = config.get("very_high_soc_threshold", 0.75)
     
     # Hard limit violations (severe penalties)
     if soc < min_soc:
-        return -(min_soc - soc) * violation_scale
+        return -(min_soc - soc) * soc_limit_penalty_factor
     if soc > max_soc:
-        return -(soc - max_soc) * violation_scale
+        return -(soc - max_soc) * soc_limit_penalty_factor * 2.0  # Double penalty for exceeding max SoC
     
-    # Very high SoC additional penalty
-    if soc > very_high_threshold:
-        return -(soc - high_pref) * soft_scale * high_soc_multiplier
-    
-    # Soft limit violations (moderate penalties)
+    # Soft limit violations with progressive penalties
     if soc < low_pref:
-        return -(low_pref - soc) * soft_scale
+        return -(low_pref - soc) * soc_limit_penalty_factor * 0.1  # 10% of hard limit penalty
     if soc > high_pref:
-        return -(soc - high_pref) * soft_scale
+        # Apply stronger penalty for high SoC
+        base_penalty = -(soc - high_pref) * soc_limit_penalty_factor * 0.15  # 15% of hard limit penalty
+        
+        # Additional penalty for very high SoC that increases exponentially with SoC
+        if soc > very_high_threshold:
+            # Add extra penalty that scales based on how far above very_high_threshold
+            very_high_factor = (soc - very_high_threshold) / (max_soc - very_high_threshold)
+            very_high_penalty = -soc_limit_penalty_factor * high_soc_multiplier * very_high_factor * 0.1
+            return base_penalty + very_high_penalty
+        
+        return base_penalty
     
     # Inside preferred band (rewards)
     mid = 0.5 * (low_pref + high_pref)
     width = 0.5 * (high_pref - low_pref)
     # Reward is highest at center of range and decreases toward edges
-    return preferred_scale * (1.0 - abs(soc - mid) / width)
+    return preferred_soc_reward_factor * (1.0 - abs(soc - mid) / width)
 
 
 def total_reward(components: Dict[str, float], weights: Dict[str, float]) -> float:
@@ -289,9 +294,10 @@ def total_reward(components: Dict[str, float], weights: Dict[str, float]) -> flo
     if 'export_bonus' in components and 'w_export' in weights:
         total += weights['w_export'] * components['export_bonus']
     
-    # Action modification penalty
+    # Action modification penalty - apply directly as a negative value
     if 'action_mod_penalty' in components and 'w_action_mod' in weights:
-        total += weights['w_action_mod'] * (-components['action_mod_penalty'])
+        # FIXED: Apply as a subtraction with the original positive penalty value
+        total -= weights['w_action_mod'] * components['action_mod_penalty']
     
     return total
 
@@ -478,7 +484,10 @@ class HomeEnergyEnv(gym.Env):
             "price_averages": spaces.Box(  # Price averages for better context
                 low=0.0, high=1000.0, shape=(2,), dtype=np.float32  # [24h_avg, 168h_avg]
             ),
-            "is_night_discount": spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+            "is_night_discount": spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            "load_forecast": spaces.Box( # 4 days * 24 hours for household consumption
+                low=0.0, high=20.0, shape=(4 * 24,), dtype=np.float32 # Placeholder high, adjust with actual data
+            )
         })
         
         # State variables for tracking
@@ -543,6 +552,21 @@ class HomeEnergyEnv(gym.Env):
                             shape=(4*24,), dtype=np.float32
                         )
                         logger.info(f"Adjusted solar_forecast observation space high to: {max_solar_val * 1.1:.2f} kW")
+
+        # Adjust observation space for load_forecast high value if using variable consumption
+        if self.use_variable_consumption and self.all_consumption_data_kw is not None and not self.all_consumption_data_kw.empty:
+            if 'consumption_kw' in self.all_consumption_data_kw.columns:
+                max_load_val = self.all_consumption_data_kw['consumption_kw'].max() # Assuming all_consumption_data_kw is already at simulation frequency
+                # If all_consumption_data_kw is hourly, this max might be an hourly peak.
+                # We might need to consider the resampling to time_step_minutes when estimating a general peak.
+                # For now, using the max of the loaded (potentially resampled) data.
+                if pd.notna(max_load_val) and max_load_val > 0:
+                    self.observation_space.spaces['load_forecast'] = spaces.Box(
+                        low=0.0, high=float(max_load_val * 1.2), # Add 20% buffer for load, can be more variable
+                        shape=(4*24,), dtype=np.float32
+                    )
+                    logger.info(f"Adjusted load_forecast observation space high to: {max_load_val * 1.2:.2f} kW")
+
 
         logger.info("{:-^80}".format(" Environment Initialized "))
         
@@ -716,6 +740,10 @@ class HomeEnergyEnv(gym.Env):
         if self.use_solar_predictions:
             self._initialize_solar_forecasts()
         
+        # Initialize load forecasts for the new episode start if using variable consumption
+        if self.use_variable_consumption:
+            self._initialize_load_forecasts()
+
         # Calculate price thresholds based on percentiles if enabled
         if self.enable_explicit_arbitrage_reward and self.use_percentile_price_thresholds and self.price_forecast_actual is not None:
             # Calculate percentile-based price thresholds from this episode's price data
@@ -952,9 +980,8 @@ class HomeEnergyEnv(gym.Env):
         # Get SoC parameters
         preferred_soc_min = self.config.get("preferred_soc_min_base", 0.3)
         preferred_soc_max = self.config.get("preferred_soc_max_base", 0.7)
-        soc_violation_scale = self.config.get("soc_violation_scale", 1.0) * 1000
-        soc_soft_scale = self.config.get("soc_soft_scale", 100.0)
-        preferred_soc_scale = self.config.get("preferred_soc_reward_factor", 500.0)
+        soc_limit_penalty_factor = self.config.get("soc_limit_penalty_factor", 100.0)
+        preferred_soc_reward_factor = self.config.get("preferred_soc_reward_factor", 20.0)
         
         # 5.1 Calculate each reward component separately
         reward_components = {}
@@ -987,9 +1014,8 @@ class HomeEnergyEnv(gym.Env):
         if grid_power_kw > peak_power_threshold_kw:
             # Penalty for exceeding threshold
             excess_power = grid_power_kw - peak_power_threshold_kw
-            peak_penalty_factor = self.config.get("peak_penalty_factor", 500.0)
-            peak_penalty_scale = self.config.get("peak_penalty_scale", 1.0)
-            capacity_penalty = excess_power * peak_penalty_factor * peak_penalty_scale
+            peak_penalty_factor = self.config.get("peak_penalty_factor", 50.0)
+            capacity_penalty = excess_power * peak_penalty_factor
         
         reward_components['capacity_penalty'] = capacity_penalty
         
@@ -1012,9 +1038,8 @@ class HomeEnergyEnv(gym.Env):
             low_pref=preferred_soc_min,
             high_pref=preferred_soc_max,
             max_soc=soc_max_limit,
-            violation_scale=soc_violation_scale,
-            soft_scale=soc_soft_scale,
-            preferred_scale=preferred_soc_scale
+            soc_limit_penalty_factor=soc_limit_penalty_factor,
+            preferred_soc_reward_factor=preferred_soc_reward_factor
         )
         reward_components['soc_reward'] = soc_rew
         
@@ -1040,21 +1065,23 @@ class HomeEnergyEnv(gym.Env):
             export_energy_kwh = abs(grid_energy_kwh)
             export_reward_bonus_ore_kwh = self.config.get("export_reward_bonus_ore_kwh", 60.0)
             export_revenue_ore = (current_price_ore_per_kwh + export_reward_bonus_ore_kwh) * export_energy_kwh
-            export_bonus = export_revenue_ore * self.config.get("export_scaling_factor", 1.0)
+            export_bonus = export_revenue_ore
         reward_components['export_bonus'] = export_bonus
         
         # Arbitrage bonus component
         arbitrage_bonus = 0.0
         if self.enable_explicit_arbitrage_reward:
-            arbitrage_reward_scale = self.config.get("arbitrage_reward_scale", 1.0)
+            charge_at_low_price_reward_factor = self.config.get("charge_at_low_price_reward_factor", 10.0)
+            discharge_at_high_price_reward_factor = self.config.get("discharge_at_high_price_reward_factor", 20.0)
+            
             # Charging at low prices
             if actual_battery_power_kw_at_terminals < 0 and current_price_ore_per_kwh < self.low_price_threshold_actual:
                 energy_charged_kwh = abs(actual_battery_power_kw_at_terminals) * self.time_step_hours
-                arbitrage_bonus += energy_charged_kwh * self.charge_at_low_price_reward_factor * arbitrage_reward_scale
+                arbitrage_bonus += energy_charged_kwh * charge_at_low_price_reward_factor
             # Discharging at high prices
             elif actual_battery_power_kw_at_terminals > 0 and current_price_ore_per_kwh > self.high_price_threshold_actual:
                 energy_discharged_kwh = actual_battery_power_kw_at_terminals * self.time_step_hours
-                arbitrage_bonus += energy_discharged_kwh * self.discharge_at_high_price_reward_factor * arbitrage_reward_scale
+                arbitrage_bonus += energy_discharged_kwh * discharge_at_high_price_reward_factor
         reward_components['arbitrage_bonus'] = arbitrage_bonus
         
         # Calculate battery charging power for night charging reward
@@ -1073,7 +1100,8 @@ class HomeEnergyEnv(gym.Env):
                 self.consecutive_invalid_actions,
                 self.max_consecutive_penalty_multiplier
             )
-            action_mod_penalty = abs(original_action - safe_action) * self.config.get("action_modification_penalty", 200.0) * escalation_factor
+            # Store as a positive value since it's a penalty magnitude
+            action_mod_penalty = abs(original_action - safe_action) * self.config.get("action_modification_penalty", 10.0) * escalation_factor
             reward_components['action_mod_penalty'] = action_mod_penalty
             if self.debug_prints:
                 logger.debug(f"Applied escalating penalty (x{escalation_factor}) for {self.consecutive_invalid_actions} consecutive invalid actions")
@@ -1086,40 +1114,57 @@ class HomeEnergyEnv(gym.Env):
         # Define component weights (customizable through config)
         weights = {
             'w_grid': self.config.get("w_grid", 1.0),
-            'w_cap': self.config.get("w_cap", 1.0),
-            'w_deg': self.config.get("w_deg", 1.0),
-            'w_soc': self.config.get("w_soc", 2.0),  # Increased from 1.0
-            'w_shape': self.config.get("w_shape", 0.1),
-            'w_night': self.config.get("w_night", 0.5),
+            'w_cap': self.config.get("w_cap", 0.5),
+            'w_deg': self.config.get("w_deg", 0.5),
+            'w_soc': self.config.get("w_soc", 2.0),
+            'w_shape': self.config.get("w_shape", 1.0),
+            'w_night': self.config.get("w_night", 1.0),
             'w_arbitrage': self.config.get("w_arbitrage", 1.0),
-            'w_export': self.config.get("w_export", 1.0),
-            'w_action_mod': self.config.get("w_action_mod", 1.0)  # Increased from 0.1
+            'w_export': self.config.get("w_export", 0.2),
+            'w_action_mod': self.config.get("w_action_mod", 3.0)
         }
+        
+        # Log reward components before scaling for debugging the ranges
+        if self.debug_prints and self.current_step % 20 == 0:
+            # Capture the raw values before any scaling factors
+            logger.info(f"Step {self.current_step} RAW REWARD COMPONENTS (before w_* weighting):")
+            logger.info(f"  grid_cost (raw, as penalty): {-reward_components['grid_cost']:.2f}")
+            logger.info(f"  capacity_penalty (raw, as penalty): {-reward_components['capacity_penalty']:.2f}")
+            logger.info(f"  degradation_cost (raw, as penalty): {-reward_components['degradation_cost']:.2f}")
+            logger.info(f"  soc_reward (raw): {reward_components['soc_reward']:.2f}")
+            logger.info(f"  shaping_reward (raw): {reward_components['shaping_reward']:.2f}")
+            logger.info(f"  arbitrage_bonus (raw): {reward_components['arbitrage_bonus']:.2f}")
+            logger.info(f"  export_bonus (raw): {reward_components['export_bonus']:.2f}")
+            raw_night_incentive = reward_components['night_discount'] * reward_components['battery_charging_power']
+            logger.info(f"  night_charging_incentive (raw): {raw_night_incentive:.2f}")
+            logger.info(f"  action_mod_penalty (raw, as penalty): {-reward_components['action_mod_penalty']:.2f}")
         
         # Calculate total reward using weighted aggregation
         reward = total_reward(reward_components, weights)
         
-        # Ensure reward consistency (debug check)
-        night_charging_reward = reward_components['night_discount'] * reward_components['battery_charging_power'] * weights['w_night']
-        if night_charging_reward > 0 and reward_components['battery_charging_power'] <= 0:
-            logger.warning(f"Reward consistency check failed: Night charging reward {night_charging_reward} > 0 but battery_charging_power = {reward_components['battery_charging_power']}")
-            # Force the reward to 0 in this case
-            night_charging_reward = 0.0
+        # The night_charging_reward for logging should be the raw incentive, not the weighted one.
+        # The weights are applied in total_reward.
+        raw_night_charging_incentive = reward_components['night_discount'] * reward_components['battery_charging_power']
         
         # Apply overall reward scaling factor if configured
-        reward_scaling_factor = self.config.get("reward_scaling_factor", 1.0)
+        reward_scaling_factor = self.config.get("reward_scaling_factor", 0.1)
         reward = reward * reward_scaling_factor
         
         # Log detailed reward breakdown periodically or when debugging
         if self.debug_prints or self.current_step % 100 == 0:
-            logger.debug(f"Step {self.current_step} reward breakdown: "
-                         f"grid_cost={-reward_components['grid_cost']:.2f}, "
-                         f"battery_cost={-reward_components['degradation_cost']:.2f}, "
-                         f"soc_reward={reward_components['soc_reward']:.2f}, "
-                         f"night_charging={night_charging_reward:.2f}, "
-                         f"arbitrage={reward_components['arbitrage_bonus']:.2f}, "
-                         f"action_mod_penalty={-reward_components['action_mod_penalty']:.2f}, "
-                         f"total={reward:.2f}")
+            # For this log, night_charging should be the weighted value that contributes to total reward
+            weighted_night_charging = raw_night_charging_incentive * weights['w_night']
+            logger.debug(f"Step {self.current_step} reward breakdown (after weights, before global scale):")
+            logger.debug(f"  grid_cost_contrib={-reward_components['grid_cost'] * weights['w_grid']:.2f}, "
+                         f"capacity_penalty_contrib={-reward_components['capacity_penalty'] * weights['w_cap']:.2f}, "
+                         f"battery_cost_contrib={-reward_components['degradation_cost'] * weights['w_deg']:.2f}, "
+                         f"soc_reward_contrib={reward_components['soc_reward'] * weights['w_soc']:.2f}, "
+                         f"shaping_contrib={reward_components['shaping_reward'] * weights['w_shape']:.2f}, "
+                         f"arbitrage_contrib={reward_components['arbitrage_bonus'] * weights['w_arbitrage']:.2f}, "
+                         f"export_contrib={reward_components['export_bonus'] * weights['w_export']:.2f}, "
+                         f"night_charging_contrib={weighted_night_charging:.2f}, "
+                         f"action_mod_penalty_contrib={-reward_components['action_mod_penalty'] * weights['w_action_mod']:.2f}")
+            logger.debug(f"  TOTAL (before global scale) = {reward / reward_scaling_factor:.2f}, TOTAL (after global scale) = {reward:.2f}")
         
         # Create a formatted reward_components dict for info tracking
         # This is to maintain compatibility with existing evaluation code
@@ -1131,8 +1176,8 @@ class HomeEnergyEnv(gym.Env):
             'reward_shaping': reward_components['shaping_reward'],
             'reward_arbitrage_bonus': reward_components['arbitrage_bonus'],
             'reward_export_bonus': reward_components['export_bonus'],
-            'reward_night_charging': night_charging_reward,  # Using the validated night_charging_reward
-            'reward_action_mod_penalty': reward_components['action_mod_penalty'],
+            'reward_night_charging': raw_night_charging_incentive,  # Storing the raw incentive here
+            'reward_action_mod_penalty': -reward_components['action_mod_penalty'],
             'battery_charging_power': reward_components['battery_charging_power']
         }
 
@@ -1391,6 +1436,66 @@ class HomeEnergyEnv(gym.Env):
             
             logger.info(f"Applied solar data augmentation with scaling factor: {solar_scale:.2f}")
 
+    def _initialize_load_forecasts(self) -> None:
+        """Initializes the 4-day hourly load forecast for the agent."""
+        num_steps = self.simulation_steps
+        sim_timestamps = pd.to_datetime([self.start_datetime + datetime.timedelta(hours=i * self.time_step_hours) for i in range(num_steps)])
+
+        if not self.use_variable_consumption or self.all_consumption_data_kw is None or self.all_consumption_data_kw.empty:
+            logger.warning("Variable consumption disabled or no consumption data loaded. Load forecast will be fixed baseload or zeros.")
+            # self.episode_consumption_kw is already set to fixed_baseload_kw in reset() if not use_variable_consumption
+            # So, load_forecast_observed should reflect this.
+            self.load_forecast_observed = np.full((num_steps, 4 * 24), self.fixed_baseload_kw, dtype=np.float32)
+            return
+
+        # self.episode_consumption_kw already contains the actual load for each simulation step (potentially augmented)
+        # We need to generate the 4-day *hourly* forecast for the agent observation
+        
+        self.load_forecast_observed = np.zeros((num_steps, 4 * 24)) # 4 days * 24 hours
+        
+        # The source for the forecast is self.all_consumption_data_kw, which is at self.time_step_minutes frequency.
+        # For an hourly forecast, we need to ensure we're sampling/aggregating this correctly to hourly points.
+        # Let's re-sample all_consumption_data_kw to hourly if it's not already.
+        # Note: _load_consumption_data already resamples to time_step_minutes.
+        # If time_step_minutes is less than 60, we should average up to hourly for the forecast.
+        # If time_step_minutes is 60, it's already hourly.
+        
+        hourly_consumption_data = self.all_consumption_data_kw['consumption_kw'].resample('h').mean()
+
+
+        for i in range(num_steps):
+            forecast_start_time = sim_timestamps[i] # This is the start time of the current simulation step
+            # Create 96 hourly timestamps for the forecast starting from forecast_start_time
+            hourly_forecast_timestamps = pd.date_range(start=forecast_start_time, periods=(4 * 24), freq='h')
+            
+            # Reindex the hourly consumption data to these forecast timestamps
+            # Use ffill to carry last known value if forecast extends beyond data
+            observed_forecast_series = hourly_consumption_data.reindex(
+                hourly_forecast_timestamps, method='ffill' 
+            )
+            # Fill any remaining NaNs (e.g., if forecast starts before data or extends far beyond)
+            # Try bfill first for leading NaNs, then fill remaining with a reasonable default (e.g., fixed_baseload_kw or mean)
+            observed_forecast_series = observed_forecast_series.bfill().fillna(self.fixed_baseload_kw) # Fallback to fixed baseload
+            
+            self.load_forecast_observed[i, :] = observed_forecast_series.values
+
+        # Apply data augmentation to the load forecast if configured
+        # This augmentation should mirror what's done to self.episode_consumption_kw in reset()
+        # For simplicity, we assume if augmentation was applied to episode_consumption_kw,
+        # the forecast should reflect a similarly scaled version.
+        # However, self.episode_consumption_kw might already be augmented.
+        # The cleanest way is to augment self.all_consumption_data_kw *before* creating episode_consumption_kw
+        # and *before* creating load_forecast_observed.
+        # Let's assume for now that if data augmentation for consumption is on, it's handled
+        # when all_consumption_data_kw is initially processed or when episode_consumption_kw is derived.
+        # If self.config.get("use_data_augmentation", False) and self.config.get("augment_consumption_data", True):
+        #     augmentation_factor = self.config.get("consumption_augmentation_factor", 0.15)
+        #     # This needs to be consistent with the augmentation applied to self.episode_consumption_kw
+        #     # For now, we are forecasting the *actual* loaded (and potentially pre-augmented) consumption data.
+        #     # If self.episode_consumption_kw was scaled, this forecast might not match its scale unless
+        #     # the scaling factor is applied here too, or the source (hourly_consumption_data) was scaled.
+        #     logger.info(f"Load forecast based on (potentially augmented) consumption data. Ensure consistency if augment_consumption_data is True.")
+
     def _get_observation(self) -> Dict:
         current_dt = self.start_datetime + datetime.timedelta(hours=self.current_step * self.time_step_hours)
         hour_of_day = current_dt.hour
@@ -1409,6 +1514,16 @@ class HomeEnergyEnv(gym.Env):
                  solar_fc = self.solar_forecast_observed[current_solar_step_idx, :]
             else:
                  logger.warning(f"Current step {self.current_step} is out of bounds for solar_forecast_observed shape {self.solar_forecast_observed.shape}. Using zeros.")
+
+        load_fc = np.zeros(4 * 24) # Default to zeros
+        if self.use_variable_consumption and hasattr(self, 'load_forecast_observed') and self.load_forecast_observed is not None:
+            current_load_step_idx = min(self.current_step, self.load_forecast_observed.shape[0] - 1)
+            if current_load_step_idx < self.load_forecast_observed.shape[0]:
+                load_fc = self.load_forecast_observed[current_load_step_idx, :]
+            else:
+                logger.warning(f"Current step {self.current_step} is out of bounds for load_forecast_observed shape {self.load_forecast_observed.shape}. Using zeros.")
+        elif not self.use_variable_consumption: # If not using variable consumption, fill with fixed baseload
+            load_fc = np.full(4 * 24, self.fixed_baseload_kw, dtype=np.float32)
 
         # Use the pre-calculated night discount flag instead of recalculating
         is_night = float(self.is_night_discount[self.current_step]) if self.current_step < len(self.is_night_discount) else float(hour_of_day >= 22 or hour_of_day < 6)
@@ -1454,7 +1569,8 @@ class HomeEnergyEnv(gym.Env):
                 price_24h_avg,
                 price_168h_avg
             ], dtype=np.float32),
-            "is_night_discount": np.array([is_night], dtype=np.float32)
+            "is_night_discount": np.array([is_night], dtype=np.float32),
+            "load_forecast": load_fc.astype(np.float32)
         }
     
     def _get_info(self) -> Dict:

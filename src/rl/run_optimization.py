@@ -22,7 +22,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 # Import our modules
-from src.rl.hyperparameter_optimization import run_hpo
+from src.rl.hpo import run_hpo
 from src.rl.config import get_config_dict
 from src.rl.custom_env import HomeEnergyEnv
 from src.rl.agent import ShortTermAgent
@@ -93,16 +93,46 @@ def train_with_best_params(config, model_dir="src/rl/saved_models", eval_dir="sr
     # Evaluate the trained model
     logger.info("Evaluating trained model...")
     episode_data = evaluate_episode(agent.model, config)
-    metrics = calculate_performance_metrics(episode_data)
+    metrics = calculate_performance_metrics(episode_data, config)
     
     # Log evaluation metrics
     logger.info(f"Evaluation metrics:")
     logger.info(f"  Total reward: {metrics['total_reward']:.2f}")
     logger.info(f"  Price-power correlation: {metrics['price_power_correlation']:.4f}")
+    
+    # Log detailed metrics for each reward component
+    if 'cost_metrics' in metrics:
+        cost_metrics = metrics['cost_metrics']
+        logger.info(f"  Grid cost: {cost_metrics.get('grid_cost', 0):.2f} SEK")
+        logger.info(f"  Battery degradation cost: {cost_metrics.get('battery_cost', 0):.2f} SEK")
+    
     if 'peak_metrics' in metrics:
-        logger.info(f"  Peak average: {metrics['peak_metrics'].get('peak_rolling_average', 0):.2f} kW")
+        peak_metrics = metrics['peak_metrics']
+        logger.info(f"  Peak rolling average: {peak_metrics.get('peak_rolling_average', 0):.2f} kW")
+        logger.info(f"  Max peak power: {peak_metrics.get('max_peak', 0):.2f} kW")
+    
     if 'soc_metrics' in metrics:
-        logger.info(f"  SoC violations: {metrics['soc_metrics'].get('violation_percentage', 0):.2f}%")
+        soc_metrics = metrics['soc_metrics']
+        logger.info(f"  SoC violations: {soc_metrics.get('violation_percentage', 0):.2f}%")
+        logger.info(f"  Mean SoC: {soc_metrics.get('mean_soc', 0):.2f}")
+        logger.info(f"  Time in preferred range: {soc_metrics.get('time_in_preferred_range', 0):.2f}%")
+    
+    if 'reward_metrics' in metrics:
+        reward_metrics = metrics['reward_metrics']
+        for component, value in reward_metrics.items():
+            if 'reward_' in component:
+                logger.info(f"  {component}: {value:.2f}")
+    
+    if 'arbitrage_metrics' in metrics:
+        arbitrage_metrics = metrics['arbitrage_metrics']
+        logger.info(f"  Arbitrage score: {arbitrage_metrics.get('arbitrage_score', 0):.2f}")
+        logger.info(f"  Low price charging: {arbitrage_metrics.get('low_price_charging', 0):.2f}%")
+        logger.info(f"  High price discharging: {arbitrage_metrics.get('high_price_discharging', 0):.2f}%")
+    
+    if 'export_metrics' in metrics:
+        export_metrics = metrics['export_metrics']
+        logger.info(f"  Export revenue: {export_metrics.get('export_revenue', 0):.2f} SEK")
+        logger.info(f"  Export percentage: {export_metrics.get('export_percentage', 0):.2f}%")
     
     # Generate and save performance plots
     logger.info("Generating performance plots...")
@@ -121,6 +151,14 @@ def train_with_best_params(config, model_dir="src/rl/saved_models", eval_dir="sr
             else:
                 serializable_metrics[k] = float(v) if hasattr(v, 'item') else v
         json.dump(serializable_metrics, f, indent=2, default=str)
+    
+    # Also save the optimized config for reproducibility
+    with open(os.path.join(eval_dir, f"optimized_config_{timestamp}.json"), "w") as f:
+        # Convert config to serializable format
+        serializable_config = {k: float(v) if hasattr(v, 'item') else v 
+                              for k, v in config.items() 
+                              if isinstance(v, (int, float, bool, str, list, dict)) or v is None}
+        json.dump(serializable_config, f, indent=2, default=str)
     
     return model_path
 
@@ -151,8 +189,15 @@ def main():
     if not args.skip_optimization:
         # Run hyperparameter optimization
         logger.info(f"Starting hyperparameter optimization with {args.trials} trials")
-        best_params = run_hpo(n_trials=args.trials, timeout=args.timeout)
-        logger.info(f"Optimization complete. Best parameters: {best_params}")
+        # Convert timeout from seconds to hours if provided
+        timeout_hours = args.timeout / 3600 if args.timeout is not None else None
+        study = run_hpo(n_trials_override=args.trials, timeout_hours_override=timeout_hours)
+        if study and study.best_trial:
+            best_params = study.best_trial.params
+            logger.info(f"Optimization complete. Best parameters: {best_params}")
+        else:
+            logger.error("Optimization did not produce a best trial. Exiting.")
+            sys.exit(1)
     else:
         # Load parameters from file
         if not args.params_file:

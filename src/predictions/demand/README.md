@@ -2,30 +2,6 @@
 
 This folder contains scripts for predicting home energy consumption.
 
-## FetchConsumptionData.py
-
-This script fetches energy consumption data from the Tibber API and saves it to a CSV file for further analysis.
-
-### Features
-
-- Fetches historical consumption data from Tibber
-- Saves data to a CSV file (`VillamichelinConsumption.csv`)
-- Handles pagination for large datasets
-- Only fetches new data when run again (avoids redundant API calls)
-- Error handling and retry logic
-- Includes detailed logging
-
-### Usage
-
-```bash
-python FetchConsumptionData.py
-```
-
-### Requirements
-
-- Tibber API Token (set as `TIBBER_API_TOKEN` environment variable)
-- Python 3.x
-- Required packages: pandas, requests, python-dotenv
 
 ## PredictDemand.py
 

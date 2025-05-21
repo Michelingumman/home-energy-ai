@@ -143,10 +143,10 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
     
     # Subplot 3: Household Consumption, Grid Power, and Solar Production (HOURLY)
     ax5 = axs[2]
-    ax5.set_title("Household Consumption, Net Grid Power, and Solar Production (Hourly)")
+    ax5.set_title("Household Consumption and Solar Production (Hourly)")
     ax5.set_ylabel("Power (kW)")
-    ax5.step(timestamps_hourly, base_demands_hourly, 'c-', label="Household Consumption (kW)", linewidth=1)
-    ax5.step(timestamps_hourly, grid_powers_hourly, 'r-', label="Net Grid Power (kW)", linewidth=1)
+    ax5.step(timestamps_hourly, base_demands_hourly, 'blue', label="Household Consumption (kW)", linewidth=1)
+    # ax5.step(timestamps_hourly, grid_powers_hourly, 'r-', label="Net Grid Power (kW)", linewidth=1)
     ax5.step(timestamps_hourly, solar_productions_hourly, 'orange', label="Solar Production (kW)", linewidth=1)
     
     ax5.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
@@ -294,45 +294,60 @@ def plot_reward_components(episode_data, model_name=None, save_dir=None):
     rewards = [data['reward'] for data in episode_data]
     
     # Identify all reward components dynamically
-    # We'll identify them from the first entry that has all components
     reward_components = {}
     
-    # Find all potential reward component keys
+    # Find all potential current reward component keys - check both direct and nested locations
     component_keys = []
     for data in episode_data:
+        # Check for components directly in the data
         for key in data.keys():
             if key.startswith('reward_') and key not in component_keys:
                 component_keys.append(key)
+        
+        # Also check in the reward_components dictionary if it exists
+        if 'reward_components' in data:
+            for key in data['reward_components'].keys():
+                if key not in component_keys:
+                    component_keys.append(key)
     
-    # Extract data for each component
+    # Extract data for each component - try both direct and nested locations
     for key in component_keys:
-        reward_components[key] = [data.get(key, 0) for data in episode_data]
+        values = []
+        for data in episode_data:
+            # First check if the component is directly in the data
+            if key in data:
+                values.append(data[key])
+            # Otherwise check in the reward_components dictionary
+            elif 'reward_components' in data and key in data['reward_components']:
+                values.append(data['reward_components'][key])
+            else:
+                values.append(0)
+        reward_components[key] = values
     
     # Calculate cumulative total reward
     cum_rewards = np.cumsum(rewards)
     
-    # Group components by category - Updated for new component structure
+    # Group components by category - Updated for current component structure
     cost_components = ['reward_grid_cost', 'reward_battery_cost', 'reward_capacity_penalty']
-    battery_components = ['reward_soc_limit_penalty', 'reward_soc_reward', 'reward_shaping', 'reward_preferred_soc']
-    grid_components = ['reward_peak_penalty', 'reward_arbitrage_bonus', 'reward_export_bonus', 'reward_night_charging']
+    battery_components = ['reward_soc_reward', 'reward_shaping']
+    grid_components = ['reward_arbitrage_bonus', 'reward_export_bonus', 'reward_night_charging']
+    action_components = ['reward_action_mod_penalty']
     
-    # Colors for different components - Updated with new components
+    # Colors for different components - Updated for current components
     colors = {
         'reward_grid_cost': 'red',
         'reward_battery_cost': 'green',
         'reward_capacity_penalty': 'purple',
-        'reward_soc_limit_penalty': 'blue',
         'reward_soc_reward': 'forestgreen',
         'reward_shaping': 'teal',
-        'reward_preferred_soc': 'royalblue',
-        'reward_peak_penalty': 'darkgreen',
         'reward_arbitrage_bonus': 'orange',
         'reward_export_bonus': 'deepskyblue',
-        'reward_night_charging': 'mediumpurple'
+        'reward_night_charging': 'mediumpurple',
+        'reward_action_mod_penalty': 'crimson'
     }
     
     # Create figure with subplots that share the same x-axis
-    fig, axs = plt.subplots(4, 1, figsize=(15, 12), sharex=True, gridspec_kw={'height_ratios': [1, 1, 1, 1]})
+    fig, axs = plt.subplots(5, 1, figsize=(15, 15), sharex=True, gridspec_kw={'height_ratios': [1, 1, 1, 1, 1]})
     plt.subplots_adjust(hspace=0.3)  # Add spacing between subplots
     
     # Set title
@@ -387,9 +402,9 @@ def plot_reward_components(episode_data, model_name=None, save_dir=None):
     if all_lines:
         ax2.legend(all_lines, all_labels, loc='upper left', fontsize=6)
     
-    # Plot 3: Battery Management Components - Updated for new structure
+    # Plot 3: Battery Management Components - Updated for current structure
     ax3 = axs[2]
-    ax3.set_title("Battery Management Components (SoC Reward, Shaping, Preferred Range)")
+    ax3.set_title("Battery Management Components (SoC Reward, Shaping)")
     
     # Create a twin axis for each battery component
     component_axes = {}
@@ -418,9 +433,9 @@ def plot_reward_components(episode_data, model_name=None, save_dir=None):
     if all_lines:
         ax3.legend(all_lines, all_labels, loc='upper left', fontsize=6)
     
-    # Plot 4: Grid Optimization Components - Updated for new structure
+    # Plot 4: Grid Optimization Components
     ax4 = axs[3]
-    ax4.set_title("Grid Optimization Components (Peak, Arbitrage, Export, Night Charging)")
+    ax4.set_title("Grid Optimization Components (Arbitrage, Export, Night Charging)")
     
     # Create a twin axis for each grid component
     component_axes = {}
@@ -448,6 +463,37 @@ def plot_reward_components(episode_data, model_name=None, save_dir=None):
         all_labels.extend(labels)
     if all_lines:
         ax4.legend(all_lines, all_labels, loc='upper left', fontsize=6)
+    
+    # Plot 5: Action Modification Penalty
+    ax5 = axs[4]
+    ax5.set_title("Action Modification Penalty")
+    
+    # Create a twin axis for each action component
+    component_axes = {}
+    for i, key in enumerate(action_components):
+        if key in reward_components:
+            if i == 0:
+                # First component uses the primary axis
+                component_axes[key] = ax5
+                ax5.set_ylabel(key, color=colors[key])
+                ax5.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
+            else:
+                # Other components get their own y-axis
+                comp_ax = ax5.twinx()
+                # Add some spacing between axes
+                comp_ax.spines['right'].set_position(('outward', i * 50))
+                comp_ax.set_ylabel(key, color=colors[key])
+                comp_ax.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
+                component_axes[key] = comp_ax
+    
+    # Add legend
+    all_lines, all_labels = [], []
+    for key, ax in component_axes.items():
+        lines, labels = ax.get_legend_handles_labels()
+        all_lines.extend(lines)
+        all_labels.extend(labels)
+    if all_lines:
+        ax5.legend(all_lines, all_labels, loc='upper left', fontsize=6)
     
     # Format x-axis for all subplots
     for ax in axs:
@@ -484,7 +530,7 @@ def plot_reward_components(episode_data, model_name=None, save_dir=None):
         ax.tick_params(which='minor', axis='x', rotation=30, labelsize=6)
     
     # Only show x-label on bottom subplot
-    ax4.set_xlabel('Date/Time', fontsize=6)
+    ax5.set_xlabel('Date/Time', fontsize=6)
     
     # Add shaded regions for night discount periods to ALL subplots
     night_discounts = [data.get('is_night_discount', False) for data in episode_data]
@@ -772,71 +818,77 @@ def calculate_performance_metrics(episode_data, config=None):
     print(f"Number of significant peaks during night hours: {night_peaks}")
     print(f"Number of significant peaks during day hours: {day_peaks}")
     
-    # New: Print action masking metrics
+    # Print action masking metrics
     print(f"\n--- Action Masking Metrics ---")
     print(f"Actions modified by safety mask: {num_modified_actions} ({pct_modified_actions:.1f}%)")
     if action_modification_deltas:
         print(f"Average modification magnitude: {avg_action_delta:.4f}")
         print(f"Maximum modification magnitude: {max_action_delta:.4f}")
     
-    # Print reward component metrics
+    # Print reward component metrics with only the current active components
     print(f"\n--- Reward Component Contributions ---")
-    for key, value in reward_components.items():
-        print(f"{key}: {value:.2f}")
+    active_components = [
+        'reward_grid_cost',
+        'reward_capacity_penalty',
+        'reward_battery_cost',
+        'reward_soc_reward',
+        'reward_shaping',
+        'reward_arbitrage_bonus', 
+        'reward_export_bonus',
+        'reward_night_charging',
+        'reward_action_mod_penalty'
+    ]
     
-    # Group similar metrics together in the return value
+    for component in active_components:
+        if component in reward_components:
+            print(f"{component}: {reward_components[component]:.2f}")
+    
+    # Add reward component distribution analysis
+    print(f"\n--- Reward Component Distribution Analysis ---")
+    component_distributions = analyze_reward_component_distributions(episode_data)
+    for component, stats in component_distributions.items():
+        if abs(stats['total']) > 0:  # Only show components with non-zero totals
+            print(f"{component}:")
+            print(f"  Range: {stats['min']:.2f} to {stats['max']:.2f}")
+            print(f"  Mean: {stats['mean']:.2f}, Median: {stats['median']:.2f}, StdDev: {stats['std']:.2f}")
+            print(f"  Percentiles: P5={stats['p5']:.2f}, P25={stats['p25']:.2f}, P75={stats['p75']:.2f}, P95={stats['p95']:.2f}")
+            print(f"  Zero values: {stats['zero_pct']:.1f}%, Total: {stats['total']:.2f}")
+    
     return {
-        "total_reward": total_reward,
-        "battery_metrics": {
-            "avg_power": avg_battery_power,
-            "max_power": max_battery_power,
-            "night_charges": night_charges_energy_kwh,
-            "day_charges": day_charges_energy_kwh,
-            "night_day_ratio": night_day_charge_ratio
-        },
-        "grid_metrics": {
-            "peak_import": peak_grid_import,
-            "peak_export": peak_grid_export,
-            "export_energy_kwh": export_energy_kwh,
-            "export_revenue": export_revenue
-        },
-        "price_metrics": {
-            "avg_night_price": avg_night_price,
-            "avg_day_price": avg_day_price
-        },
-        "soc_metrics": {
-            "avg": avg_soc,
-            "min": min_soc,
-            "max": max_soc,
-            "in_preferred_range_pct": pct_time_in_preferred_range,
-            "at_high_soc_pct": pct_time_at_high_soc,
-            "violation_percentage": violation_percentage
-        },
-        "peak_metrics": {
-            "top3_peaks": top3_peaks,
-            "peak_rolling_average": peak_rolling_average,
-            "capacity_fee": current_capacity_fee,
-            "fixed_grid_fee_monthly": fixed_grid_fee_sek_per_month,
-            "months_in_episode": months_in_episode,
-            "fixed_grid_fee_total": fixed_grid_fee_total
-        },
-        "night_discount_metrics": {
-            "discount_factor": night_capacity_discount,
-            "peak_without_discount": peak_grid_import,
-            "peak_with_discount": peak_grid_import_with_discount,
-            "peak_reduction": peak_reduction_due_to_discount,
-            "estimated_savings": estimated_savings,
-            "night_peaks": night_peaks,
-            "day_peaks": day_peaks
-        },
-        "action_masking_metrics": {
-            "num_modified": num_modified_actions,
-            "pct_modified": pct_modified_actions,
-            "avg_delta": avg_action_delta,
-            "max_delta": max_action_delta
-        },
-        "price_power_correlation": price_power_correlation,
-        "reward_components": reward_components
+        'total_reward': total_reward,
+        'avg_battery_power': avg_battery_power,
+        'max_battery_power': max_battery_power,
+        'peak_grid_import': peak_grid_import,
+        'peak_grid_export': abs(peak_grid_export),
+        'export_energy_kwh': export_energy_kwh,
+        'export_revenue': export_revenue,
+        'price_power_correlation': price_power_correlation,
+        'avg_night_price': avg_night_price,
+        'avg_day_price': avg_day_price,
+        'night_charges_energy_kwh': night_charges_energy_kwh,
+        'day_charges_energy_kwh': day_charges_energy_kwh,
+        'night_day_charge_ratio': night_day_charge_ratio,
+        'avg_soc': avg_soc,
+        'min_soc': min_soc,
+        'max_soc': max_soc,
+        'pct_time_in_preferred_range': pct_time_in_preferred_range,
+        'pct_time_at_high_soc': pct_time_at_high_soc,
+        'violation_percentage': violation_percentage,
+        'top3_peaks': top3_peaks,
+        'peak_rolling_average': peak_rolling_average,
+        'current_capacity_fee': current_capacity_fee,
+        'fixed_grid_fee_total': fixed_grid_fee_total,
+        'months_in_episode': months_in_episode,
+        'peak_reduction_due_to_discount': peak_reduction_due_to_discount,
+        'estimated_savings': estimated_savings,
+        'night_peaks': night_peaks,
+        'day_peaks': day_peaks,
+        'actions_modified': num_modified_actions,
+        'pct_modified_actions': pct_modified_actions,
+        'avg_action_delta': avg_action_delta,
+        'max_action_delta': max_action_delta,
+        'reward_components': reward_components,
+        'reward_component_distributions': component_distributions
     }
 
 def load_agent(model_path):
@@ -934,6 +986,65 @@ def evaluate_episode(agent, config):
     print(f"Episode completed with {len(episode_data)} steps")
     return episode_data
 
+def analyze_reward_component_distributions(episode_data):
+    """
+    Analyze the statistical distribution of reward components to understand
+    their natural ranges before weighting.
+    
+    Args:
+        episode_data: List of dictionaries containing episode data
+        
+    Returns:
+        Dictionary with analysis results for each reward component
+    """
+    import numpy as np
+    
+    # Active reward components we want to analyze
+    components = [
+        'reward_grid_cost',
+        'reward_capacity_penalty',
+        'reward_battery_cost',
+        'reward_soc_reward',
+        'reward_shaping',
+        'reward_arbitrage_bonus', 
+        'reward_export_bonus',
+        'reward_night_charging',
+        'reward_action_mod_penalty'
+    ]
+    
+    results = {}
+    
+    # Extract all values for each component
+    for component in components:
+        values = [data.get(component, 0) for data in episode_data]
+        if not values or all(v == 0 for v in values):
+            results[component] = {
+                'min': 0, 'max': 0, 'mean': 0, 'median': 0, 
+                'std': 0, 'p5': 0, 'p25': 0, 'p75': 0, 'p95': 0,
+                'zero_pct': 100.0, 'total': 0
+            }
+            continue
+            
+        # Calculate distribution statistics
+        non_zero_values = [v for v in values if v != 0]
+        total = sum(values)
+        
+        stats = {
+            'min': min(values),
+            'max': max(values),
+            'mean': np.mean(values),
+            'median': np.median(values),
+            'std': np.std(values),
+            'p5': np.percentile(values, 5),
+            'p25': np.percentile(values, 25),
+            'p75': np.percentile(values, 75),
+            'p95': np.percentile(values, 95),
+            'zero_pct': (len(values) - len(non_zero_values)) / len(values) * 100 if values else 0,
+            'total': total
+        }
+        results[component] = stats
+    
+    return results
 
 if __name__ == "__main__":
     import argparse
@@ -1162,6 +1273,6 @@ if __name__ == "__main__":
     
     # Calculate and print metrics
     print("\n--- Performance Metrics ---")
-    calculate_performance_metrics(episode_data, config)
+    results = calculate_performance_metrics(episode_data, config)
     
     plt.show()  # Show all plots 

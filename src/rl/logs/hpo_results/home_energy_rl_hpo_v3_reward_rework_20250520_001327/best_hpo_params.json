@@ -1,0 +1,43 @@
+{
+    "params": {
+        "w_grid": 1.450294566141342,
+        "w_cap": 0.8500845577046618,
+        "w_deg": 0.18126079304896747,
+        "w_soc": 2.670604991178476,
+        "w_shape": 0.8207800649717358,
+        "w_night": 0.6865185103998542,
+        "w_arbitrage": 0.5407751415547639,
+        "w_export": 0.6318036488694176,
+        "w_action_mod": 3.7102574473691297,
+        "soc_limit_penalty_factor": 52.48817433917842,
+        "preferred_soc_reward_factor": 30.48372233197124,
+        "peak_penalty_factor": 38.11966201583503,
+        "action_modification_penalty": 14.677591856141747,
+        "charge_at_low_price_reward_factor": 7.6154964350748715,
+        "discharge_at_high_price_reward_factor": 30.728132143073978,
+        "low_price_percentile": 27.734706926010748,
+        "high_price_percentile": 78.73459977473469,
+        "export_reward_bonus_ore_kwh": 39.62646609021952,
+        "preferred_soc_min_base": 0.2841066351050259,
+        "preferred_soc_max_base": 0.6613473521240589,
+        "learning_rate": 0.0007069476197217987,
+        "n_steps": 3720,
+        "batch_size": 179,
+        "n_epochs": 22,
+        "gamma": 0.9644111080281702,
+        "ent_coef": 0.012894414393074182,
+        "gae_lambda": 0.9476685520520406
+    },
+    "value": 14191.925991226963,
+    "user_attrs": {
+        "final_score": 14191.925991226963,
+        "mean_arbitrage_reward": 715.618456426465,
+        "mean_battery_cost": 7614.533146917023,
+        "mean_correlation": 0.09940525417345089,
+        "mean_export_reward": 205766.5348423143,
+        "mean_grid_cost": 18994.284010146395,
+        "mean_peak_avg": 6.784954173000536,
+        "mean_reward": 10138.927120390426,
+        "mean_soc_violations_pct": 16.443452380952383
+    }
+}

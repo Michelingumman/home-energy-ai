@@ -130,26 +130,24 @@ night_capacity_discount: float = 0.5         # Discount for peaks during 22:00-0
 # ==============================================================================
 
 # Physical limit violation penalties
-soc_limit_penalty_factor: float = 1000.0       # Base penalty for SoC outside allowed range
-soc_violation_scale: float = 1.0             # Scaling for physical limit violations (will be multiplied by 50 in code)
-# soc_action_limit_scale: float = 5.0          # Scaling for actions constrained by SoC
+soc_limit_penalty_factor: float = 100.0      # Base penalty for SoC outside allowed range
 
 # Preferred SoC range (soft constraints)
 preferred_soc_min_base: float = 0.3          # Lower bound of preferred SoC range
 preferred_soc_max_base: float = 0.7          # Upper bound of preferred SoC range
-preferred_soc_reward_factor: float = 800.0   # Reward for staying in preferred range (increased from 500.0)
-soc_soft_scale: float = 250.0               # Scaling for soft limit violations (increased)
+preferred_soc_reward_factor: float = 100.0    # Reward for staying in preferred range
 
 # High SoC specific penalties
-high_soc_penalty_multiplier: float = 3.0    # Multiplier for penalties above very_high_soc_threshold
-very_high_soc_threshold: float = 0.85       # Threshold for applying extra penalties
+high_soc_penalty_multiplier: float = 2.0     # Multiplier for penalties above very_high_soc_threshold
+very_high_soc_threshold: float = 0.75        # Threshold for applying extra penalties
 
 # Action modification penalty
-action_modification_penalty: float = 50.0    # Penalty for actions requiring safety modification
+action_modification_penalty: float = 100.0    # Penalty for actions requiring safety modification
+max_consecutive_penalty_multiplier: float = 6.0  # Maximum escalation factor for repeated invalid actions
 
 # Potential function parameters
-soc_potential_min_value: float = -50.0       # Finite min value replacing -1e6
-soc_potential_max_value: float = -50.0       # Finite max value replacing -1e6
+soc_potential_min_value: float = -300.0       # Finite min value replacing -1e6
+soc_potential_max_value: float = -300.0       # Finite max value replacing -1e6
 
 
 
@@ -162,48 +160,45 @@ soc_potential_max_value: float = -50.0       # Finite max value replacing -1e6
 # ==============================================================================
 
 #consumption * price = grid cost scaling factor
-grid_cost_scaling_factor: float = 0.5
+grid_cost_scaling_factor: float = 0.2
 
 # Peak shaving incentives
-peak_power_threshold_kw: float = 5.0         # Target maximum grid import
-peak_penalty_factor: float = 500.0             # Penalty per kW above threshold
-peak_penalty_scale: float = 1.0              # Scaling for peak penalties
+peak_power_threshold_kw: float = 5.0        # Target maximum grid import
+peak_penalty_factor: float = 20.0           # Penalty per kW above threshold
 
 # Price arbitrage incentives
 enable_explicit_arbitrage_reward: bool = True    # Whether to include arbitrage bonus rewards
-arbitrage_reward_scale: float = 1.0            # Scaling for arbitrage rewards
 
 # Low price charging incentives
 low_price_threshold_ore_kwh: float = 20.0        # Fixed threshold for low prices (for charging)
-charge_at_low_price_reward_factor: float = 100.0 # Reward for charging at low prices
+charge_at_low_price_reward_factor: float = 50.0  # Reward for charging at low prices
 
 # High price discharging incentives
 high_price_threshold_ore_kwh: float = 100.0      # Fixed threshold for high prices (for discharging)
-discharge_at_high_price_reward_factor: float = 200.0 # Reward for discharging at high prices
+discharge_at_high_price_reward_factor: float = 100.0  # Reward for discharging at high prices
 
 # Export reward
 export_reward_bonus_ore_kwh: float = 60.0      # Bonus in öre/kWh for exported electricity on top of spot price
-export_scaling_factor: float = 0.3
 
 # Dynamic price threshold calculation
-use_percentile_price_thresholds: bool = True     # Whether to use percentiles instead of fixed thresholds
+use_percentile_price_thresholds: bool = False     # Whether to use percentiles instead of fixed thresholds
 low_price_percentile: float = 30.0               # Percentile for low price (increased)
 high_price_percentile: float = 70.0              # Percentile for high price (decreased)
 
 
 # Global reward scaling
-reward_scaling_factor: float = 1.0            # Global multiplier for all rewards
+reward_scaling_factor: float = 0.01            # Global multiplier for all rewards
 
 # Multi-Objective Reward Component Weights
-w_grid: float = 1.0                          # Weight for grid cost component
-w_cap: float = 1.0                           # Weight for capacity penalty component
-w_deg: float = 0.5                           # Weight for battery degradation (reduced from 1.0)
-w_soc: float = 5.0                           # Weight for SoC management (increased)
-w_shape: float = 0.001                       # Weight for potential-based shaping (drastically reduced)
-w_night: float = 1.0                         # Weight for night charging discount
-w_arbitrage: float = 2.0                     # Weight for price arbitrage (increased)
-w_export: float = 1.0                        # Weight for export bonus
-w_action_mod: float = 1.0                    # Weight for action modification penalty
+w_grid: float = 1.0
+w_cap: float = 1.0           # Increased from 0.1 to make peak penalties more visible
+w_deg: float = 1.0
+w_soc: float = 1.0
+w_shape: float = 0.7
+w_night: float = 1.0
+w_arbitrage: float = 1.0
+w_export: float = 1.0
+w_action_mod: float = 1.0
 
 
 
@@ -221,8 +216,8 @@ short_term_n_steps: int = 2048                # Steps per update batch
 short_term_batch_size: int = 128              # Minibatch size for updates
 short_term_n_epochs: int = 15                 # Number of epochs per update
 short_term_ent_coeff: float = 0.1           # Entropy coefficient (exploration)
-short_term_gae_lambda: float = 0.97           # GAE lambda parameter
-short_term_timesteps: int = 100000            # Total timesteps for training
+short_term_gae_lambda: float = 0.97           # GAE lambda parameter, higher means more credit is given to future rewards
+short_term_timesteps: int = 1000000            # Total timesteps for training
 
 # ==============================================================================
 #                           HELPER FUNCTION
@@ -249,3 +244,16 @@ augment_solar_data: bool = True      # Apply random scaling to solar data
 solar_augmentation_factor: float = 0.2  # Random variation factor for solar data (±20%)
 augment_consumption_data: bool = True  # Apply random scaling to consumption data
 consumption_augmentation_factor: float = 0.15  # Random variation factor for consumption (±15%) 
+
+# New parameters to tune
+# config = {
+#     # "soc_violation_scale": 150.0,          # From 1000.0
+#     # "soc_soft_scale": 30.0,                # From 100.0
+#     # "preferred_soc_scale": 80.0,           # From 500.0
+#     # "peak_penalty_factor": 100.0,          # From 500.0
+#     # "peak_penalty_scale": 0.8,             # New parameter to tune peak penalty
+#     # "action_modification_penalty": 200.0,   # From 200.0
+#     # "max_consecutive_penalty_multiplier": 3.0,  # From 5.0
+#     # "arbitrage_reward_scale": 1.2,         # From 1.0 - slightly emphasize arbitrage
+#     # "export_scaling_factor": 1.1,          # From 1.0 - slightly boost export value
+# } 

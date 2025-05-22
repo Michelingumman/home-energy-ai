@@ -18,7 +18,7 @@ price_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/prices/ge
 Co2GasCoal_update_script = "C:/_Projects/home-energy-ai/data/FetchCO2GasCoal.py"
 
 # Weather script to fetch the weather data from OpenMeteo API
-weather_updateData_script = "C:/_Projects/home-energy-ai/data/FetchWeatherData.py"
+weather_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/demand/FetchWeatherData.py"
 
 HomeConsumption_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/demand/FetchEnergyData.py"
 

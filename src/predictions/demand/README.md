@@ -24,9 +24,21 @@ Trains an XGBoost regression model for energy demand prediction.
 - Performs hyperparameter optimization using Optuna
 - Saves the trained model and split information for later use
 
+#### Agent Mode
+To train a model specifically for use with the RL agent, use the `--for-agent` flag:
+
 ```bash
-python train.py
+python train.py --for-agent --trials 30
 ```
+
+This will train a model to predict baseload consumption with the following enhancements:
+- **Improved baseload calculation**: Accounts for grid import + solar production - battery discharge
+- **Enhanced feature engineering**: Includes day-of-week and hour-specific patterns
+- **Advanced weather interactions**: Non-linear temperature effects and weather condition features
+- **Heat pump usage patterns**: Time and temperature-dependent heat pump consumption patterns
+- **Solar/temperature interactions**: Features capturing baseload behavior during different radiation levels
+
+The `--trials` parameter controls the number of hyperparameter optimization runs (default: 5).
 
 ### 2 - `evaluate.py`
 
@@ -41,26 +53,37 @@ Evaluates the trained model on test data and generates visualizations.
 - Optimized DataFrame handling for improved performance
 - Supports evaluating on specific time periods
 
+#### Agent Mode
+To evaluate a model trained for agent use, use the `--for-agent` flag:
+
 ```bash
-# Basic evaluation on held-out data
-python evaluate.py
+python evaluate.py --for-agent
+```
 
-# Plot predictions for a specific month
-python evaluate.py --plot 2025-05
+This will evaluate the baseload prediction model instead of the standard demand model. You can also evaluate specific months:
 
-# Show the comprehensive dashboard with additional analysis panels
-python evaluate.py --plot 2025-05 --dashboard
+```bash
+python evaluate.py --for-agent --month 2025-05 --show-hmm --show-dashboard
+```
 
-# Save plots to disk instead of displaying
-python evaluate.py --plot 2025-05 --save
+For deeper analysis of baseload model performance, use the `--deep-analysis` flag:
 
-# Set custom evaluation ratio
-python evaluate.py --eval-ratio 0.3
+```bash
+python evaluate.py --for-agent --deep-analysis
 ```
 
 ### 3 - `predict.py`
 
 Makes predictions using the trained model for future or arbitrary time periods.
+
+#### Agent Mode
+To make predictions with a model trained for agent use, use the `--for-agent` flag:
+
+```bash
+python predict.py --for-agent
+```
+
+This will use the baseload model for predictions instead of the standard demand model.
 
 ## Data Pipeline
 
@@ -74,12 +97,75 @@ Makes predictions using the trained model for future or arbitrary time periods.
    - Rolling statistics: 24-hour and 7-day moving averages
    - Interaction features: combinations of HMM states with other features
 
+## Agent vs. Standard Mode
+
+The demand prediction system offers two distinct training and prediction modes:
+
+### Standard Mode (Default)
+- Predicts **net consumption** from the grid
+- Includes effects from solar production and battery usage
+- Suitable for general energy monitoring and reporting
+
+### Agent Mode (`--for-agent`)
+- Predicts **baseload** (pure household demand)
+- Calculated as grid consumption + solar production - battery discharge
+- Excludes effects of battery charge/discharge to avoid circular dependencies
+- Designed specifically for RL agent decision-making
+- Enhanced with specialized features for baseload modeling:
+  - Day-of-week and hour-specific consumption patterns
+  - Heat pump energy usage during different temperature ranges (cold/normal/warm)
+  - Temperature variations during different parts of the day (morning/evening/night)
+  - Enhanced weather condition complexes (heat index, discomfort index)
+  - Advanced time lag features with multiple time horizons
+
+When training for agent use, specify the `--for-agent` flag to train on baseload instead of net consumption:
+```bash
+python train.py --for-agent
+```
+
+Similarly, when making predictions or evaluating for agent use:
+```bash
+python predict.py --for-agent
+python evaluate.py --for-agent
+```
+
 ## Model Training Process
 
 1. **Data Preparation**: Raw data is processed and split into train/validation sets
 2. **Hyperparameter Optimization**: Optuna is used to find optimal model parameters
 3. **Final Model Training**: The model is trained on training data with early stopping
 4. **Model Saving**: Model and its metadata are saved for later use
+
+## Advanced Feature Engineering for Baseload
+
+The enhanced baseload model uses several specialized feature categories:
+
+### Weather Transformations
+- Heating and cooling degree days (HDD/CDD)
+- Non-linear temperature effects (squared terms)
+- Daily temperature ranges 
+- Temperature change rates
+- Heat index and discomfort index for comfort modeling
+- Weather severity index combining multiple parameters
+- Dew point approximation
+
+### Time-Based Patterns
+- Hour-of-day patterns for each day of the week
+- Morning/evening peak detectors
+- Weekend vs. weekday patterns
+- Holiday effects
+
+### Heat Pump Interactions
+- Heat pump usage during different temperature ranges
+- Heat pump usage during different times of day
+- Heat pump interaction with occupancy states
+
+### Lag Features
+- Multiple time horizons (hourly, daily, weekly)
+- Statistical aggregations (mean, median, min, max, std)
+- Exponentially weighted moving averages
+- Week-over-week ratios for each hour
+- Day-of-week and hour-specific averages
 
 ## Feature Importance and Insights
 

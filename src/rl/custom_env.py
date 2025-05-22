@@ -7,21 +7,17 @@ This environment simulates a home energy system with:
 - Solar production
 - Grid connection
 """
-
-import os
-import sys
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from typing import Dict, Tuple, List, Optional, Any, Union
 import datetime
 import pandas as pd
+import os
 import logging
 from pathlib import Path
 import time # Added for profiling
+import sys # Added for sys.exit
 
 from src.rl.components import Battery
 
@@ -399,7 +395,7 @@ class HomeEnergyEnv(gym.Env):
 
         # Additional variables setup
         self.all_consumption_data_kw = None
-        self.episode_consumption_kwh = None
+        self.episode_consumption_kw = None
         self.all_solar_data_hourly_kw = None
         self.solar_forecast_actual = None
         self.solar_forecast_observed = None
@@ -559,8 +555,8 @@ class HomeEnergyEnv(gym.Env):
 
         # Adjust observation space for load_forecast high value if using variable consumption
         if self.use_variable_consumption and self.all_consumption_data_kw is not None and not self.all_consumption_data_kw.empty:
-            if 'consumption_kwh' in self.all_consumption_data_kw.columns:
-                max_load_val = self.all_consumption_data_kw['consumption_kwh'].max() # Assuming all_consumption_data_kw is already at simulation frequency
+            if 'consumption_kw' in self.all_consumption_data_kw.columns:
+                max_load_val = self.all_consumption_data_kw['consumption_kw'].max() # Assuming all_consumption_data_kw is already at simulation frequency
                 # If all_consumption_data_kw is hourly, this max might be an hourly peak.
                 # We might need to consider the resampling to time_step_minutes when estimating a general peak.
                 # For now, using the max of the loaded (potentially resampled) data.
@@ -802,9 +798,9 @@ class HomeEnergyEnv(gym.Env):
                     logger.error(f"Could not retrieve a full consumption profile for the simulation period starting {start_dt_utc}. "
                                  f"Needed {self.simulation_steps} steps, got {len(episode_consumption_df.dropna())}. "
                                  "Check data range and resampling. Defaulting to fixed baseload for this episode.")
-                    self.episode_consumption_kwh = np.full(self.simulation_steps, self.fixed_baseload_kw)
+                    self.episode_consumption_kw = np.full(self.simulation_steps, self.fixed_baseload_kw)
                 else:
-                    self.episode_consumption_kwh = episode_consumption_df['consumption_kwh'].values[:self.simulation_steps]
+                    self.episode_consumption_kw = episode_consumption_df['consumption_kw'].values[:self.simulation_steps]
                     # Apply data augmentation if enabled
                     if self.config.get("use_data_augmentation", False) and self.config.get("augment_consumption_data", True):
                         augmentation_factor = self.config.get("consumption_augmentation_factor", 0.15)
@@ -814,14 +810,14 @@ class HomeEnergyEnv(gym.Env):
                         consumption_scale = max(0.7, min(1.3, consumption_scale))  # Limit scaling to reasonable range
                         
                         # Apply augmentation
-                        self.episode_consumption_kwh = self.episode_consumption_kwh * consumption_scale
+                        self.episode_consumption_kw = self.episode_consumption_kw * consumption_scale
                         logger.info(f"Applied consumption data augmentation with scaling factor: {consumption_scale:.2f}")
 
             except Exception as e:
                 logger.error(f"Error selecting episode consumption data: {e}. Defaulting to fixed baseload.")
-                self.episode_consumption_kwh = np.full(self.simulation_steps, self.fixed_baseload_kw) # Fallback
+                self.episode_consumption_kw = np.full(self.simulation_steps, self.fixed_baseload_kw) # Fallback
         else:
-            self.episode_consumption_kwh = np.full(self.simulation_steps, self.fixed_baseload_kw) # Fallback if not using variable
+            self.episode_consumption_kw = np.full(self.simulation_steps, self.fixed_baseload_kw) # Fallback if not using variable
             logger.info(f"Using fixed baseload of {self.fixed_baseload_kw} kW for this episode.")
 
         observation = self._get_observation()
@@ -895,9 +891,9 @@ class HomeEnergyEnv(gym.Env):
         if self.use_solar_predictions and self.solar_forecast_actual is not None and self.current_step < len(self.solar_forecast_actual):
             current_solar_kw = self.solar_forecast_actual[self.current_step]
         
-        current_consumption_kwh = self.fixed_baseload_kw # Default to fixed baseload
-        if self.use_variable_consumption and self.episode_consumption_kwh is not None and self.current_step < len(self.episode_consumption_kwh):
-            current_consumption_kwh = self.episode_consumption_kwh[self.current_step]
+        current_consumption_kw = self.fixed_baseload_kw # Default to fixed baseload
+        if self.use_variable_consumption and self.episode_consumption_kw is not None and self.current_step < len(self.episode_consumption_kw):
+            current_consumption_kw = self.episode_consumption_kw[self.current_step]
 
         # 3. Battery Operation
         # Store current SoC for reward shaping calculation
@@ -925,7 +921,7 @@ class HomeEnergyEnv(gym.Env):
 
         # 4. Net Power Calculation
         # Net consumption by the house after its own solar production
-        net_house_demand_kw = current_consumption_kwh - current_solar_kw
+        net_house_demand_kw = current_consumption_kw - current_solar_kw
         
         # Grid power is what the house needs minus what the battery provides (or plus what battery consumes)
         # If battery is discharging (positive actual_battery_power_kw_at_terminals), it reduces grid import.
@@ -978,7 +974,7 @@ class HomeEnergyEnv(gym.Env):
                         f"Price: {current_price_ore_per_kwh:.2f} öre/kWh, "
                         f"Grid Power: {grid_power_kw:.2f} kW, "
                         f"Battery Power: {actual_battery_power_kw_at_terminals:.2f} kW, "
-                        f"Consumption: {current_consumption_kwh:.2f} kW, "
+                        f"Consumption: {current_consumption_kw:.2f} kW, "
                         f"Solar: {current_solar_kw:.2f} kW")
         
         # Get SoC parameters
@@ -1068,7 +1064,9 @@ class HomeEnergyEnv(gym.Env):
         if grid_power_kw < 0:  # Exporting to grid
             export_energy_kwh = abs(grid_energy_kwh)
             export_reward_bonus_ore_kwh = self.config.get("export_reward_bonus_ore_kwh", 60.0)
+            export_reward_scaling_factor = self.config.get("export_reward_scaling_factor", 0.1)
             export_revenue_ore = (current_price_ore_per_kwh + export_reward_bonus_ore_kwh) * export_energy_kwh
+            export_revenue_ore = export_revenue_ore * export_reward_scaling_factor # Scaling factor to get a better range for the agent training
             export_bonus = export_revenue_ore
         reward_components['export_bonus'] = export_bonus
         
@@ -1205,7 +1203,7 @@ class HomeEnergyEnv(gym.Env):
         info["current_price"] = current_price_ore_per_kwh
         info["power_kw"] = actual_battery_power_kw_at_terminals
         info["grid_power_kw"] = grid_power_kw
-        info["base_demand_kw"] = current_consumption_kwh
+        info["base_demand_kw"] = current_consumption_kw
         info["current_solar_production_kw"] = current_solar_kw
         info["action_modified"] = action_modified
         info["original_action"] = original_action
@@ -1447,12 +1445,12 @@ class HomeEnergyEnv(gym.Env):
 
         if not self.use_variable_consumption or self.all_consumption_data_kw is None or self.all_consumption_data_kw.empty:
             logger.warning("Variable consumption disabled or no consumption data loaded. Load forecast will be fixed baseload or zeros.")
-            # self.episode_consumption_kwh is already set to fixed_baseload_kw in reset() if not use_variable_consumption
+            # self.episode_consumption_kw is already set to fixed_baseload_kw in reset() if not use_variable_consumption
             # So, load_forecast_observed should reflect this.
             self.load_forecast_observed = np.full((num_steps, 4 * 24), self.fixed_baseload_kw, dtype=np.float32)
             return
 
-        # self.episode_consumption_kwh already contains the actual load for each simulation step (potentially augmented)
+        # self.episode_consumption_kw already contains the actual load for each simulation step (potentially augmented)
         # We need to generate the 4-day *hourly* forecast for the agent observation
         
         self.load_forecast_observed = np.zeros((num_steps, 4 * 24)) # 4 days * 24 hours
@@ -1464,7 +1462,7 @@ class HomeEnergyEnv(gym.Env):
         # If time_step_minutes is less than 60, we should average up to hourly for the forecast.
         # If time_step_minutes is 60, it's already hourly.
         
-        hourly_consumption_data = self.all_consumption_data_kw['consumption_kwh'].resample('h').mean()
+        hourly_consumption_data = self.all_consumption_data_kw['consumption_kw'].resample('h').mean()
 
 
         for i in range(num_steps):
@@ -1484,19 +1482,19 @@ class HomeEnergyEnv(gym.Env):
             self.load_forecast_observed[i, :] = observed_forecast_series.values
 
         # Apply data augmentation to the load forecast if configured
-        # This augmentation should mirror what's done to self.episode_consumption_kwh in reset()
-        # For simplicity, we assume if augmentation was applied to episode_consumption_kwh,
+        # This augmentation should mirror what's done to self.episode_consumption_kw in reset()
+        # For simplicity, we assume if augmentation was applied to episode_consumption_kw,
         # the forecast should reflect a similarly scaled version.
-        # However, self.episode_consumption_kwh might already be augmented.
-        # The cleanest way is to augment self.all_consumption_data_kw *before* creating episode_consumption_kwh
+        # However, self.episode_consumption_kw might already be augmented.
+        # The cleanest way is to augment self.all_consumption_data_kw *before* creating episode_consumption_kw
         # and *before* creating load_forecast_observed.
         # Let's assume for now that if data augmentation for consumption is on, it's handled
-        # when all_consumption_data_kw is initially processed or when episode_consumption_kwh is derived.
+        # when all_consumption_data_kw is initially processed or when episode_consumption_kw is derived.
         # If self.config.get("use_data_augmentation", False) and self.config.get("augment_consumption_data", True):
         #     augmentation_factor = self.config.get("consumption_augmentation_factor", 0.15)
-        #     # This needs to be consistent with the augmentation applied to self.episode_consumption_kwh
+        #     # This needs to be consistent with the augmentation applied to self.episode_consumption_kw
         #     # For now, we are forecasting the *actual* loaded (and potentially pre-augmented) consumption data.
-        #     # If self.episode_consumption_kwh was scaled, this forecast might not match its scale unless
+        #     # If self.episode_consumption_kw was scaled, this forecast might not match its scale unless
         #     # the scaling factor is applied here too, or the source (hourly_consumption_data) was scaled.
         #     logger.info(f"Load forecast based on (potentially augmented) consumption data. Ensure consistency if augment_consumption_data is True.")
 
@@ -1809,83 +1807,95 @@ class HomeEnergyEnv(gym.Env):
             file_path_to_load = Path(file_path_to_load)
 
         if file_path_to_load.exists() and file_path_to_load.is_file():
-            logger.info(f"Attempting to load consumption data from: {file_path_to_load}")
+            logger.info(f"Attempting to load consumption data from: {file_path_to_load}") # Added log
             try:
-                # Fix: Make sure to set parse_dates and index_col correctly for our file format
-                df = pd.read_csv(file_path_to_load)
+                df = pd.read_csv(file_path_to_load, parse_dates=['timestamp'], index_col='timestamp')
                 
-                # Convert the Timestamp column to datetime and set as index
-                df['Timestamp'] = pd.to_datetime(df['Timestamp'], utc=True)
-                df.set_index('Timestamp', inplace=True)
-                
+                # Print timestamp sanity check if debug_prints is enabled
                 if self.debug_prints:
                     logger.info("---CONSUMPTION DATA BEFORE PROCESSING---")
-                    logger.info(df.head(1)) # Show head to see columns
-                    logger.info(f"Index type: {type(df.index)}")
+                    logger.info(df.iloc[:,0].tail(1))
                     logger.info("-----------------------")
                     
-                # Ensure the index is a DatetimeIndex
-                if not isinstance(df.index, pd.DatetimeIndex):
-                    logger.error("Consumption data index is not a DatetimeIndex after loading. This is unexpected.")
-                    # Attempt to convert, though parse_dates should handle this
-                    try:
-                        df.index = pd.to_datetime(df.index, utc=True)
-                    except Exception as e:
-                        logger.error(f"Failed to convert consumption data index to DatetimeIndex: {e}")
-                        self.all_consumption_data_kw = None
-                        return
+                # Drop extra columns
+                df.drop(columns=['consumption_cost', 'consumption_unit_price', 
+                                    'consumption_unit_price_vat', 'consumption_unit', 
+                                    'production', 'production_profit', 'production_unit_price', 
+                                    'production_unit'], 
+                                    inplace=True)
 
-                # Handle timezone: CSV has format like "2025-05-21 23:00:00+02:00"
-                # pd.read_csv with parse_dates should make it timezone-aware.
-                # We need to ensure it's 'Europe/Stockholm'.
+                # Force conversion to DatetimeIndex if needed
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    logger.warning("Consumption data index is not a DatetimeIndex after loading. Converting explicitly.")
+                    # Use pd.to_datetime with explicit handling for timezones
+                    df.index = pd.to_datetime(df.index, utc=False)
+                
+                # Now check if the conversion worked and handle timezone
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    logger.error("Consumption data index could not be converted to DatetimeIndex. This is unexpected.")
+                    self.all_consumption_data_kw = None
+                    return # Cannot proceed
+                
+                # Handle timezone
                 if df.index.tz is None:
-                    logger.warning("Consumption data index is timezone-naive after loading. Attempting to localize to Europe/Stockholm.")
+                    logger.warning("Consumption data index is timezone-naive after loading. This is unexpected if CSV has timezone offsets.")
+                    # Try to preserve the original timezone information if possible
+                    # Use a fallback approach - assume the timestamps were intended as 'Europe/Stockholm'
                     try:
+                        # Use 'NaT' for ambiguous times and handle them
                         df.index = df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
-                        if pd.isna(df.index).any():
-                            logger.warning(f"Found {pd.isna(df.index).sum()} NaT timestamps after localizing. Removing these rows.")
-                            df = df[~pd.isna(df.index)]
-                    except Exception as e_localize:
-                        logger.error(f"Error localizing naive consumption timestamps: {e_localize}")
-                        self.all_consumption_data_kw = None
-                        return
+                        
+                        # Check if we have any NaT values after localization
+                        nat_mask = pd.isna(df.index)
+                        if nat_mask.any():
+                            nat_count = nat_mask.sum()
+                            logger.warning(f"Found {nat_count} ambiguous timestamps in consumption data. Removing these rows.")
+                            # Remove rows with NaT timestamps
+                            df = df[~nat_mask]
+                    except Exception as e:
+                        logger.error(f"Error localizing consumption timestamps with 'NaT': {e}")
+                        # Try alternative approach 
+                        try:
+                            logger.info("Trying alternative consumption data localization with ambiguous='infer'")
+                            df.index = df.index.tz_localize('Europe/Stockholm', ambiguous='infer', nonexistent='shift_forward')
+                        except Exception as e2:
+                            logger.error(f"Alternative consumption localization also failed: {e2}")
+                            self.all_consumption_data_kw = None
+                            return
                 elif str(df.index.tz) != 'Europe/Stockholm':
                     logger.info(f"Converting consumption data index from {df.index.tz} to 'Europe/Stockholm'.")
+                    # Convert from whatever timezone to Stockholm time
                     try:
                         df.index = df.index.tz_convert('Europe/Stockholm')
-                    except Exception as e_convert:
-                        logger.error(f"Error converting consumption timestamps to Europe/Stockholm: {e_convert}")
+                        logger.info(f"Consumption data index after tz_convert to Europe/Stockholm: {df.index.min()} to {df.index.max()} (tz: {df.index.tzinfo})")
+                    except Exception as e:
+                        logger.error(f"Error converting consumption timestamps to Stockholm time: {e}")
                         self.all_consumption_data_kw = None
-                        return
                 
-                if df.empty:
-                    logger.error("Consumption data became empty after timezone processing.")
-                    self.all_consumption_data_kw = None
-                    return
-
                 # Handle duplicates after getting timezone right
                 if df.index.duplicated().any():
-                    logger.info("Duplicated indices found in consumption data. Dropping duplicates, keeping first instance.")
-                    df = df[~df.index.duplicated(keep='first')]
+                    logger.info("Duplicated indices found in consumption data after timezone conversion. Dropping duplicates, keeping first instance.")
+                    df = df[~df.index.duplicated(keep='first')] 
                 
                 logger.info(f"Final consumption data index range (Europe/Stockholm, duplicates dropped): {df.index.min()} to {df.index.max()}")
                 
+                # Print timestamp sanity check after processing if debug_prints is enabled
                 if self.debug_prints:
-                    logger.info("---CONSUMPTION DATA AFTER TIMEZONE PROCESSING---")
-                    logger.info(df.head(1))
-                    logger.info(f"Index type: {type(df.index)}, Index TZ: {df.index.tzinfo if hasattr(df.index, 'tzinfo') else df.index.tz}")
+                    logger.info("---CONSUMPTION DATA AFTER PROCESSING---")
+                    logger.info(df.iloc[:,0].tail(1))
                     logger.info("-----------------------")    
                     
-                # Select and rename the correct column
-                if 'actual_consumption' not in df.columns:
-                    logger.error(f"'actual_consumption' column not found in {file_path_to_load}. Available columns: {df.columns.tolist()}")
+                # Consumption is in kWh per hour. This value is directly average kW for that hour.
+                # Resample this to our time_step_minutes.
+                resample_freq = f"{int(self.time_step_hours * 60)}min"
+                
+                if 'consumption' not in df.columns:
+                    logger.error(f"'consumption' column not found in {file_path_to_load}. Available columns: {df.columns.tolist()}")
                     self.all_consumption_data_kw = None
                     return
                 
-                self.all_consumption_data_kw = df[['actual_consumption']].rename(columns={'actual_consumption': 'consumption_kwh'})
-                
-                # Resample to simulation time step frequency
-                resample_freq = f"{int(self.time_step_hours * 60)}min"
+                # Rename column and resample
+                self.all_consumption_data_kw = df[['consumption']].rename(columns={'consumption': 'consumption_kw'})
                 self.all_consumption_data_kw = self.all_consumption_data_kw.resample(resample_freq).ffill().bfill()
 
                 logger.info(f"Successfully loaded and resampled {len(self.all_consumption_data_kw)} consumption data points. Path: {file_path_to_load}")

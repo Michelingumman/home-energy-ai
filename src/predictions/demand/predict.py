@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Constants - Mirroring train.py for consistency where applicable
 MODEL_LOAD_PATH = 'src/predictions/demand/models/villamichelin_demand_model.pkl'
+AGENT_MODEL_LOAD_PATH = 'src/predictions/demand/models/baseload/villamichelin_baseload_model.pkl'
 HMM_MODEL_LOAD_PATH = 'src/predictions/demand/models/villamichelin_hmm_model.pkl'
 CONSUMPTION_DATA_PATH = 'data/processed/villamichelin/VillamichelinEnergyData.csv'
 HEAT_PUMP_DATA_PATH = 'data/processed/villamichelin/Thermia/HeatPumpPower.csv'
@@ -29,11 +30,17 @@ FETCH_WEATHER_SCRIPT = 'src/predictions/demand/FetchWeatherData.py'
 # Predictions paths
 PREDICTIONS_DIR = 'src/predictions/demand/predictions'
 PREDICTIONS_SAVE_PATH = f'{PREDICTIONS_DIR}/demand_predictions.csv'
+AGENT_PREDICTIONS_SAVE_PATH = f'{PREDICTIONS_DIR}/baseload/baseload_predictions.csv'
 PLOTS_SAVE_DIR = 'src/predictions/demand/plots/predictions/'
+
+# Default target column name
+TARGET_COL = 'consumption'
+BASELOAD_TARGET_COL = 'baseload'
 
 # Ensure directories exist
 os.makedirs(WEATHER_FORECAST_DIR, exist_ok=True)
 os.makedirs(PREDICTIONS_DIR, exist_ok=True)
+os.makedirs(os.path.join(PREDICTIONS_DIR, "baseload"), exist_ok=True)
 os.makedirs(PLOTS_SAVE_DIR, exist_ok=True)
 
 # Set nicer plot style
@@ -57,6 +64,7 @@ from src.predictions.demand.train import (
     add_weather_transforms,
     add_interaction_terms,
     engineer_features,
+    load_heat_pump_data,
     TARGET_COL,
     N_HMM_STATES,
     FORECAST_HORIZON
@@ -164,24 +172,75 @@ def prepare_data_for_prediction(consumption_df, heat_pump_df, weather_df, horizo
     
     return combined_df
 
-def generate_future_features(df, historical_only=False, country_code='SE'):
+def load_consumption_data(file_path: str, for_agent: bool = False) -> pd.DataFrame:
+    """Load consumption data from CSV file."""
+    logging.info(f"Loading consumption data from {file_path}")
+    try:
+        df = pd.read_csv(file_path, parse_dates=['timestamp'], index_col='timestamp')
+        df.index = df.index.tz_localize('Europe/Stockholm', ambiguous=True, nonexistent='shift_forward')
+        
+        if for_agent:
+            # For agent predictions, we need both consumption and baseload if available
+            # If baseload column doesn't exist yet, we'll calculate it
+            if 'production' in df.columns:
+                if 'baseload' not in df.columns:
+                    df['baseload'] = df['consumption'] + df['production']
+                df = df[['baseload', 'consumption', 'production']]
+            else:
+                logging.warning("Production data not found. Using consumption as baseload.")
+                df['baseload'] = df['consumption']
+                df = df[['baseload', 'consumption']]
+        else:
+            # For regular predictions, just use consumption
+            df = df[['consumption']]
+            
+        logging.info(f"Consumption data loaded successfully. Shape: {df.shape}")
+        return df
+    except Exception as e:
+        logging.error(f"Error loading consumption data: {e}")
+        raise
+
+def generate_future_features(df, hmm_model=None, historical_only=False, country_code='SE', target_column='consumption'):
     """Generate features for future prediction periods with enhanced handling for forecasting."""
     logging.info("Generating features for prediction")
     
     # Apply HMM to the historical data
-    historical_df = df[df[TARGET_COL].notna()].copy()
+    historical_df = df[df[target_column].notna()].copy()
     
-    # Try to load pretrained HMM model first
-    hmm_model = load_hmm_model(HMM_MODEL_LOAD_PATH)
-    
+    # If hmm_model is not provided, try to fit a new one
     if hmm_model is None:
-        # Fit HMM model on historical data
-        logging.info("Fitting new HMM model on historical data")
-        hmm_model = fit_hmm(historical_df[TARGET_COL], N_HMM_STATES)
+        logging.info("No pre-trained HMM model provided, fitting a new one on historical data")
+        from src.predictions.demand.train import fit_hmm, N_HMM_STATES
+        try:
+            hmm_model = fit_hmm(historical_df[target_column], N_HMM_STATES)
+        except Exception as e:
+            logging.warning(f"Error fitting HMM model: {e}. Will use dummy HMM features.")
+            # Create dummy HMM features
+            historical_df['hmm_state'] = 0
+            for i in range(N_HMM_STATES):
+                historical_df[f'hmm_state_posterior_{i}'] = 1.0 / N_HMM_STATES
+            
+            # Create dummy HMM features for future prediction
+            future_df = df[df[target_column].isna()].copy()
+            future_df['hmm_state'] = 0
+            for i in range(N_HMM_STATES):
+                future_df[f'hmm_state_posterior_{i}'] = 1.0 / N_HMM_STATES
+                
+            combined_df = pd.concat([historical_df, future_df])
+            
+            # Add remaining features
+            featured_df = add_calendar_features(combined_df)
+            featured_df = add_lagged_features(featured_df, target_column)
+            featured_df = add_weather_transforms(featured_df)
+            featured_df = add_interaction_terms(featured_df)
+            
+            return featured_df
     
-    # Get states and posteriors
-    states = decode_states(hmm_model, historical_df[TARGET_COL])
-    posteriors = get_state_posteriors(hmm_model, historical_df[TARGET_COL])
+    # Get states and posteriors using the HMM model
+    from src.predictions.demand.train import decode_states, get_state_posteriors, N_HMM_STATES
+    
+    states = decode_states(hmm_model, historical_df[target_column])
+    posteriors = get_state_posteriors(hmm_model, historical_df[target_column])
     
     # Map states by consumption level
     mean_consumptions = hmm_model.means_.flatten()
@@ -198,299 +257,208 @@ def generate_future_features(df, historical_only=False, country_code='SE'):
     last_state = historical_df['hmm_state'].iloc[-1]
     last_posteriors = {f'hmm_state_posterior_{i}': historical_df[f'hmm_state_posterior_{i}'].iloc[-1] 
                       for i in range(N_HMM_STATES)}
-    
-    # For prediction, compute historical averages that will be useful for imputation
-    if not historical_only:
-        # Calculate average consumption by hour of day
-        historical_df['hour'] = historical_df.index.hour
-        hour_avg = historical_df.groupby('hour')[TARGET_COL].mean().to_dict()
-        
-        # Calculate average consumption by day of week
-        historical_df['dayofweek'] = historical_df.index.dayofweek
-        dow_avg = historical_df.groupby('dayofweek')[TARGET_COL].mean().to_dict()
-        
-        # Calculate overall average consumption
-        overall_avg = historical_df[TARGET_COL].mean()
-    
-    # Create complete dataframe with HMM features
-    if historical_only:
-        df_features = historical_df.copy()
-    else:
-        # Forward fill HMM states to future periods
-        full_df = df.copy()
-        future_mask = full_df[TARGET_COL].isna()
-        
-        # Add computed averages for future reference during imputation
-        full_df['consumption_avg'] = overall_avg
-        full_df['hour'] = full_df.index.hour
-        full_df['dayofweek'] = full_df.index.dayofweek
-        
-        full_df['consumption_hour_avg'] = full_df['hour'].map(hour_avg).fillna(overall_avg)
-        full_df['consumption_dow_avg'] = full_df['dayofweek'].map(dow_avg).fillna(overall_avg)
-        
-        # Add HMM features with last known state
-        full_df['hmm_state'] = last_state  # Use last known state
-        for i in range(N_HMM_STATES):
-            full_df[f'hmm_state_posterior_{i}'] = last_posteriors[f'hmm_state_posterior_{i}']
-        
-        # Copy HMM features from historical data
-        full_df.loc[~future_mask, 'hmm_state'] = historical_df['hmm_state']
-        for i in range(N_HMM_STATES):
-            full_df.loc[~future_mask, f'hmm_state_posterior_{i}'] = historical_df[f'hmm_state_posterior_{i}']
-        
-        df_features = full_df
-    
-    # Add standard features
-    logging.info("Adding calendar features")
-    df_features = add_calendar_features(df_features, country_code)
-    
-    logging.info("Adding weather transforms")
-    df_features = add_weather_transforms(df_features)
-    
-    logging.info("Adding lagged features")
-    df_features = add_lagged_features(df_features, TARGET_COL)
-    
-    logging.info("Adding interaction features")
-    df_features = add_interaction_terms(df_features)
-    
-    # For future periods, pre-fill problematic features with sensible defaults
-    if not historical_only:
-        future_mask = df_features[TARGET_COL].isna()
-        future_df = df_features[future_mask]
-        
-        if not future_df.empty:
-            # Add simple time-based consumption estimates for future periods
-            # These can help with lag features that might be missing
-            for idx in future_df.index:
-                hour = idx.hour
-                day = idx.dayofweek
-                df_features.loc[idx, TARGET_COL] = hour_avg.get(hour, overall_avg) * 0.8  # 80% of hour average as initial guess
-        
-            # Pre-fill any _diff features (that compare to 24h ago) with zeros
-            diff_cols = [col for col in df_features.columns if '_diff' in col]
-            for col in diff_cols:
-                df_features.loc[future_mask, col] = df_features.loc[future_mask, col].fillna(0)
-    
-    logging.info(f"Features generated. Shape: {df_features.shape}")
-    return df_features
 
-def make_predictions(model, df_features, forecast_horizon=24):
-    """Make predictions using the trained model with enhanced handling of missing features."""
+    # Create future dataframe with the same HMM state as the last known state
+    future_df = df[df[target_column].isna()].copy()
+    future_df['hmm_state'] = last_state
+    for i in range(N_HMM_STATES):
+        future_df[f'hmm_state_posterior_{i}'] = last_posteriors[f'hmm_state_posterior_{i}']
+    
+    # Combine historical and future data
+    combined_df = pd.concat([historical_df, future_df])
+    
+    # Add all other required features
+    # Import necessary functions from train.py
+    from src.predictions.demand.train import (
+        add_calendar_features, 
+        add_lagged_features, 
+        add_weather_transforms, 
+        add_interaction_terms
+    )
+    
+    # Generate all features needed for prediction
+    featured_df = add_calendar_features(combined_df, country_code)
+    featured_df = add_lagged_features(featured_df, target_column)
+    featured_df = add_weather_transforms(featured_df)
+    featured_df = add_interaction_terms(featured_df)
+    
+    return featured_df
+
+def make_predictions(model, df_features, forecast_horizon=24, for_agent=False):
+    """
+    Make predictions for the future using the trained model.
+    
+    Args:
+        model: Trained model (XGBoost)
+        df_features: DataFrame with features prepared for prediction
+        forecast_horizon: Number of hours to predict
+        for_agent: Whether this is for agent mode (baseload vs consumption)
+        
+    Returns:
+        DataFrame with original data and predictions column added
+    """
     logging.info(f"Making predictions for {forecast_horizon} hours")
     
-    # Initialize prediction dataframe
-    df_pred = df_features.copy()
-    df_pred['predictions'] = np.nan
+    # Find the latest non-NaN consumption time (boundary between historical and future)
+    target_col = 'baseload' if for_agent else 'consumption'
+    latest_data_time = df_features[df_features[target_col].notna()].index.max()
     
-    # Identify future periods where we need to make predictions
-    future_mask = df_pred[TARGET_COL].isna()
-    future_indices = df_pred.index[future_mask]
+    # Create a copy to avoid modifying the original
+    pred_df = df_features.copy()
     
-    if len(future_indices) == 0:
-        logging.warning("No future periods to predict")
-        return df_pred
+    # Initialize a predictions column
+    pred_df['predictions'] = np.nan
     
-    # Get model feature names
-    feature_names = model.feature_names_in_
+    # Loop through each future timestamp and make a prediction
+    future_indices = pred_df[pred_df.index > latest_data_time].index
+    future_indices = future_indices[:forecast_horizon]  # Limit to requested horizon
     
-    # Create a buffer for holding prediction results
-    predictions = []
-    prediction_indices = []
+    # Store the features that our model expects
+    model_features = model.feature_names_in_
+    n_predictions_made = 0
     
-    # For each future period, make predictions iteratively to account for lag features
-    for i, idx in enumerate(future_indices):
-        # Extract features for this timestamp
-        X = df_pred.loc[idx:idx, feature_names].copy()
+    for i, timestamp in enumerate(future_indices):
+        # Get feature values for this timestamp
+        row = pred_df.loc[timestamp]
         
-        # If any features are missing, handle them more aggressively
-        if X.isna().any().any():
-            missing_cols = X.columns[X.isna().any()]
-            logging.warning(f"Missing features for prediction at {idx}: {len(missing_cols)} features")
+        # Check if we have all required features
+        missing_features = [f for f in model_features if f not in row.index or pd.isna(row[f])]
+        if missing_features:
+            logging.warning(f"Missing features for prediction at {timestamp}: {len(missing_features)} features")
             
-            # Split missing features by type for better handling
-            missing_consumption = [col for col in missing_cols if col.startswith('consumption')]
-            missing_power = [col for col in missing_cols if col.startswith('power_input')]
-            missing_interactions = [col for col in missing_cols if '_x_' in col]
-            missing_diff = [col for col in missing_cols if col.endswith('_diff')]
-            missing_other = [col for col in missing_cols if col not in missing_consumption + 
-                            missing_power + missing_interactions + missing_diff]
-            
-            # 1. Forward fill from previous known values
-            X = X.ffill().bfill()
-            
-            # 2. Apply special handling for different feature types
-            # For consumption features, use zero or historical averages
-            for col in missing_consumption:
-                if 'min' in col or 'max' in col:
-                    # For min/max features, use the average consumption if available
-                    if 'consumption_avg' in df_pred.columns and not df_pred['consumption_avg'].isna().all():
-                        X[col] = df_pred['consumption_avg'].iloc[-1] if len(df_pred['consumption_avg']) > 0 else 0
-                    else:
-                        X[col] = 0
-                elif 'ratio' in col:
-                    # For ratio features, use 1.0 (neutral value)
-                    X[col] = 1.0
-                else:
-                    # For other consumption features, use zero
-                    X[col] = 0
-            
-            # For power features
-            for col in missing_power:
-                X[col] = 0  # Default to zero power input
-            
-            # For interaction features
-            for col in missing_interactions:
-                X[col] = 0  # Default to zero for interactions
-            
-            # For difference features
-            for col in missing_diff:
-                X[col] = 0  # Default to zero difference
-
-            # For remaining features, use mean of non-NaN values or zero
-            for col in missing_other:
-                if not df_pred[col].isna().all():
-                    X[col] = df_pred[col].dropna().mean()
-                else:
-                    X[col] = 0
-        
-        # Final check for any remaining NaNs
-        if X.isna().any().any():
-            still_missing = X.columns[X.isna().any()].tolist()
-            logging.warning(f"Still missing {len(still_missing)} features after imputation, defaulting to zeros")
-            X = X.fillna(0)  # Last resort: fill any remaining NaNs with zeros
+        # Prepare feature vector for prediction (handling missing features)
+        X = np.zeros((1, len(model_features)))
+        for j, feat in enumerate(model_features):
+            if feat in row.index and not pd.isna(row[feat]):
+                X[0, j] = row[feat]
         
         # Make prediction
         try:
-            pred = model.predict(X)[0]
-            predictions.append(pred)
-            prediction_indices.append(idx)
+            pred_value = model.predict(X)[0]
+            pred_df.loc[timestamp, 'predictions'] = pred_value
+            n_predictions_made += 1
             
-            # Update the target column with prediction for next-step forecasting
-            df_pred.loc[idx, 'predictions'] = pred
-            df_pred.loc[idx, TARGET_COL] = pred
-            
-            # Recalculate lag features if we have more predictions to make
-            if i < len(future_indices) - 1:
-                # Only update lag features that would be affected by this new prediction
-                lag_cols = [col for col in feature_names if '_lag_' in col and col.split('_lag_')[0] == TARGET_COL]
-                for lag_col in lag_cols:
-                    lag = int(lag_col.split('_lag_')[1])
-                    lag_idx = idx + pd.Timedelta(hours=lag)
-                    if lag_idx in df_pred.index:
-                        df_pred.loc[lag_idx, lag_col] = pred
+            # Add confidence bounds if the model supports it
+            if hasattr(model, 'predict_quantile'):
+                lower_bound = model.predict_quantile(X, quantile=0.025)[0]
+                upper_bound = model.predict_quantile(X, quantile=0.975)[0]
+                pred_df.loc[timestamp, 'lower_bound'] = lower_bound
+                pred_df.loc[timestamp, 'upper_bound'] = upper_bound
+                
         except Exception as e:
-            logging.error(f"Error making prediction at {idx}: {e}")
+            logging.error(f"Error making prediction for {timestamp}: {e}")
     
-    logging.info(f"Successfully made {len(predictions)} predictions out of {len(future_indices)} requested")
+    logging.info(f"Successfully made {n_predictions_made} predictions out of {len(future_indices)} requested")
     
-    return df_pred
+    return pred_df
 
-def plot_predictions(df_pred, historical_window=48, save_path=None):
-    """Plot the predictions along with historical data."""
+def plot_predictions(df_pred, historical_window=48, save_path=None, title=None):
+    """
+    Plot the predictions along with historical data.
+    
+    Args:
+        df_pred: DataFrame with historical data and predictions
+        historical_window: Number of historical hours to display
+        save_path: Path to save the plot, if provided
+        title: Custom title for the plot
+    """
     logging.info("Plotting predictions")
     
-    # Check if there are any predictions
-    has_valid_predictions = df_pred['predictions'].notna().sum() > 0
+    # Debug the dataframe
+    logging.info(f"DataFrame shape: {df_pred.shape}")
+    logging.info(f"DataFrame columns: {df_pred.columns.tolist()}")
+    logging.info(f"First few rows of predictions:\n{df_pred.head().to_string()}")
     
-    # Find the boundary between historical and prediction data
-    historical_data = df_pred[df_pred[TARGET_COL].notna() & (df_pred['predictions'].isna())]
-    future_data = df_pred[df_pred[TARGET_COL].isna()]
+    # Create a copy of the dataframe to avoid modifying the original
+    df = df_pred.copy()
     
-    if len(historical_data) == 0 and len(future_data) == 0:
-        logging.error("No data to plot")
-        fig, ax = plt.subplots(figsize=(16, 8))
-        ax.text(0.5, 0.5, 'No data to display', ha='center', va='center', fontsize=16)
+    # Identify which rows have predictions (not NaN)
+    has_predictions = ~df['predictions'].isna()
+    
+    if not has_predictions.any():
+        logging.error("No valid predictions found in the data")
+        fig, ax = plt.subplots(figsize=(14, 7))
+        ax.text(0.5, 0.5, "No valid predictions to display", 
+                ha='center', va='center', fontsize=14)
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.savefig(save_path, dpi=100)
+            logging.info(f"Empty plot saved to {save_path}")
         return fig, ax
     
-    # If we have future data but no predictions, create a baseline prediction
-    if not has_valid_predictions and len(future_data) > 0:
-        logging.warning("No valid predictions to plot. Creating baseline prediction from historical patterns.")
-        
-        # Create a baseline prediction based on historical patterns if available
-        if 'consumption_hour_avg' in df_pred.columns:
-            df_pred.loc[future_data.index, 'baseline_pred'] = df_pred.loc[future_data.index, 'consumption_hour_avg']
-        elif 'consumption_avg' in df_pred.columns:
-            df_pred.loc[future_data.index, 'baseline_pred'] = df_pred.loc[future_data.index, 'consumption_avg']
-        else:
-            # If we don't have even historical averages, use a simple average of historical data
-            historical_mean = df_pred[df_pred[TARGET_COL].notna()][TARGET_COL].mean()
-            df_pred.loc[future_data.index, 'baseline_pred'] = historical_mean
+    # Get the first timestamp that has a prediction
+    forecast_start = df.loc[has_predictions].index[0]
+    logging.info(f"Forecast start time: {forecast_start}")
     
-    # Determine the prediction start point
-    if has_valid_predictions:
-        pred_start = df_pred.index[df_pred['predictions'].notna()][0]
-    elif len(future_data) > 0:
-        pred_start = future_data.index[0]
-    else:
-        pred_start = df_pred.index[-1]
-    
-    # Calculate historical start point
-    hist_start = pred_start - pd.Timedelta(hours=historical_window)
-    if hist_start < df_pred.index[0]:
-        hist_start = df_pred.index[0]
-    
-    # Get the data to plot
-    plot_df = df_pred.loc[hist_start:].copy()
+    # Filter to show only the last [historical_window] hours + forecast
+    historical_start = forecast_start - pd.Timedelta(hours=historical_window)
+    df_plot = df[df.index >= historical_start].copy()
     
     # Create the plot
-    fig, ax = plt.subplots(figsize=(16, 8))
+    fig, ax = plt.subplots(figsize=(14, 7))
     
-    # Plot historical consumption
-    historical_mask = plot_df.index < pred_start
-    if historical_mask.any():
-        ax.plot(plot_df.index[historical_mask], 
-                plot_df.loc[historical_mask, TARGET_COL], 
-                label='Historical Consumption', 
-                color='#2C3E50', 
+    # Plot historical data (if we have both consumption and baseload columns, use the right one based on title)
+    historical_mask = df_plot.index < forecast_start
+    
+    # Determine which column to use for historical data
+    target_col = 'baseload' if 'baseload' in df_plot.columns and 'Baseload' in (title or '') else 'consumption'
+    if target_col not in df_plot.columns:
+        target_col = df_plot.columns[0]  # Fallback to first column
+        
+    if historical_mask.any() and not df_plot.loc[historical_mask, target_col].empty:
+        ax.plot(df_plot.index[historical_mask], 
+                df_plot.loc[historical_mask, target_col], 
+                label=f'Historical {target_col.capitalize()}', 
+                color='#1f77b4', 
                 linewidth=2)
     
-    # Plot predictions or baseline
-    pred_mask = plot_df.index >= pred_start
-    if has_valid_predictions and pred_mask.any():
-        ax.plot(plot_df.index[pred_mask], 
-                plot_df.loc[pred_mask, 'predictions'], 
-                label='Predicted Consumption', 
-                color='#E74C3C', 
-                linewidth=2)
-    elif 'baseline_pred' in plot_df.columns and pred_mask.any():
-        ax.plot(plot_df.index[pred_mask],
-                plot_df.loc[pred_mask, 'baseline_pred'],
-                label='Baseline Prediction (Historical Average)',
-                color='#F39C12',
-                linestyle='--',
-                linewidth=2)
+    # Plot predictions
+    forecast_mask = df_plot.index >= forecast_start
+    if forecast_mask.any() and not df_plot.loc[forecast_mask, 'predictions'].empty:
+        ax.plot(df_plot.index[forecast_mask], 
+                df_plot.loc[forecast_mask, 'predictions'], 
+                label=f'Predicted {target_col.capitalize()}', 
+                color='#ff7f0e', 
+                linewidth=2, 
+                linestyle='-', 
+                marker='o', 
+                markersize=5)
     
-    # Add vertical line to mark prediction start
-    ax.axvline(x=pred_start, color='gray', linestyle='--', alpha=0.7)
+    # Add vertical line at forecast start
+    ax.axvline(x=forecast_start, color='red', linestyle='--', alpha=0.7, 
+              label='Forecast Start')
     
-    # Get a reasonable y-value for the text
-    if historical_mask.any() and not plot_df.loc[historical_mask, TARGET_COL].empty:
-        text_y = plot_df.loc[historical_mask, TARGET_COL].max() * 0.95
-    elif 'baseline_pred' in plot_df.columns:
-        text_y = plot_df['baseline_pred'].max() * 0.95
-    else:
-        text_y = 1.0
-    
-    ax.text(pred_start, text_y, 
-            'Prediction Start', 
-            rotation=90, 
-            verticalalignment='top')
+    # Add confidence intervals if available
+    if 'lower_bound' in df_plot.columns and 'upper_bound' in df_plot.columns:
+        if forecast_mask.any():
+            ax.fill_between(df_plot.index[forecast_mask], 
+                           df_plot.loc[forecast_mask, 'lower_bound'], 
+                           df_plot.loc[forecast_mask, 'upper_bound'], 
+                           color='#ff7f0e', 
+                           alpha=0.2, 
+                           label='95% Confidence Interval')
     
     # Formatting
-    ax.set_title('Energy Consumption Forecast', fontsize=16)
-    ax.set_ylabel('Energy Consumption', fontsize=12)
+    ax.set_title(title or f'Energy {target_col.capitalize()} Forecast', fontsize=16)
+    ax.set_ylabel(f'Energy {target_col.capitalize()} (kWh)', fontsize=12)
     ax.set_xlabel('Time', fontsize=12)
     ax.legend(loc='best')
     ax.grid(True, alpha=0.3)
     
-    # Rotate x-axis labels for better readability
-    plt.xticks(rotation=45, ha='right')
+    # Format dates on x-axis
+    fig.autofmt_xdate()
+    
+    # Add extra information
+    forecast_horizon = sum(forecast_mask)
+    ax.text(0.02, 0.95, f'Forecast Horizon: {forecast_horizon} hours', 
+           transform=ax.transAxes, 
+           bbox=dict(facecolor='white', alpha=0.8))
+    
     plt.tight_layout()
     
+    # Save if path provided
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, dpi=100, bbox_inches='tight')
         logging.info(f"Plot saved to {save_path}")
     
     return fig, ax
@@ -501,87 +469,107 @@ def save_predictions(df_pred, save_path):
     
     # Extract only relevant columns
     save_df = df_pred[['predictions']].copy()
+    save_df.index.name = 'timestamp'
     save_df.loc[~save_df['predictions'].isna()].to_csv(save_path)
     
     logging.info(f"Predictions saved to {save_path}")
     return save_df
 
 def main():
-    parser = argparse.ArgumentParser(description="Predict energy consumption for future periods")
-    parser.add_argument('--horizon', type=int, default=24,
-                        help="Number of hours to predict ahead. Default: 24")
-    parser.add_argument('--plot', action='store_true', 
-                        help="Generate and show plots of the predictions")
-    parser.add_argument('--save-plot', type=str, default=None,
-                        help="Save plot to specified path")
-    parser.add_argument('--save-pred', type=str, default=PREDICTIONS_SAVE_PATH,
-                        help=f"Save predictions to CSV file. Default: {PREDICTIONS_SAVE_PATH}")
+    """Main function to generate and save demand predictions."""
+    parser = argparse.ArgumentParser(description='Generate demand predictions')
+    parser.add_argument('--horizon', type=int, default=24, 
+                        help='Number of hours to predict into the future')
+    parser.add_argument('--model-path', type=str, default=None,
+                        help='Path to a specific model to use for prediction (optional)')
+    parser.add_argument('--plot', action='store_true',
+                        help='Generate and display prediction plots')
+    parser.add_argument('--save', action='store_true',
+                        help='Save predictions to CSV file')
+    parser.add_argument('--save-path', type=str, default=None,
+                        help='Custom path to save predictions CSV')
+    parser.add_argument('--for-agent', action='store_true',
+                        help='Use agent-specific baseload model instead of standard demand model')
     args = parser.parse_args()
     
-    # Ensure weather forecast data is available
-    ensure_weather_forecast()
+    # Set paths based on agent mode
+    model_path = args.model_path
+    if model_path is None:
+        model_path = AGENT_MODEL_LOAD_PATH if args.for_agent else MODEL_LOAD_PATH
     
-    # Load model
-    model = load_model(MODEL_LOAD_PATH)
+    save_path = args.save_path
+    if save_path is None:
+        save_path = AGENT_PREDICTIONS_SAVE_PATH if args.for_agent else PREDICTIONS_SAVE_PATH
     
-    # Load historical data
-    historical_df = run_data_pipeline(
-        CONSUMPTION_DATA_PATH,
-        HEAT_PUMP_DATA_PATH,
-        WEATHER_DATA_PATH
-    )
+    # Ensure directories exist
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
-    # Get latest timestamp from historical data
-    latest_timestamp = historical_df.index.max()
-    logging.info(f"Latest timestamp in historical data: {latest_timestamp}")
+    # Set target column based on agent mode
+    target_column = BASELOAD_TARGET_COL if args.for_agent else TARGET_COL
+    logging.info(f"Using {'agent-specific baseload' if args.for_agent else 'standard demand'} model")
+    logging.info(f"Target column: {target_column}")
     
-    # Set prediction start time
-    prediction_start = latest_timestamp + pd.Timedelta(hours=1)
-    prediction_end = prediction_start + pd.Timedelta(hours=args.horizon-1)
-    logging.info(f"Making predictions from {prediction_start} to {prediction_end} ({args.horizon} hours)")
-    
-    # Load weather forecast
-    weather_forecast = load_weather_forecast(
-        WEATHER_FORECAST_PATH, 
-        start_time=prediction_start, 
-        horizon_hours=args.horizon
-    )
-    
-    # Prepare data for prediction
-    combined_df = prepare_data_for_prediction(
-        historical_df[[TARGET_COL]], 
-        historical_df[['power_input_kwh']], 
-        weather_forecast, 
-        horizon_hours=args.horizon
-    )
-    
-    # Generate features for prediction
-    df_features = generate_future_features(combined_df)
-    
-    # Make predictions
-    df_pred = make_predictions(model, df_features, forecast_horizon=args.horizon)
-    
-    # Save predictions if requested
-    if args.save_pred:
-        save_predictions(df_pred, args.save_pred)
-    
-    # Plot predictions if requested
-    if args.plot or args.save_plot:
-        # If save_plot is None, use default path with timestamp
-        save_path = args.save_plot
-        if args.plot and not save_path:
-            current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-            save_path = os.path.join(PLOTS_SAVE_DIR, f'demand_forecast_{current_time}.png')
-            
-        fig, ax = plot_predictions(df_pred, 
-                                   historical_window=48,
-                                   save_path=save_path)
+    try:
+        # Ensure we have a weather forecast file
+        ensure_weather_forecast()
+        
+        # Load the model
+        model = load_model(model_path)
+        
+        # Try to load the HMM model, will be None if not found
+        hmm_model = load_hmm_model(HMM_MODEL_LOAD_PATH)
+        
+        # Get current time for prediction start
+        prediction_start_time = datetime.now().replace(minute=0, second=0, microsecond=0)
+        prediction_start_time = pd.Timestamp(prediction_start_time).tz_localize('Europe/Stockholm')
+        
+        # Load historical data for context
+        consumption_df = load_consumption_data(CONSUMPTION_DATA_PATH, for_agent=args.for_agent)
+        heat_pump_df = load_heat_pump_data(HEAT_PUMP_DATA_PATH)
+        heat_pump_df['power_input_kwh'] = heat_pump_df['power_input_kw'] * 0.25  # Convert to kWh
+        heat_pump_df = heat_pump_df.drop(columns=['power_input_kw'])
+        heat_pump_df = heat_pump_df.resample('h').sum()
+        
+        # Load weather forecast for prediction period
+        weather_forecast_df = load_weather_forecast(WEATHER_FORECAST_PATH, 
+                                                   start_time=prediction_start_time,
+                                                   horizon_hours=args.horizon)
+        
+        # Prepare data with historical + forecast
+        combined_df = prepare_data_for_prediction(consumption_df, heat_pump_df, 
+                                                 weather_forecast_df, args.horizon)
+        
+        # Generate features for the entire dataset
+        featured_df = generate_future_features(combined_df, hmm_model, 
+                                              target_column=target_column)
+        
+        # Make predictions
+        predictions_df = make_predictions(model, featured_df, args.horizon, args.for_agent)
+        
+        # Save predictions if requested
+        if args.save:
+            save_predictions(predictions_df, save_path)
+            logging.info(f"Predictions saved to {save_path}")
+        
+        # Plot predictions if requested
         if args.plot:
-            plt.show()
-    
-    logging.info("Prediction complete")
-    
-    return df_pred
+            title = f"{'Baseload' if args.for_agent else 'Energy Demand'} Forecast"
+            plot_path = None
+            if args.save:
+                plot_file = f"{'baseload' if args.for_agent else 'demand'}_forecast_{datetime.now().strftime('%Y%m%d_%H%M')}.png"
+                plot_path = os.path.join(PLOTS_SAVE_DIR, plot_file)
+            
+            plot_predictions(predictions_df, historical_window=48, save_path=plot_path, title=title)
+            
+            if plot_path is None:  # Only show if not saving
+                plt.show()
+        
+        logging.info("Prediction process completed successfully.")
+        return predictions_df
+        
+    except Exception as e:
+        logging.error(f"Error during prediction process: {e}")
+        raise
 
 if __name__ == "__main__":
     main()

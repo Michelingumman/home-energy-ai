@@ -1,4 +1,10 @@
 # Train file for demand predictions
+
+import os
+import sys
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 import pandas as pd
 import numpy as np
 import logging
@@ -26,23 +32,60 @@ CONSUMPTION_DATA_PATH = 'data/processed/villamichelin/VillamichelinEnergyData.cs
 HEAT_PUMP_DATA_PATH = 'data/processed/villamichelin/Thermia/HeatPumpPower.csv'
 WEATHER_DATA_PATH = 'data/processed/weather_data.csv'
 MODEL_SAVE_PATH = 'src/predictions/demand/models/villamichelin_demand_model.pkl'
+AGENT_MODEL_SAVE_PATH = 'src/predictions/demand/models/baseload/villamichelin_baseload_model.pkl'
 HMM_MODEL_SAVE_PATH = 'src/predictions/demand/models/villamichelin_hmm_model.pkl'
 FEATURE_IMPORTANCE_SAVE_PATH = 'src/predictions/demand/plots/feature_importance.png'
 N_HMM_STATES = 3
 TARGET_COL = 'consumption'
+BASELOAD_TARGET_COL = 'baseload'
 FORECAST_HORIZON = 1 # Predicting t+1
 
 # Ensure model directory exists
 os.makedirs(os.path.dirname(MODEL_SAVE_PATH), exist_ok=True)
+os.makedirs(os.path.dirname(AGENT_MODEL_SAVE_PATH), exist_ok=True)
 os.makedirs(os.path.dirname(FEATURE_IMPORTANCE_SAVE_PATH), exist_ok=True)
 
 # --- Data Pipeline Functions ---
-def load_consumption_data(file_path: str) -> pd.DataFrame:
+def load_consumption_data(file_path: str, for_agent: bool = False) -> pd.DataFrame:
     logging.info(f"Loading consumption data from {file_path}")
     try:
         df = pd.read_csv(file_path, parse_dates=['timestamp'], index_col='timestamp')
         df.index = df.index.tz_localize('Europe/Stockholm', ambiguous=True, nonexistent='shift_forward')
-        df = df[['consumption']]
+        
+        if for_agent:
+            # For agent training, calculate true baseload for better prediction
+            # Baseload = consumption (grid import) + production (solar) - battery_flow
+            if 'production' in df.columns and 'consumption' in df.columns:
+                logging.info("Calculating baseload for agent model with improved formula")
+                
+                # Calculate total home demand regardless of source
+                df['baseload'] = df['consumption'] + df['production']
+                
+                # If battery data exists, account for it in baseload calculation
+                if 'battery_flow' in df.columns:
+                    logging.info("Battery flow data found, adjusting baseload calculation")
+                    # Positive battery flow = discharging (contributing to home demand)
+                    # Negative battery flow = charging (not part of home demand)
+                    # Only subtract the positive values (discharge) from baseload
+                    battery_discharge = df['battery_flow'].copy()
+                    battery_discharge[battery_discharge < 0] = 0  # Keep only discharge values
+                    df['baseload'] = df['baseload'] - battery_discharge
+                    
+                # Keep relevant columns
+                columns_to_keep = ['baseload', 'consumption', 'production']
+                if 'battery_flow' in df.columns:
+                    columns_to_keep.append('battery_flow')
+                df = df[columns_to_keep]
+                
+                logging.info(f"Enhanced baseload data created successfully. Shape: {df.shape}")
+            else:
+                logging.warning("Production data not found. Using consumption as baseload.")
+                df['baseload'] = df['consumption']
+                df = df[['baseload', 'consumption']]
+        else:
+            # For regular training, just use consumption
+            df = df[['consumption']]
+            
         logging.info(f"Consumption data loaded successfully. Shape: {df.shape}")
         print("\nConsumption data head: \n", df.head())
         return df
@@ -122,9 +165,9 @@ def clean_and_impute_data(df: pd.DataFrame) -> pd.DataFrame:
         logging.info("Missing values imputed successfully.")
     return df_cleaned
 
-def run_data_pipeline(consumption_path: str, heat_pump_path: str, weather_path: str) -> pd.DataFrame:
+def run_data_pipeline(consumption_path: str, heat_pump_path: str, weather_path: str, for_agent: bool = False) -> pd.DataFrame:
     logging.info("Starting data pipeline")
-    consumption_data = load_consumption_data(consumption_path)
+    consumption_data = load_consumption_data(consumption_path, for_agent)
     heat_pump_data = load_heat_pump_data(heat_pump_path)
     weather_data = load_weather_data(weather_path)
     heat_pump_hourly = resample_heat_pump_data(heat_pump_data)
@@ -216,118 +259,83 @@ def add_hmm_features(df: pd.DataFrame, consumption_col: str, n_states: int) -> p
     return df
 
 # --- Feature Engineering Functions ---
-def add_lagged_features(df: pd.DataFrame, target_col: str, lags: list = [1, 2, 3, 24, 48, 72, 168]) -> pd.DataFrame:
+def add_lagged_features(df: pd.DataFrame, target_col: str, lags: list = None) -> pd.DataFrame:
     """
-    Add advanced lagged and time series features to capture temporal patterns in energy consumption.
+    Add lagged features for the target column.
     
-    Args:
-        df: DataFrame with target column
-        target_col: Name of target column (consumption)
-        lags: List of lag periods to include (default includes hours, days, and week)
-        
-    Returns:
-        DataFrame with added lag features
+    Enhanced to include more diverse time horizons and statistical features calculated over these lags.
     """
-    logging.info(f"Adding advanced lagged features for '{target_col}'")
+    logging.info("Adding lagged features")
+    
+    # Base set of lags
+    if lags is None:
+        # Hourly lags for short term patterns
+        hourly_lags = [1, 2, 3, 4, 6, 12]
+        
+        # Daily lags for day-to-day patterns
+        daily_lags = [24, 48, 72]
+        
+        # Weekly lags for weekly patterns
+        weekly_lags = [168, 336, 504]
+        
+        # Combine all lags
+        lags = hourly_lags + daily_lags + weekly_lags
+    
     df_copy = df.copy()
     
-    # Basic lag features
+    # Add basic lag features
     for lag in lags:
-        df_copy[f'{target_col}_lag_{lag}h'] = df_copy[target_col].shift(lag)
+        col_name = f'{target_col}_lag_{lag}'
+        df_copy[col_name] = df_copy[target_col].shift(lag)
+        
+    # Add statistical aggregations over different windows
+    windows = [6, 12, 24, 168]
     
-    # Moving averages at different time scales
-    windows = [6, 12, 24, 48, 72, 168]  # 6h, 12h, 24h, 2d, 3d, 7d
     for window in windows:
-        # Moving average
-        df_copy[f'{target_col}_ma_{window}h'] = df_copy[target_col].rolling(
-            window=window, min_periods=1).mean().shift(1)
+        # Mean over window
+        df_copy[f'{target_col}_mean_{window}h'] = df_copy[target_col].rolling(window=window).mean()
         
-        # Moving standard deviation (volatility)
-        df_copy[f'{target_col}_std_{window}h'] = df_copy[target_col].rolling(
-            window=window, min_periods=1).std().shift(1)
+        # Standard deviation to capture volatility
+        df_copy[f'{target_col}_std_{window}h'] = df_copy[target_col].rolling(window=window).std()
         
-        # Moving min/max (range)
-        df_copy[f'{target_col}_min_{window}h'] = df_copy[target_col].rolling(
-            window=window, min_periods=1).min().shift(1)
-        df_copy[f'{target_col}_max_{window}h'] = df_copy[target_col].rolling(
-            window=window, min_periods=1).max().shift(1)
+        # Min and max to capture range
+        df_copy[f'{target_col}_min_{window}h'] = df_copy[target_col].rolling(window=window).min()
+        df_copy[f'{target_col}_max_{window}h'] = df_copy[target_col].rolling(window=window).max()
+        
+        # Median (more robust to outliers than mean)
+        df_copy[f'{target_col}_median_{window}h'] = df_copy[target_col].rolling(window=window).median()
     
-    # Differencing features
-    df_copy[f'{target_col}_diff_1h'] = df_copy[target_col].diff(1)
+    # Add trend indicators
+    df_copy[f'{target_col}_diff'] = df_copy[target_col].diff()
     df_copy[f'{target_col}_diff_24h'] = df_copy[target_col].diff(24)
     df_copy[f'{target_col}_diff_168h'] = df_copy[target_col].diff(168)
     
-    # Percentage change features
-    df_copy[f'{target_col}_pct_1h'] = df_copy[target_col].pct_change(1)
-    df_copy[f'{target_col}_pct_24h'] = df_copy[target_col].pct_change(24)
+    # Add percentage change features
+    df_copy[f'{target_col}_pct_change'] = df_copy[target_col].pct_change()
+    df_copy[f'{target_col}_pct_change_24h'] = df_copy[target_col].pct_change(24)
     
-    # Rate of change features (momentum)
-    df_copy[f'{target_col}_roc_24h'] = (df_copy[target_col] / df_copy[target_col].shift(24) - 1) * 100
+    # Add exponentially weighted moving averages
+    df_copy[f'{target_col}_ewm_12h'] = df_copy[target_col].ewm(span=12).mean()
+    df_copy[f'{target_col}_ewm_24h'] = df_copy[target_col].ewm(span=24).mean()
+    df_copy[f'{target_col}_ewm_168h'] = df_copy[target_col].ewm(span=168).mean()
     
-    # Time of day patterns
-    # Same hour in previous days
-    for days_ago in [1, 2, 3, 7, 14]:
-        df_copy[f'{target_col}_same_hour_{days_ago}d_ago'] = df_copy[target_col].shift(24 * days_ago)
+    # Calculate day-of-week average if we have enough historical data
+    if len(df_copy) >= 168:  # At least 1 week of data
+        df_copy[f'{target_col}_dow_mean'] = df_copy.groupby(df_copy.index.dayofweek)[target_col].transform('mean')
+        df_copy[f'{target_col}_hour_mean'] = df_copy.groupby(df_copy.index.hour)[target_col].transform('mean')
+        df_copy[f'{target_col}_hour_dow_mean'] = df_copy.groupby([df_copy.index.dayofweek, df_copy.index.hour])[target_col].transform('mean')
     
-    # Weekly patterns - same hour and day in previous weeks
-    for weeks_ago in [1, 2, 4]:
-        df_copy[f'{target_col}_same_hour_dow_{weeks_ago}w_ago'] = df_copy[target_col].shift(168 * weeks_ago)
+    # Calculate ratios between different timeframes
+    if len(df_copy) >= 672:  # At least 4 weeks of data
+        # Compare this week to last week
+        for h in range(24):
+            this_week = df_copy[df_copy.index.hour == h][target_col]
+            last_week = df_copy[df_copy.index.hour == h][target_col].shift(168)
+            ratio_col_name = f'{target_col}_hour{h}_week_ratio'
+            df_copy.loc[df_copy.index.hour == h, ratio_col_name] = this_week / last_week.replace(0, np.nan)
     
-    # Hour of day average consumption (captures daily patterns)
-    if isinstance(df_copy.index, pd.DatetimeIndex):
-        df_copy['hour'] = df_copy.index.hour
-        hour_avg = df_copy.groupby('hour')[target_col].transform('mean')
-        df_copy[f'{target_col}_hour_avg_ratio'] = df_copy[target_col] / hour_avg
-        df_copy.drop('hour', axis=1, inplace=True)
-    
-    # Day of week average consumption (captures weekly patterns)
-    if isinstance(df_copy.index, pd.DatetimeIndex):
-        df_copy['dayofweek'] = df_copy.index.dayofweek
-        dow_avg = df_copy.groupby('dayofweek')[target_col].transform('mean')
-        df_copy[f'{target_col}_dow_avg_ratio'] = df_copy[target_col] / dow_avg
-        df_copy.drop('dayofweek', axis=1, inplace=True)
-    
-    # Lag features for power input if available
-    power_col = 'power_input_kwh'
-    if power_col in df_copy.columns:
-        for lag in [1, 24, 168]:
-            df_copy[f'{power_col}_lag_{lag}h'] = df_copy[power_col].shift(lag)
-        
-        # Moving averages for power
-        for window in [24, 168]:
-            df_copy[f'{power_col}_ma_{window}h'] = df_copy[power_col].rolling(
-                window=window, min_periods=1).mean().shift(1)
-        
-        # Interaction between power and consumption
-        df_copy[f'{target_col}_power_ratio'] = df_copy[target_col] / (df_copy[power_col] + 0.1)
-    
-    # Fill NaN values in lag features with appropriate statistical measures
-    # Create a list of columns that might have NaN values
-    cols_to_fill = []
-    for col in df_copy.columns:
-        if (col.startswith(f'{target_col}_lag_') or 
-            col.startswith(f'{target_col}_ma_') or 
-            col.startswith(f'{target_col}_std_') or 
-            col.startswith(f'{target_col}_diff_') or
-            col.startswith(f'{target_col}_pct_') or 
-            col.startswith(f'{target_col}_roc_') or
-            col.startswith(f'{target_col}_same_hour_')):
-            if df_copy[col].isnull().any():
-                cols_to_fill.append(col)
-        
-        if power_col in df_copy.columns:
-            if (col.startswith(f'{power_col}_lag_') or 
-                col.startswith(f'{power_col}_ma_')):
-                if df_copy[col].isnull().any():
-                    cols_to_fill.append(col)
-    
-    # Calculate means for columns with NaNs
-    fill_values = {col: df_copy[col].mean() for col in cols_to_fill}
-    
-    # Fill NaNs all at once
-    df_copy = df_copy.fillna(fill_values)
-    
-    logging.info(f"Added {len(df_copy.columns) - len(df.columns)} new lagged and time series features.")
+    # Handle any NaN values created by the lag operations
+    logging.info(f"Added {sum([col.startswith(f'{target_col}_') for col in df_copy.columns])} lag features")
     return df_copy
 
 def add_calendar_features(df: pd.DataFrame, country_code: str = 'SE', years_range: tuple = (2020, 2025)) -> pd.DataFrame:
@@ -489,192 +497,219 @@ def add_calendar_features(df: pd.DataFrame, country_code: str = 'SE', years_rang
     return df_copy
 
 def add_weather_transforms(df: pd.DataFrame, temp_col: str = 'temperature_2m', t_base: float = 18.0) -> pd.DataFrame:
-    """
-    Add advanced weather transformation features to improve model performance.
+    logging.info("Adding weather transformations")
     
-    Args:
-        df: DataFrame with weather data
-        temp_col: Name of temperature column
-        t_base: Base temperature for heating/cooling degree calculations (Celsius)
-        
-    Returns:
-        DataFrame with added weather features
-    """
-    logging.info("Adding advanced weather transformation features.")
+    # Make a copy to avoid modifying the original DataFrame
     df_copy = df.copy()
     
-    if temp_col not in df_copy.columns:
-        logging.error(f"Temperature column '{temp_col}' not found.")
-        raise ValueError(f"Temperature column '{temp_col}' not found.")
-    
-    # Basic heating/cooling degree hours
-    df_copy['heating_degree_hours'] = np.maximum(0, t_base - df_copy[temp_col])
-    df_copy['cooling_degree_hours'] = np.maximum(0, df_copy[temp_col] - t_base)
-    
-    # Exponential temperature impact
-    # These capture the non-linear relationship between temperature and energy consumption
-    df_copy['temp_exp_heating'] = np.exp(-np.maximum(0, t_base - df_copy[temp_col]) / 10)
-    df_copy['temp_exp_cooling'] = np.exp(-np.maximum(0, df_copy[temp_col] - t_base) / 10)
-    
-    # Temperature rate of change (hourly delta)
-    df_copy['temp_change_1h'] = df_copy[temp_col].diff()
-    
-    # Temperature moving average features
-    df_copy['temp_ma_6h'] = df_copy[temp_col].rolling(window=6, min_periods=1).mean()
-    df_copy['temp_ma_24h'] = df_copy[temp_col].rolling(window=24, min_periods=1).mean()
-    
-    # Temperature variability
-    df_copy['temp_std_24h'] = df_copy[temp_col].rolling(window=24, min_periods=1).std()
-    
-    # Seasonal temperature normalization
-    # Calculate monthly averages for temperature (climate normal)
-    df_copy['month'] = df_copy.index.month
-    monthly_avg_temp = df_copy.groupby('month')[temp_col].transform('mean')
-    df_copy['temp_vs_monthly_avg'] = df_copy[temp_col] - monthly_avg_temp
-    df_copy.drop('month', axis=1, inplace=True)
-    
-    # Weather interaction features
-    if 'cloud_cover' in df_copy.columns:
-        # Cloud cover affects solar radiation and heating/cooling needs
-        df_copy['clear_sky_heating'] = df_copy['heating_degree_hours'] * (100 - df_copy['cloud_cover']) / 100
-        df_copy['clear_sky_cooling'] = df_copy['cooling_degree_hours'] * (100 - df_copy['cloud_cover']) / 100
-    
+    # --- Temperature transformations ---
+    if temp_col in df_copy.columns:
+        # Heating Degree Days (HDD) - measures heating demand
+        df_copy['hdd'] = np.maximum(t_base - df_copy[temp_col], 0)
+        
+        # Cooling Degree Days (CDD) - measures cooling demand
+        df_copy['cdd'] = np.maximum(df_copy[temp_col] - t_base, 0)
+        
+        # Non-linear temperature effects
+        df_copy['temperature_squared'] = df_copy[temp_col] ** 2
+        
+        # Add temperature range feature
+        # First resample to daily, get min/max, then project back to hourly
+        daily_temp = df_copy[temp_col].resample('D').agg(['min', 'max'])
+        daily_temp['range'] = daily_temp['max'] - daily_temp['min']
+        df_copy['daily_temp_range'] = daily_temp['range'].reindex(df_copy.index, method='ffill')
+        
+        # Exponentially weighted moving average of temperature (captures inertia)
+        df_copy['temp_ewma_6h'] = df_copy[temp_col].ewm(span=6).mean()
+        df_copy['temp_ewma_24h'] = df_copy[temp_col].ewm(span=24).mean()
+        
+        # Rate of temperature change (derivative)
+        df_copy['temp_change_rate'] = df_copy[temp_col].diff().fillna(0)
+    else:
+        logging.warning(f"Temperature column '{temp_col}' not found. Skipping temperature transformations.")
+
+    # --- Humidity transformations ---
     if 'relative_humidity_2m' in df_copy.columns:
-        # Humidity affects perceived temperature
-        df_copy['humid_heat_index'] = df_copy[temp_col] * (1 + 0.005 * df_copy['relative_humidity_2m'])
+        # Non-linear humidity effects
+        df_copy['humidity_squared'] = df_copy['relative_humidity_2m'] ** 2
         
-    if 'wind_speed_100m' in df_copy.columns:
-        # Wind chill effect for heating
-        df_copy['wind_chill_factor'] = np.where(
-            df_copy[temp_col] < 10,  # Only apply wind chill when cold
-            df_copy[temp_col] - (0.1 * df_copy['wind_speed_100m']),
-            df_copy[temp_col]
-        )
-        df_copy['wind_enhanced_hdh'] = np.maximum(0, t_base - df_copy['wind_chill_factor'])
-    
+        # Binned humidity
+        df_copy['humidity_high'] = (df_copy['relative_humidity_2m'] > 80).astype(int)
+        df_copy['humidity_low'] = (df_copy['relative_humidity_2m'] < 40).astype(int)
+        
+        # Dew point calculation (approximate)
+        if temp_col in df_copy.columns:
+            df_copy['dew_point'] = df_copy[temp_col] - ((100 - df_copy['relative_humidity_2m']) / 5)
+        
+        # Moving average
+        df_copy['humidity_ma_24h'] = df_copy['relative_humidity_2m'].rolling(window=24).mean().fillna(
+            df_copy['relative_humidity_2m'])
+    else:
+        logging.warning("Humidity column not found. Skipping humidity transformations.")
+        
+    # --- Solar radiation transformations ---
     if 'shortwave_radiation_sum' in df_copy.columns:
-        # Solar radiation impact on heating/cooling
-        df_copy['solar_heating_offset'] = df_copy['heating_degree_hours'] * np.exp(-df_copy['shortwave_radiation_sum'] / 100)
+        # Log transform for radiation (often better distribution)
+        df_copy['log_radiation'] = np.log1p(df_copy['shortwave_radiation_sum'])
         
-        # Day/night indicator based on solar radiation
-        df_copy['is_daylight'] = (df_copy['shortwave_radiation_sum'] > 10).astype(int)
+        # Binary flags for solar radiation
+        df_copy['is_sunny'] = (df_copy['shortwave_radiation_sum'] > 
+                            df_copy['shortwave_radiation_sum'].quantile(0.75)).astype(int)
         
-        # Interaction between solar radiation and temperature
-        df_copy['solar_temp_interaction'] = df_copy[temp_col] * df_copy['shortwave_radiation_sum'] / 100
+        # Create solar intensity levels
+        df_copy['radiation_level'] = pd.qcut(
+            df_copy['shortwave_radiation_sum'], 
+            q=5, 
+            labels=False, 
+            duplicates='drop'
+        ).fillna(0).astype(int)
+        
+        # Day/night indicator using radiation
+        df_copy['is_daytime'] = (df_copy['shortwave_radiation_sum'] > 10).astype(int)
+    else:
+        logging.warning("Radiation column not found. Skipping radiation transformations.")
+
+    # --- Cloud cover transformations ---
+    if 'cloud_cover' in df_copy.columns:
+        # Cloud cover bins
+        df_copy['clear_sky'] = (df_copy['cloud_cover'] < 25).astype(int)
+        df_copy['partly_cloudy'] = ((df_copy['cloud_cover'] >= 25) & 
+                                  (df_copy['cloud_cover'] < 75)).astype(int)
+        df_copy['overcast'] = (df_copy['cloud_cover'] >= 75).astype(int)
+        
+        # Interaction with temperature
+        if temp_col in df_copy.columns:
+            df_copy['cloud_temp_interaction'] = df_copy['cloud_cover'] * df_copy[temp_col]
+    else:
+        logging.warning("Cloud cover column not found. Skipping cloud cover transformations.")
+        
+    # --- Wind transformations ---
+    if 'wind_speed_100m' in df_copy.columns:
+        # Wind chill factor (approximate)
+        if temp_col in df_copy.columns and df_copy[temp_col].min() < 10:  # Only relevant for cold weather
+            df_copy['wind_chill'] = 13.12 + 0.6215 * df_copy[temp_col] - 11.37 * (df_copy['wind_speed_100m'] ** 0.16) + 0.3965 * df_copy[temp_col] * (df_copy['wind_speed_100m'] ** 0.16)
+            df_copy['wind_chill'] = df_copy[['wind_chill', temp_col]].min(axis=1)  # Wind chill shouldn't exceed air temp
+        
+        # Wind speed bins
+        df_copy['wind_light'] = (df_copy['wind_speed_100m'] < 3.5).astype(int)
+        df_copy['wind_moderate'] = ((df_copy['wind_speed_100m'] >= 3.5) & 
+                                  (df_copy['wind_speed_100m'] < 8)).astype(int)
+        df_copy['wind_strong'] = (df_copy['wind_speed_100m'] >= 8).astype(int)
+    else:
+        logging.warning("Wind speed column not found. Skipping wind transformations.")
+        
+    # --- Weather condition complexes ---
+    # Create combined weather condition features when possible
+    weather_cols = [col for col in [temp_col, 'relative_humidity_2m', 'cloud_cover', 'wind_speed_100m'] 
+                    if col in df_copy.columns]
     
-    # Weather change indicators
-    for col in ['cloud_cover', 'relative_humidity_2m', 'wind_speed_100m', 'shortwave_radiation_sum']:
-        if col in df_copy.columns:
-            # Rate of change in weather parameters
-            df_copy[f'{col}_change'] = df_copy[col].diff()
+    if len(weather_cols) >= 2:
+        # Calculate z-scores for each weather parameter
+        for col in weather_cols:
+            z_col = f"{col.split('_')[0]}_zscore"  # Simplified naming
+            df_copy[z_col] = (df_copy[col] - df_copy[col].mean()) / df_copy[col].std()
             
-            # 24h difference to capture daily patterns
-            df_copy[f'{col}_24h_diff'] = df_copy[col].diff(24)
+        # Create a weather severity index (sum of absolute z-scores)
+        z_cols = [f"{col.split('_')[0]}_zscore" for col in weather_cols]
+        df_copy['weather_severity_index'] = df_copy[z_cols].abs().sum(axis=1)
+        
+        # Create comfort index if both temp and humidity are available
+        if temp_col in df_copy.columns and 'relative_humidity_2m' in df_copy.columns:
+            # Simple heat index approximation
+            T = df_copy[temp_col]
+            RH = df_copy['relative_humidity_2m']
+            
+            # Heat index approximation (simplified)
+            df_copy['heat_index'] = -8.784695 + 1.61139411 * T + 2.338549 * RH - 0.14611605 * T * RH - 0.012308094 * T**2 - 0.016424828 * RH**2 + 0.002211732 * T**2 * RH + 0.00072546 * T * RH**2 - 0.000003582 * T**2 * RH**2
+            
+            # Simple discomfort index
+            df_copy['discomfort_index'] = T - 0.55 * (1 - 0.01 * RH) * (T - 14.5)
     
-    logging.info(f"Added {len(df_copy.columns) - len(df.columns)} new weather transformation features.")
+    # Drop any NaN values created by the transformations
+    na_count_before = df_copy.isna().sum().sum()
+    if na_count_before > 0:
+        df_copy = df_copy.fillna(method='ffill').fillna(method='bfill')
+        na_count_after = df_copy.isna().sum().sum()
+        logging.info(f"Filled {na_count_before - na_count_after} NaNs from weather transformations")
+
+    logging.info(f"Added weather transformations. New dataframe shape: {df_copy.shape}")
     return df_copy
 
 def add_interaction_terms(df: pd.DataFrame, hmm_state_col: str = 'hmm_state', temp_col: str = 'temperature_2m') -> pd.DataFrame:
-    """
-    Add advanced interaction features to capture complex relationships between variables.
+    logging.info("Adding interaction terms")
+    feature_count_before = len(df.columns)
     
-    Args:
-        df: DataFrame with features
-        hmm_state_col: Name of HMM state column
-        temp_col: Name of temperature column
-        
-    Returns:
-        DataFrame with added interaction features
-    """
-    logging.info("Adding advanced interaction features.")
+    # Make a copy to avoid modifying the original DataFrame
     df_copy = df.copy()
     
-    feature_count_before = len(df_copy.columns)
-    
-    # Base features to interact with
-    base_features = []
-    
-    # HMM state interactions
+    # --- Time-HMM state interactions ---
     if hmm_state_col in df_copy.columns:
-        base_features.append(hmm_state_col)
-    else:
-        logging.warning(f"HMM state column '{hmm_state_col}' not found. Skipping HMM interactions.")
+        # Hour of day * HMM state
+        df_copy['hour_hmm_interaction'] = df_copy.index.hour * df_copy[hmm_state_col]
+        
+        # Is weekend * HMM state
+        if 'is_weekend' in df_copy.columns:
+            df_copy['weekend_hmm_interaction'] = df_copy['is_weekend'] * df_copy[hmm_state_col]
     
-    # Temperature interactions
+    # --- Weather-time interactions ---
     if temp_col in df_copy.columns:
-        base_features.append(temp_col)
+        # Hour of day * temperature interactions
+        morning_hours = (df_copy.index.hour >= 6) & (df_copy.index.hour < 10)
+        evening_hours = (df_copy.index.hour >= 17) & (df_copy.index.hour < 23)
+        night_hours = (df_copy.index.hour >= 23) | (df_copy.index.hour < 6)
         
-        # Special temperature interaction with HMM
-        if hmm_state_col in df_copy.columns:
-            df_copy[f'{hmm_state_col}_x_{temp_col}'] = df_copy[hmm_state_col] * df_copy[temp_col]
+        df_copy['morning_temp'] = np.where(morning_hours, df_copy[temp_col], 0)
+        df_copy['evening_temp'] = np.where(evening_hours, df_copy[temp_col], 0)
+        df_copy['night_temp'] = np.where(night_hours, df_copy[temp_col], 0)
+        
+        # Weekend * temperature interaction
+        if 'is_weekend' in df_copy.columns:
+            df_copy['weekend_temp'] = df_copy[temp_col] * df_copy['is_weekend']
+        
+        # Holiday * temperature interaction
+        if 'is_holiday' in df_copy.columns:
+            df_copy['holiday_temp'] = df_copy[temp_col] * df_copy['is_holiday']
+    
+    # --- HMM-Weather interactions ---
+    if hmm_state_col in df_copy.columns:
+        for weather_var in ['temperature_2m', 'relative_humidity_2m', 'cloud_cover', 
+                          'hdd', 'cdd', 'is_sunny', 'daily_temp_range', 'weather_severity_index']:
+            if weather_var in df_copy.columns:
+                df_copy[f'hmm_{weather_var}_interaction'] = df_copy[hmm_state_col] * df_copy[weather_var]
+    
+    # --- Baseload-specific interaction terms ---
+    if 'power_input_kwh' in df_copy.columns:  # Heat pump energy
+        # Heat pump energy * temperature interactions
+        if temp_col in df_copy.columns:
+            df_copy['heatpump_temp_interaction'] = df_copy['power_input_kwh'] * df_copy[temp_col]
             
-            # More complex temperature-state relationship (quadratic)
-            df_copy[f'{hmm_state_col}_x_{temp_col}_squared'] = df_copy[hmm_state_col] * (df_copy[temp_col] ** 2)
-    
-    # Weather derivatives interactions
-    weather_features = [
-        'heating_degree_hours', 'cooling_degree_hours',
-        'temp_exp_heating', 'temp_exp_cooling', 
-        'humid_heat_index', 'wind_chill_factor'
-    ]
-    
-    weather_cols = [col for col in weather_features if col in df_copy.columns]
-    
-    # Time features
-    time_features = [col for col in df_copy.columns if 
-                     col.startswith('hour_') or 
-                     col.startswith('day_of_week_') or
-                     col.startswith('is_weekend') or
-                     col.startswith('is_holiday') or
-                     col.startswith('is_morning_peak') or 
-                     col.startswith('is_evening_peak')]
-    
-    # For each feature in base_features, create interactions with time features
-    for base_feature in base_features:
-        for time_feature in time_features:
-            if time_feature in df_copy.columns:
-                df_copy[f'{time_feature}_x_{base_feature}'] = df_copy[time_feature] * df_copy[base_feature]
-    
-    # Weather feature interactions with time features
-    for weather_col in weather_cols:
-        # Interact with weekend/holiday/peak indicators
-        for indicator in ['is_weekend', 'is_holiday', 'is_morning_peak', 'is_evening_peak']:
-            if indicator in df_copy.columns:
-                df_copy[f'{indicator}_x_{weather_col}'] = df_copy[indicator] * df_copy[weather_col]
-    
-    # Heating/cooling degree hours with seasonal indicators
-    for season in ['season_winter', 'season_summer']:
-        if season in df_copy.columns:
-            if 'heating_degree_hours' in df_copy.columns:
-                df_copy[f'{season}_x_heating_degree_hours'] = df_copy[season] * df_copy['heating_degree_hours']
-            if 'cooling_degree_hours' in df_copy.columns:
-                df_copy[f'{season}_x_cooling_degree_hours'] = df_copy[season] * df_copy['cooling_degree_hours']
-    
-    # Solar radiation interactions 
-    if 'shortwave_radiation_sum' in df_copy.columns:
-        # Solar x Temperature
-        if temp_col in df_copy.columns:
-            df_copy[f'solar_x_{temp_col}'] = df_copy['shortwave_radiation_sum'] * df_copy[temp_col]
+            # More specific: heat pump usage when cold vs. warm
+            cold_condition = df_copy[temp_col] < 5
+            df_copy['heatpump_when_cold'] = np.where(cold_condition, df_copy['power_input_kwh'], 0)
+            
+            warm_condition = df_copy[temp_col] > 15
+            df_copy['heatpump_when_warm'] = np.where(warm_condition, df_copy['power_input_kwh'], 0)
         
-        # Solar x Time of day
-        if 'hour_sin' in df_copy.columns and 'hour_cos' in df_copy.columns:
-            df_copy['solar_x_hour_sin'] = df_copy['shortwave_radiation_sum'] * df_copy['hour_sin']
-            df_copy['solar_x_hour_cos'] = df_copy['shortwave_radiation_sum'] * df_copy['hour_cos']
-    
-    # Power consumption with weather
-    if 'power_input_kwh' in df_copy.columns:
-        power_col = 'power_input_kwh'
+        # Heat pump energy * hour of day
+        df_copy['heatpump_morning'] = np.where(morning_hours, df_copy['power_input_kwh'], 0)
+        df_copy['heatpump_evening'] = np.where(evening_hours, df_copy['power_input_kwh'], 0)
+        df_copy['heatpump_night'] = np.where(night_hours, df_copy['power_input_kwh'], 0)
         
-        # Power x Temperature
-        if temp_col in df_copy.columns:
-            df_copy[f'{power_col}_x_{temp_col}'] = df_copy[power_col] * df_copy[temp_col]
-        
-        # Power x Weather features
-        for weather_col in weather_cols:
-            df_copy[f'{power_col}_x_{weather_col}'] = df_copy[power_col] * df_copy[weather_col]
+        # Heat pump energy * HMM state
+        if hmm_state_col in df_copy.columns:
+            df_copy['heatpump_hmm_interaction'] = df_copy['power_input_kwh'] * df_copy[hmm_state_col]
     
-    # Create special consumption ratio features if lag features exist
-    consumption_col = 'consumption'
+    # --- Solar and baseload interactions ---
+    if 'shortwave_radiation_sum' in df_copy.columns and 'baseload' in df_copy.columns:
+        # Baseload during sunny vs. cloudy periods
+        high_radiation = df_copy['shortwave_radiation_sum'] > df_copy['shortwave_radiation_sum'].quantile(0.75)
+        df_copy['baseload_sunny'] = np.where(high_radiation, df_copy['baseload'], 0)
+        
+        low_radiation = df_copy['shortwave_radiation_sum'] <= df_copy['shortwave_radiation_sum'].quantile(0.25)
+        df_copy['baseload_cloudy'] = np.where(low_radiation, df_copy['baseload'], 0)
+    
+    # --- Create special consumption ratio features if lag features exist ---
+    consumption_col = 'baseload' if 'baseload' in df_copy.columns else 'consumption'
     lag_cols = [col for col in df_copy.columns if col.startswith(f'{consumption_col}_lag_')]
     
     # If we have enough lag columns, create ratio features
@@ -682,6 +717,19 @@ def add_interaction_terms(df: pd.DataFrame, hmm_state_col: str = 'hmm_state', te
         # Ratio between different timeframes
         df_copy['consumption_ratio_day'] = df_copy[lag_cols[0]] / (df_copy[lag_cols[1]] + 1e-6)  # day/day ratio
         df_copy['consumption_ratio_week'] = df_copy[lag_cols[1]] / (df_copy[lag_cols[2]] + 1e-6)  # day/week ratio
+        
+        # Add week-over-week ratio (comparing same day last week)
+        day_of_week_lag = 168  # hours in a week
+        if any(lag >= day_of_week_lag for lag in [int(col.split('_')[-1]) for col in lag_cols]):
+            week_lag_col = f"{consumption_col}_lag_{day_of_week_lag}"
+            if week_lag_col in df_copy.columns:
+                df_copy['week_over_week_ratio'] = df_copy[consumption_col] / (df_copy[week_lag_col] + 1e-6)
+    
+    # Handle any NaN values created
+    na_count_before = df_copy.isna().sum().sum()
+    if na_count_before > 0:
+        df_copy = df_copy.fillna(0)  # Simple imputation for interaction terms
+        logging.info(f"Filled {na_count_before} NaNs from interaction terms")
     
     # Limit the number of interaction features to avoid dimensionality explosion
     # Keep track of how many features we've added and limit if necessary
@@ -694,10 +742,53 @@ def add_interaction_terms(df: pd.DataFrame, hmm_state_col: str = 'hmm_state', te
 def engineer_features(df: pd.DataFrame, target_col: str, country_code_for_holidays: str = 'SE', create_target: bool = True) -> pd.DataFrame:
     logging.info("Starting feature engineering pipeline.")
     df_featured = df.copy()
+    
+    # Order matters! First add lagged features from the target column
     df_featured = add_lagged_features(df_featured, target_col=target_col)
+    
+    # Add calendar features (will generate time-based features)
     df_featured = add_calendar_features(df_featured, country_code=country_code_for_holidays)
+    
+    # Add weather transformations
     df_featured = add_weather_transforms(df_featured)
+    
+    # Add HMM features if not already present
+    if 'hmm_state' not in df_featured.columns and target_col in df_featured.columns:
+        df_featured = add_hmm_features(df_featured, consumption_col=target_col, n_states=N_HMM_STATES)
+        
+    # Add interaction features last (they depend on other features being present)
     df_featured = add_interaction_terms(df_featured)
+    
+    # Add seasonality components for baseload prediction
+    if target_col == BASELOAD_TARGET_COL:
+        # Extract baseload patterns at specific hours
+        morning_peak_hours = (df_featured.index.hour >= 6) & (df_featured.index.hour <= 9)
+        evening_peak_hours = (df_featured.index.hour >= 17) & (df_featured.index.hour <= 22)
+        night_hours = (df_featured.index.hour >= 23) | (df_featured.index.hour < 6)
+        
+        df_featured['is_morning_peak'] = morning_peak_hours.astype(int)
+        df_featured['is_evening_peak'] = evening_peak_hours.astype(int)
+        df_featured['is_night_hours'] = night_hours.astype(int)
+        
+        # Add day-of-week specific patterns if enough data
+        if len(df_featured) >= 168:  # At least a week of data
+            # For each day of week, calculate typical consumption patterns
+            for day in range(7):
+                day_filter = df_featured.index.dayofweek == day
+                
+                # Calculate typical patterns for this day
+                if day_filter.sum() > 0:  # Ensure we have data for this day
+                    day_name = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'][day]
+                    
+                    # Day-specific hourly patterns
+                    for hour in range(24):
+                        hour_filter = df_featured.index.hour == hour
+                        combined_filter = day_filter & hour_filter
+                        
+                        if combined_filter.sum() > 0:
+                            col_name = f'{day_name}_hour{hour}_pattern'
+                            df_featured[col_name] = 0
+                            df_featured.loc[combined_filter, col_name] = 1
     
     if create_target:
         # Define target variable y (demand at t+1)
@@ -1064,51 +1155,66 @@ def main():
     """
     Main function to train the demand prediction model
     """
-    # Load and process data
-    df = run_data_pipeline(CONSUMPTION_DATA_PATH, HEAT_PUMP_DATA_PATH, WEATHER_DATA_PATH)
-    
-    # Add HMM features
-    df = add_hmm_features(df, TARGET_COL, N_HMM_STATES)
-    
-    # Feature engineering
-    featured_df = engineer_features(df, TARGET_COL, create_target=True)
-    
-    # Use fewer trials to speed up development
-    n_trials = 5  # Start with a small number for testing
-    
-    # Train model
-    model, splits_info = train_demand_model(featured_df, n_trials_optuna=n_trials)
-    
-    print("Training complete.")
-    
-
-if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train demand prediction model')
     parser.add_argument('--trials', type=int, default=5,
                         help='Number of trials for hyperparameter optimization')
     parser.add_argument('--save-path', type=str, default=MODEL_SAVE_PATH,
                         help='Path to save the trained model')
+    parser.add_argument('--for-agent', action='store_true',
+                        help='Train model for agent use (predicts baseload instead of net consumption)')
     args = parser.parse_args()
     
     # Update global variables if needed
-    if args.save_path != MODEL_SAVE_PATH:
-        MODEL_SAVE_PATH = args.save_path
+    save_path = args.save_path
+    if args.for_agent and args.save_path == MODEL_SAVE_PATH:
+        # If using agent mode with default path, use the agent-specific path
+        save_path = AGENT_MODEL_SAVE_PATH
+        logging.info(f"Training in agent mode. Model will be saved to {save_path}")
+    
+    # Set target column based on agent mode
+    target_column = BASELOAD_TARGET_COL if args.for_agent else TARGET_COL
+    logging.info(f"Using target column: {target_column}")
     
     # Start the main process
     try:
         # Load and process data
-        df = run_data_pipeline(CONSUMPTION_DATA_PATH, HEAT_PUMP_DATA_PATH, WEATHER_DATA_PATH)
+        df = run_data_pipeline(CONSUMPTION_DATA_PATH, HEAT_PUMP_DATA_PATH, WEATHER_DATA_PATH, args.for_agent)
         
         # Add HMM features
-        df = add_hmm_features(df, TARGET_COL, N_HMM_STATES)
+        df = add_hmm_features(df, target_column, N_HMM_STATES)
         
         # Feature engineering
-        featured_df = engineer_features(df, TARGET_COL, create_target=True)
+        featured_df = engineer_features(df, target_column, create_target=True)
         
         # Train model
         model, splits_info = train_demand_model(featured_df, n_trials_optuna=args.trials)
         
-        print(f"Training complete. Model saved to {MODEL_SAVE_PATH}")
+        # Save the model
+        with open(save_path, 'wb') as f:
+            pickle.dump(model, f)
+        
+        # Save split info and feature columns with the correct path
+        splits_info_path = save_path.replace('.pkl', '_splits_info.pkl')
+        with open(splits_info_path, 'wb') as f:
+            pickle.dump(splits_info, f)
+            
+        feature_columns_path = save_path.replace('.pkl', '_feature_columns.pkl')
+        with open(feature_columns_path, 'wb') as f:
+            pickle.dump(list(featured_df.drop(columns=['y']).columns), f)
+            
+        # Update feature importance path if in agent mode
+        feature_importance_path = FEATURE_IMPORTANCE_SAVE_PATH
+        if args.for_agent:
+            feature_importance_path = FEATURE_IMPORTANCE_SAVE_PATH.replace('feature_importance.png', 'agent_feature_importance.png')
+        
+        # Plot feature importance
+        plot_feature_importance(model, featured_df.drop(columns=['y']).columns, save_path=feature_importance_path)
+        
+        print(f"Training complete. Model saved to {save_path}")
     except Exception as e:
         logging.error(f"Error during model training: {str(e)}")
         raise
+
+
+if __name__ == "__main__":
+    main()

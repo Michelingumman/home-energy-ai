@@ -1,3 +1,9 @@
+"""
+Evaluate a trained RL agent in the home energy management environment.
+
+This script contains functions for evaluating a trained agent's performance
+and visualizing the results.
+"""
 import argparse
 import os
 import json
@@ -8,6 +14,7 @@ import matplotlib.dates as mdates
 from pathlib import Path
 import sys
 import datetime
+from datetime import timedelta, datetime as dt
 import random
 from calendar import monthrange
 
@@ -18,6 +25,9 @@ if PROJECT_ROOT not in sys.path:
 
 
 from src.rl import config
+from src.rl.custom_env import HomeEnergyEnv
+from src.rl.agent import RecurrentEnergyAgent
+from gymnasium.wrappers import FlattenObservation
 
 
 def plot_agent_performance(episode_data, model_name=None, save_dir=None):
@@ -34,7 +44,13 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
     """
     # Extract data at original 15-min resolution
     timestamps_15min = [data['timestamp'] for data in episode_data]
-    soc_values = [data['soc'][0] for data in episode_data]
+    soc_values = []
+    for data in episode_data:
+        soc = data['soc']
+        if isinstance(soc, (list, tuple, np.ndarray)):
+            soc_values.append(soc[0])
+        else:
+            soc_values.append(soc)
     battery_powers = [data.get('power_kw', 0) for data in episode_data]
     original_actions = [data.get('original_action', data.get('action', 0)) for data in episode_data]
     safe_actions = [data.get('safe_action', data.get('action', 0)) for data in episode_data]
@@ -273,323 +289,177 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
         filename = os.path.join(save_dir, 
-                              f"agent_performance_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                              f"agent_performance_{dt.now().strftime('%Y%m%d_%H%M%S')}.png")
         plt.savefig(filename, dpi=300, bbox_inches='tight')
         print(f"Plot saved to {filename}")
     
     return fig, axs
 
 
-def plot_reward_components(episode_data, model_name=None, save_dir=None):
+def plot_reward_components(episode_data, output_path):
     """
-    Create a plot showing the different reward components over time, grouped into logical subplots.
+    Create a detailed plot of reward components over time.
     
     Args:
-        episode_data: List of dictionaries containing episode data
-        model_name: Optional name of the model for the plot title
-        save_dir: Optional directory to save the plot
+        episode_data: List of dictionaries with episode data
+        output_path: Path to save the plot
     """
-    # Extract data
     timestamps = [data['timestamp'] for data in episode_data]
-    rewards = [data['reward'] for data in episode_data]
+    total_rewards = [data['reward'] for data in episode_data]
+    cumulative_reward = np.cumsum(total_rewards)
     
-    # Identify all reward components dynamically
-    reward_components = {}
+    # Extract reward components
+    grid_costs = [data.get('reward_grid_cost', 0) for data in episode_data]
+    capacity_penalties = [data.get('reward_capacity_penalty', 0) for data in episode_data]
+    battery_costs = [data.get('reward_battery_cost', 0) for data in episode_data]
+    soc_rewards = [data.get('reward_soc_reward', 0) for data in episode_data]
+    shaping_rewards = [data.get('reward_shaping', 0) for data in episode_data]
+    arbitrage_bonuses = [data.get('reward_arbitrage_bonus', 0) for data in episode_data]
+    export_bonuses = [data.get('reward_export_bonus', 0) for data in episode_data]
+    night_charging_rewards = [data.get('reward_night_charging', 0) for data in episode_data]
+    action_mod_penalties = [data.get('reward_action_mod_penalty', 0) for data in episode_data]
+    morning_soc_rewards = [data.get('reward_morning_soc', 0) for data in episode_data]
+    night_peak_chain_bonuses = [data.get('reward_night_peak_chain', 0) for data in episode_data]
     
-    # Find all potential current reward component keys - check both direct and nested locations
-    component_keys = []
-    for data in episode_data:
-        # Check for components directly in the data
-        for key in data.keys():
-            if key.startswith('reward_') and key not in component_keys:
-                component_keys.append(key)
-        
-        # Also check in the reward_components dictionary if it exists
-        if 'reward_components' in data:
-            for key in data['reward_components'].keys():
-                if key not in component_keys:
-                    component_keys.append(key)
+    # Determine which components have non-zero values
+    has_morning_soc = any(abs(r) > 0.001 for r in morning_soc_rewards)
+    has_night_peak_chain = any(abs(r) > 0.001 for r in night_peak_chain_bonuses)
     
-    # Extract data for each component - try both direct and nested locations
-    for key in component_keys:
-        values = []
-        for data in episode_data:
-            # First check if the component is directly in the data
-            if key in data:
-                values.append(data[key])
-            # Otherwise check in the reward_components dictionary
-            elif 'reward_components' in data and key in data['reward_components']:
-                values.append(data['reward_components'][key])
-            else:
-                values.append(0)
-        reward_components[key] = values
+    # Set up the figure with appropriate number of subplots
+    num_subplots = 5
+    if has_morning_soc or has_night_peak_chain:
+        num_subplots += 1
     
-    # Calculate cumulative total reward
-    cum_rewards = np.cumsum(rewards)
+    fig, axes = plt.subplots(num_subplots, 1, figsize=(15, 12), sharex=True, gridspec_kw={'height_ratios': [2, 1, 1, 1, 1, 1][:num_subplots]})
     
-    # Group components by category - Updated for current component structure
-    cost_components = ['reward_grid_cost', 'reward_battery_cost', 'reward_capacity_penalty']
-    battery_components = ['reward_soc_reward', 'reward_shaping']
-    grid_components = ['reward_arbitrage_bonus', 'reward_export_bonus', 'reward_night_charging']
-    action_components = ['reward_action_mod_penalty']
+    # Plot total reward and cumulative reward
+    ax0 = axes[0]
+    ax0.plot(timestamps, total_rewards, 'b-', label='Reward')
+    ax0.set_ylabel('Reward')
+    ax0.set_title('Total Reward and Cumulative Reward')
+    ax0.grid(True, alpha=0.3)
     
-    # Colors for different components - Updated for current components
-    colors = {
-        'reward_grid_cost': 'red',
-        'reward_battery_cost': 'green',
-        'reward_capacity_penalty': 'purple',
-        'reward_soc_reward': 'forestgreen',
-        'reward_shaping': 'teal',
-        'reward_arbitrage_bonus': 'orange',
-        'reward_export_bonus': 'deepskyblue',
-        'reward_night_charging': 'mediumpurple',
-        'reward_action_mod_penalty': 'crimson'
-    }
-    
-    # Create figure with subplots that share the same x-axis
-    fig, axs = plt.subplots(5, 1, figsize=(15, 15), sharex=True, gridspec_kw={'height_ratios': [1, 1, 1, 1, 1]})
-    plt.subplots_adjust(hspace=0.3)  # Add spacing between subplots
-    
-    # Set title
-    if model_name:
-        plt.suptitle(f"Reward Components - Model: {model_name}", fontsize=10)
-    else:
-        plt.suptitle("Reward Components", fontsize=10)
-    
-    # Plot 1: Total Reward and Cumulative Reward
-    ax1 = axs[0]
-    ax1.set_title("Total Reward and Cumulative Reward")
-    ax1.step(timestamps, rewards, 'b-', label='reward', linewidth=1)
-    ax1.set_ylabel('Reward', color='blue')
-    
-    ax1_cum = ax1.twinx()
-    ax1_cum.step(timestamps, cum_rewards, 'orange', label='cumulative_reward', linewidth=1)
-    ax1_cum.set_ylabel('Cumulative Reward', color='orange')
-    
-    # Add combined legend
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax1_cum.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=6)
-    
-    # Plot 2: Cost Components
-    ax2 = axs[1]
-    ax2.set_title("Cost Components (Grid, Battery, Capacity)")
-    
-    # Create a twin axis for each cost component
-    component_axes = {}
-    for i, key in enumerate(cost_components):
-        if key in reward_components:
-            if i == 0:
-                # First component uses the primary axis
-                component_axes[key] = ax2
-                ax2.set_ylabel(key, color=colors[key])
-                ax2.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
-            else:
-                # Other components get their own y-axis
-                comp_ax = ax2.twinx()
-                # Add some spacing between axes
-                comp_ax.spines['right'].set_position(('outward', i * 50))
-                comp_ax.set_ylabel(key, color=colors[key])
-                comp_ax.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
-                component_axes[key] = comp_ax
-    
-    # Add legend
-    all_lines, all_labels = [], []
-    for key, ax in component_axes.items():
-        lines, labels = ax.get_legend_handles_labels()
-        all_lines.extend(lines)
-        all_labels.extend(labels)
-    if all_lines:
-        ax2.legend(all_lines, all_labels, loc='upper left', fontsize=6)
-    
-    # Plot 3: Battery Management Components - Updated for current structure
-    ax3 = axs[2]
-    ax3.set_title("Battery Management Components (SoC Reward, Shaping)")
-    
-    # Create a twin axis for each battery component
-    component_axes = {}
-    for i, key in enumerate(battery_components):
-        if key in reward_components:
-            if i == 0:
-                # First component uses the primary axis
-                component_axes[key] = ax3
-                ax3.set_ylabel(key, color=colors[key])
-                ax3.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
-            else:
-                # Other components get their own y-axis
-                comp_ax = ax3.twinx()
-                # Add some spacing between axes
-                comp_ax.spines['right'].set_position(('outward', i * 50))
-                comp_ax.set_ylabel(key, color=colors[key])
-                comp_ax.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
-                component_axes[key] = comp_ax
-    
-    # Add legend
-    all_lines, all_labels = [], []
-    for key, ax in component_axes.items():
-        lines, labels = ax.get_legend_handles_labels()
-        all_lines.extend(lines)
-        all_labels.extend(labels)
-    if all_lines:
-        ax3.legend(all_lines, all_labels, loc='upper left', fontsize=6)
-    
-    # Plot 4: Grid Optimization Components
-    ax4 = axs[3]
-    ax4.set_title("Grid Optimization Components (Arbitrage, Export, Night Charging)")
-    
-    # Create a twin axis for each grid component
-    component_axes = {}
-    for i, key in enumerate(grid_components):
-        if key in reward_components:
-            if i == 0:
-                # First component uses the primary axis
-                component_axes[key] = ax4
-                ax4.set_ylabel(key, color=colors[key])
-                ax4.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
-            else:
-                # Other components get their own y-axis
-                comp_ax = ax4.twinx()
-                # Add some spacing between axes
-                comp_ax.spines['right'].set_position(('outward', i * 50))
-                comp_ax.set_ylabel(key, color=colors[key])
-                comp_ax.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
-                component_axes[key] = comp_ax
-    
-    # Add legend
-    all_lines, all_labels = [], []
-    for key, ax in component_axes.items():
-        lines, labels = ax.get_legend_handles_labels()
-        all_lines.extend(lines)
-        all_labels.extend(labels)
-    if all_lines:
-        ax4.legend(all_lines, all_labels, loc='upper left', fontsize=6)
-    
-    # Plot 5: Action Modification Penalty
-    ax5 = axs[4]
-    ax5.set_title("Action Modification Penalty")
-    
-    # Create a twin axis for each action component
-    component_axes = {}
-    for i, key in enumerate(action_components):
-        if key in reward_components:
-            if i == 0:
-                # First component uses the primary axis
-                component_axes[key] = ax5
-                ax5.set_ylabel(key, color=colors[key])
-                ax5.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
-            else:
-                # Other components get their own y-axis
-                comp_ax = ax5.twinx()
-                # Add some spacing between axes
-                comp_ax.spines['right'].set_position(('outward', i * 50))
-                comp_ax.set_ylabel(key, color=colors[key])
-                comp_ax.step(timestamps, reward_components[key], color=colors[key], label=key, linewidth=1)
-                component_axes[key] = comp_ax
-    
-    # Add legend
-    all_lines, all_labels = [], []
-    for key, ax in component_axes.items():
-        lines, labels = ax.get_legend_handles_labels()
-        all_lines.extend(lines)
-        all_labels.extend(labels)
-    if all_lines:
-        ax5.legend(all_lines, all_labels, loc='upper left', fontsize=6)
-    
-    # Format x-axis for all subplots
-    for ax in axs:
-        # Add grid
-        ax.grid(True, alpha=0.3)
-        
-        # Get episode duration to determine appropriate tick spacing
-        episode_duration = max(timestamps) - min(timestamps)
-        days_in_episode = episode_duration.days + episode_duration.seconds / 86400
-        
-        # Format the x-axis with better date/time display based on episode length
-        if days_in_episode <= 7:  # Short episode (up to a week)
-            # Show date every day
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-            ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
-            # Show hours only at noon
-            ax.xaxis.set_minor_formatter(mdates.DateFormatter('%h'))
-            ax.xaxis.set_minor_locator(mdates.HourLocator(byhour=[12]))
-        elif days_in_episode <= 14:  # Medium episode (up to two weeks)
-            # Show date every two days
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-            ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
-            # No minor ticks for hours
-            ax.xaxis.set_minor_locator(plt.NullLocator())
-        else:  # Long episode (more than two weeks)
-            # Show date every three days
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-            ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
-            # No minor ticks for hours
-            ax.xaxis.set_minor_locator(plt.NullLocator())
-        
-        # Rotate date labels for better readability and prevent overlap
-        ax.tick_params(which='major', axis='x', rotation=20, labelsize=8)
-        ax.tick_params(which='minor', axis='x', rotation=30, labelsize=6)
-    
-    # Only show x-label on bottom subplot
-    ax5.set_xlabel('Date/Time', fontsize=6)
-    
-    # Add shaded regions for night discount periods to ALL subplots
-    night_discounts = [data.get('is_night_discount', False) for data in episode_data]
+    # Add night discount periods as shaded areas
     night_periods = []
-    in_night_period = False
-    start_idx = None
+    current_night_start = None
     
-    for i, is_night in enumerate(night_discounts):
-        if is_night and not in_night_period:
-            in_night_period = True
-            start_idx = i
-        elif not is_night and in_night_period:
-            in_night_period = False
-            night_periods.append((start_idx, i))
+    for i, ts in enumerate(timestamps):
+        is_night = episode_data[i].get('is_night_discount', False)
+        if is_night and current_night_start is None:
+            current_night_start = ts
+        elif not is_night and current_night_start is not None:
+            night_periods.append((current_night_start, ts))
+            current_night_start = None
     
-    # Add the last period if it ends with night time
-    if in_night_period:
-        night_periods.append((start_idx, len(night_discounts)-1))
+    # Add last night period if it extends to the end
+    if current_night_start is not None:
+        night_periods.append((current_night_start, timestamps[-1]))
     
-    # Draw shaded regions for night discount periods on all subplots
-    if night_periods:
-        # Add night discount shade to each subplot
-        for ax in axs:
-            for i, (start, end) in enumerate(night_periods):
-                if start < len(timestamps) and end < len(timestamps):
-                    # No label needed here to avoid cluttering legends
-                    ax.axvspan(timestamps[start], timestamps[end], alpha=0.15, color='grey', zorder=0)  # zorder=0 ensures it's drawn behind other elements
+    for start, end in night_periods:
+        ax0.axvspan(start, end, alpha=0.2, color='gray')
     
-    # Add night discount to the legend of the first subplot
-    import matplotlib.patches as mpatches
-    night_patch = mpatches.Patch(color='grey', alpha=0.15, label='Night (22-06) Discount')
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax1_cum.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2 + [night_patch], labels1 + labels2 + ['Night (22-06) Discount'], loc='upper left', fontsize=6)
+    # Add cumulative reward on secondary y-axis
+    ax0_twin = ax0.twinx()
+    ax0_twin.plot(timestamps, cumulative_reward, 'y-', label='Cumulative Reward')
+    ax0_twin.set_ylabel('Cumulative Reward')
+    
+    # Add legend
+    lines0, labels0 = ax0.get_legend_handles_labels()
+    lines0_twin, labels0_twin = ax0_twin.get_legend_handles_labels()
+    ax0.legend(lines0 + lines0_twin, labels0 + labels0_twin, loc='upper left')
+    
+    # Plot cost components (grid, battery, capacity)
+    ax1 = axes[1]
+    ax1.plot(timestamps, grid_costs, 'r-', label='Grid Cost')
+    ax1.plot(timestamps, battery_costs, 'g-', label='Battery Cost')
+    ax1.plot(timestamps, capacity_penalties, 'm-', label='Capacity Penalty')
+    ax1.set_ylabel('Grid Cost')
+    ax1.set_title('Cost Components (Grid, Battery, Capacity)')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(loc='upper left')
+    
+    # Plot SoC management components
+    ax2 = axes[2]
+    ax2.plot(timestamps, soc_rewards, 'g-', label='SoC Reward')
+    ax2.plot(timestamps, shaping_rewards, 'c-', label='Shaping')
+    if has_morning_soc:
+        ax2.plot(timestamps, morning_soc_rewards, 'm-', label='Morning SoC')
+    ax2.set_ylabel('SoC Reward')
+    ax2.set_title('Battery Management Components (SoC Reward, Shaping, Morning SoC)')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend(loc='upper left')
+    
+    # Plot grid optimization components
+    ax3 = axes[3]
+    ax3.plot(timestamps, arbitrage_bonuses, 'r-', label='Arbitrage Bonus')
+    ax3.plot(timestamps, export_bonuses, 'b-', label='Export Bonus')
+    ax3.plot(timestamps, night_charging_rewards, 'c-', label='Night Charging')
+    if has_night_peak_chain:
+        ax3.plot(timestamps, night_peak_chain_bonuses, 'm-', label='Night→Peak Chain')
+    ax3.set_ylabel('Bonus')
+    ax3.set_title('Grid Optimization Components (Arbitrage, Export, Night Charging, Chain)')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend(loc='upper left')
+    
+    # Plot action modification penalties
+    ax4 = axes[4]
+    ax4.plot(timestamps, action_mod_penalties, 'r-', label='Action Mod Penalty')
+    ax4.set_ylabel('Penalty')
+    ax4.set_title('Action Modification Penalty')
+    ax4.grid(True, alpha=0.3)
+    
+    # Add specific plot for morning SoC and night-to-peak chain if present
+    if has_morning_soc or has_night_peak_chain and num_subplots > 5:
+        ax5 = axes[5]
+        if has_morning_soc:
+            ax5.plot(timestamps, morning_soc_rewards, 'g-', label='Morning SoC Reward')
+        if has_night_peak_chain:
+            ax5.plot(timestamps, night_peak_chain_bonuses, 'b-', label='Night→Peak Chain Bonus')
+        ax5.set_ylabel('Reward')
+        ax5.set_title('Advanced Strategy Components (Morning SoC, Night→Peak Chain)')
+        ax5.grid(True, alpha=0.3)
+        ax5.legend(loc='upper left')
+    
+    # Format x-axis with date formatting
+    date_format = mdates.DateFormatter('%Y-%m-%d')
+    axes[-1].xaxis.set_major_formatter(date_format)
+    axes[-1].xaxis.set_major_locator(mdates.DayLocator())
+    fig.autofmt_xdate()
     
     plt.tight_layout()
-    plt.subplots_adjust(top=0.93)  # Adjust to make room for suptitle
-    
-    # Add a title above the plot that indicates all series have independent y-scales
-    plt.figtext(0.5, 0.97, "All series have independent y-scales", 
-                ha="center", fontsize=5, bbox={"facecolor":"white", "alpha":0.5, "pad":5})
-    
-    # Save figure if a directory is specified
-    if save_dir:
-        os.makedirs(save_dir, exist_ok=True)
-        filename = os.path.join(save_dir, f"reward_components_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
-        print(f"Reward components plot saved to {filename}")
-    
-    return fig
+    plt.show()
+    plt.savefig(output_path)
+    plt.close()
+    print(f"Reward components plot saved to {output_path}")
 
 def calculate_performance_metrics(episode_data, config=None):
     """
-    Calculate and print various performance metrics from the episode data.
+    Calculate performance metrics for an episode.
     
     Args:
-        episode_data: List of dictionaries containing episode data
-        config: Optional configuration dictionary containing preferred SoC ranges and other settings
+        episode_data: List of dictionaries with episode data
+        config: Optional configuration dictionary
+        
+    Returns:
+        Dictionary with performance metrics
     """
+    import numpy as np
+    
+    # Extract data
+    timestamps = [data['timestamp'] for data in episode_data]
+    
+    # Handle SOC values that could be either scalars or arrays
+    soc_values = []
+    for data in episode_data:
+        soc = data['soc']
+        if isinstance(soc, (list, tuple, np.ndarray)):
+            soc_values.append(soc[0])
+        else:
+            soc_values.append(soc)
+    
+    grid_powers = [data.get('grid_power_kw', 0) for data in episode_data]
+    battery_powers = [data.get('power_kw', 0) for data in episode_data]
+    
     total_reward = sum(data['reward'] for data in episode_data)
     
     # Get time step hours from the episode data if available
@@ -600,15 +470,10 @@ def calculate_performance_metrics(episode_data, config=None):
         time_step_h = config.get('time_step_minutes', 15) / 60.0
     
     # Battery usage metrics
-    battery_powers = [abs(data.get('power_kw', 0)) for data in episode_data] # abs() here is for total throughput calculation
-    # For correlation and night/day charging, we need the signed power_kw
-    signed_battery_powers = [data.get('power_kw', 0) for data in episode_data]
-
     avg_battery_power = sum(battery_powers) / len(battery_powers) if battery_powers else 0
     max_battery_power = max(battery_powers) if battery_powers else 0
     
     # Grid metrics
-    grid_powers = [data.get('grid_power_kw', 0) for data in episode_data]
     peak_grid_import = max(grid_powers) if grid_powers else 0
     peak_grid_export = min(grid_powers) if grid_powers else 0
     
@@ -634,7 +499,6 @@ def calculate_performance_metrics(episode_data, config=None):
     fixed_grid_fee_sek_per_month = config.get('fixed_grid_fee_sek_per_month', 365.0) if config else 365.0
     
     # Count unique months in the episode data
-    timestamps = [data['timestamp'] for data in episode_data]
     if timestamps:
         months_in_episode = len(set([(t.year, t.month) for t in timestamps]))
         fixed_grid_fee_total = fixed_grid_fee_sek_per_month * months_in_episode
@@ -652,8 +516,8 @@ def calculate_performance_metrics(episode_data, config=None):
     
     # Calculate correlation between price and battery power
     # Positive correlation means discharging more at high prices (good)
-    if len(prices) > 1 and len(signed_battery_powers) > 1:
-        price_power_correlation = np.corrcoef(prices, signed_battery_powers)[0, 1]
+    if len(prices) > 1 and len(battery_powers) > 1:
+        price_power_correlation = np.corrcoef(prices, battery_powers)[0, 1]
     else:
         price_power_correlation = 0
     
@@ -681,7 +545,6 @@ def calculate_performance_metrics(episode_data, config=None):
     night_day_charge_ratio = night_charges_energy_kwh / day_charges_energy_kwh if day_charges_energy_kwh > 0 else float('inf')
     
     # Calculate SoC metrics
-    soc_values = [data['soc'][0] for data in episode_data]
     avg_soc = sum(soc_values) / len(soc_values) if soc_values else 0
     min_soc = min(soc_values) if soc_values else 0
     max_soc = max(soc_values) if soc_values else 0
@@ -891,22 +754,32 @@ def calculate_performance_metrics(episode_data, config=None):
         'reward_component_distributions': component_distributions
     }
 
-def load_agent(model_path):
+def load_agent(model_path, env, config):
     """
-    Load a trained RL agent from the specified path.
+    Load a recurrent agent from a saved model.
     
     Args:
-        model_path: Path to the saved model file
+        model_path: Path to the saved model
+        env: Environment to use
+        config: Configuration dict
         
     Returns:
-        The loaded agent, or None if loading fails
+        Agent: The loaded agent
     """
+    # Add debug prints
+    print(f"Attempting to load agent from: {model_path}")
+    print(f"Model directory exists: {os.path.exists(os.path.dirname(model_path))}")
+    print(f"Model file exists: {os.path.exists(model_path)}")
+    
+    # Always flatten the observation space for RecurrentPPO
+    if isinstance(env.observation_space, gym.spaces.Dict):
+        print("Flattening dictionary observation space for RecurrentPPO")
+        env = FlattenObservation(env)
+    
     try:
-        print(f"Loading agent from {model_path}")
-        from stable_baselines3 import PPO
-        model = PPO.load(model_path)
-        print("Agent loaded successfully")
-        return model
+        agent = RecurrentEnergyAgent(env=env, model_path=model_path, config=config)
+        print(f"Loaded recurrent agent from {model_path}")
+        return agent
     except Exception as e:
         print(f"Error loading agent: {e}")
         return None
@@ -929,7 +802,11 @@ def evaluate_episode(agent, config):
     config["use_data_augmentation"] = False
     
     # Create environment
-    env = HomeEnergyEnv(config=config)
+    base_env = HomeEnergyEnv(config=config)
+    
+    # Always use FlattenObservation wrapper for recurrent agents
+    print("Using FlattenObservation wrapper for recurrent agent")
+    env = FlattenObservation(base_env)
     
     # Reset environment
     obs, info = env.reset()
@@ -938,10 +815,23 @@ def evaluate_episode(agent, config):
     terminated = False
     truncated = False
     
+    # Track recurrent state
+    lstm_state = None
+    episode_start = True
+    
+    # Get the unwrapped environment for accessing attributes
+    unwrapped_env = env.unwrapped
+    
     # Run episode
     while not (terminated or truncated):
-        # Get action from agent
-        action, _states = agent.predict(obs, deterministic=True)
+        # Get action from agent (always using recurrent agent predict)
+        action, lstm_state = agent.predict(
+            obs, 
+            state=lstm_state,
+            episode_start=episode_start,
+            deterministic=True
+        )
+        episode_start = False
         
         # Step environment
         obs, reward, terminated, truncated, info = env.step(action)
@@ -951,8 +841,8 @@ def evaluate_episode(agent, config):
         
         # Store data for this step
         step_data = {
-            'timestamp': env.start_datetime + datetime.timedelta(hours=env.current_step * env.time_step_hours),
-            'soc': obs['soc'],
+            'timestamp': unwrapped_env.start_datetime + timedelta(hours=unwrapped_env.current_step * unwrapped_env.time_step_hours),
+            'soc': info.get('soc', 0),  # For recurrent agents, get from info
             'action': action[0],  # Extract scalar from array
             'reward': reward,
             'current_price': info.get('current_price', 0),
@@ -1009,7 +899,9 @@ def analyze_reward_component_distributions(episode_data):
         'reward_arbitrage_bonus', 
         'reward_export_bonus',
         'reward_night_charging',
-        'reward_action_mod_penalty'
+        'reward_action_mod_penalty',
+        'reward_morning_soc',       # Added new component
+        'reward_night_peak_chain'   # Added new component
     ]
     
     results = {}
@@ -1047,232 +939,206 @@ def analyze_reward_component_distributions(episode_data):
     return results
 
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Evaluate a trained RL agent for home energy management")
-    parser.add_argument("--render", action="store_true", help="Whether to render the environment")
-    
-    # Add episode start date options (mutually exclusive group)
-    start_group = parser.add_mutually_exclusive_group()
-    start_group.add_argument(
-        "--start-month", 
-        type=str, 
-        help="Specific month to evaluate (format: YYYY-MM). Takes precedence over random selection."
-    )
-    start_group.add_argument(
-        "--random-start", 
-        action="store_true", 
-        help="Use random episode start dates instead of selecting a random month."
-    )
-    
-    args = parser.parse_args()
-    
-    # Get configuration from config.py
-    from src.rl.config import get_config_dict
-    config = get_config_dict()
-
-    # Process the date/start options
-    if args.start_month:
-        try:
-            # Parse the YYYY-MM format
-            year_month = args.start_month.split('-')
-            if len(year_month) != 2:
-                raise ValueError("Invalid format. Use YYYY-MM format.")
-                
-            start_year = int(year_month[0])
-            start_month = int(year_month[1])
-            
-            if start_month < 1 or start_month > 12:
-                raise ValueError(f"Invalid month: {start_month}. Month must be between 1 and 12.")
-                
-            from calendar import monthrange
-            days_in_month = monthrange(start_year, start_month)[1]
-            
-            print(f"Using specified month for evaluation: {start_year}-{start_month:02d} ({days_in_month} days)")
-            
-            # Set configuration for specific month
-            config["simulation_days"] = days_in_month
-            config["force_specific_start_month"] = True
-            config["start_year"] = start_year
-            config["start_month"] = start_month
-            
-        except Exception as e:
-            print(f"Error parsing start-month argument: {e}")
-            print("Please use format YYYY-MM (e.g., 2023-06)")
-            sys.exit(1)
-            
-    elif args.random_start:
-        print("Using random episode start dates for evaluation")
-        # Disable the force_specific_start_month to allow random starts
-        config["force_specific_start_month"] = False
+    try:
+        parser = argparse.ArgumentParser(description="Evaluate a trained RL agent in the home energy management environment")
         
-    else:
-        # --- Start of existing logic to select a random full month ---
-    
-        # Determine required data sources and their paths
-        price_predictions_path_str = config.get("price_predictions_path", "src/predictions/prices/plots/predictions/merged")
-        price_file_path = Path(PROJECT_ROOT) / price_predictions_path_str
-
-        use_variable_consumption = config.get("use_variable_consumption", False)
-        consumption_file_path = None
-        if use_variable_consumption:
-            consumption_data_path_str = config.get("consumption_data_path")
-            if consumption_data_path_str:
-                consumption_file_path = Path(PROJECT_ROOT) / consumption_data_path_str
-            else:
-                print("Warning: Variable consumption is enabled but no consumption_data_path is specified in config. Cannot check consumption data range.")
-                use_variable_consumption = False # Disable if path is missing
-
-        use_solar_predictions = config.get("use_solar_predictions", False)
-        solar_file_path = None
-        if use_solar_predictions:
-            solar_data_path_str = config.get("solar_data_path")
-            if solar_data_path_str:
-                solar_file_path = Path(PROJECT_ROOT) / solar_data_path_str
-            else:
-                print("Warning: Solar prediction is enabled but no solar_data_path is specified in config. Cannot check solar data range.")
-                use_solar_predictions = False # Disable if path is missing
-
-        all_min_dates = []
-        all_max_dates = []
-
-        # 1. Get Price Data Range
-        if price_file_path.exists():
+        # Define command-line arguments
+        parser.add_argument("--model-path", type=str, 
+                           help="Path to the trained model. If not provided, uses the default model path.")
+        parser.add_argument("--render", action="store_true", 
+                           help="Render the environment during evaluation")
+        parser.add_argument("--sanity-check", action="store_true", 
+                           help="Run sanity checks on the environment before evaluation")
+        parser.add_argument("--sanity-check-only", action="store_true", 
+                           help="Run only sanity checks without evaluation")
+        parser.add_argument("--sanity-check-steps", type=int, default=100, 
+                           help="Number of steps to run for sanity checks")
+        parser.add_argument("--num-episodes", type=int, default=1, 
+                           help="Number of evaluation episodes to run")
+        parser.add_argument("--start-date", type=str, 
+                           help="Start date for evaluation (format: YYYY-MM-DD)")
+        parser.add_argument("--end-date", type=str, 
+                           help="End date for evaluation (format: YYYY-MM-DD)")
+        parser.add_argument("--start-month", type=str, 
+                           help="Month to evaluate (format: YYYY-MM)")
+        parser.add_argument("--random-start", action="store_true", 
+                           help="Use random start dates for evaluation")
+        
+        # Parse arguments
+        args = parser.parse_args()
+        
+        # Load configuration
+        config = config.get_config_dict()
+        
+        # Process date range if provided
+        if args.start_date and args.end_date:
             try:
-                price_df = pd.read_csv(price_file_path, index_col='HourSE', parse_dates=True)
-                if not price_df.empty:
-                    if price_df.index.tzinfo is None:
-                        try:
-                            price_df.index = price_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
-                            price_df = price_df[~pd.isna(price_df.index)]
-                        except Exception as loc_e:
-                            print(f"Warning: Could not localize price data timestamps: {loc_e}.")
-                    if not price_df.empty:
-                        all_min_dates.append(price_df.index.min())
-                        all_max_dates.append(price_df.index.max())
+                start_date = dt.strptime(args.start_date, "%Y-%m-%d")
+                end_date = dt.strptime(args.end_date, "%Y-%m-%d")
+                
+                if start_date > end_date:
+                    raise ValueError("Start date must be before end date")
+                    
+                # Calculate number of days
+                days_diff = (end_date - start_date).days + 1
+                
+                print(f"Restricting evaluation to date range: {args.start_date} to {args.end_date} ({days_diff} days)")
+                config["start_date"] = args.start_date
+                config["end_date"] = args.end_date
+                config["force_specific_date_range"] = True
+                config["simulation_days"] = days_diff
+                
+                # Make sure month-specific settings are disabled
+                config["force_specific_start_month"] = False
+                
             except Exception as e:
-                print(f"Error: Could not read price data from {price_file_path} for date range determination: {e}")
-                sys.exit(1) # Price data is essential
-        else:
-            print(f"Error: Price data file not found at {price_file_path}. Exiting.")
-            sys.exit(1)
-
-        # 2. Get Consumption Data Range (if used)
-        if use_variable_consumption and consumption_file_path:
-            if consumption_file_path.exists():
-                try:
-                    # Assuming consumption CSV has a 'timestamp' column
-                    consum_df = pd.read_csv(consumption_file_path, parse_dates=['timestamp'], index_col='timestamp')
-                    if not consum_df.empty:
-                        if consum_df.index.tzinfo is None: # Similar localization as in custom_env
-                            try:
-                                consum_df.index = consum_df.index.tz_localize('Europe/Stockholm', ambiguous='NaT', nonexistent='shift_forward')
-                                consum_df = consum_df[~pd.isna(consum_df.index)]
-                            except Exception as loc_e:
-                                 print(f"Warning: Could not localize consumption data timestamps: {loc_e}.")
-                        if not consum_df.empty:
-                            all_min_dates.append(consum_df.index.min())
-                            all_max_dates.append(consum_df.index.max())
-                        else: # Empty after localization
-                            print(f"Warning: Consumption data file {consumption_file_path} is empty after localization. Cannot use its date range.")
-                    else: # Empty before localization
-                        print(f"Warning: Consumption data file {consumption_file_path} is empty. Cannot use its date range.")
-                except Exception as e:
-                    print(f"Warning: Could not read consumption data from {consumption_file_path} for date range: {e}. Proceeding without its range.")
-            else:
-                print(f"Warning: Consumption data file not found at {consumption_file_path}. Proceeding without its range.")
-
-        # 3. Get Solar Data Range (if used)
-        if use_solar_predictions and solar_file_path:
-            if solar_file_path.exists():
-                try:
-                    # Assuming solar CSV has a 'Timestamp' column
-                    solar_df = pd.read_csv(solar_file_path, parse_dates=['Timestamp'], index_col='Timestamp')
-                    if not solar_df.empty:
-                        if solar_df.index.tzinfo is None: # Similar localization
-                            try:
-                                # Solar data often comes in UTC then converted
-                                solar_df.index = solar_df.index.tz_localize('UTC').tz_convert('Europe/Stockholm')
-                            except Exception as loc_e:
-                                print(f"Warning: Could not localize/convert solar data timestamps: {loc_e}.")
-                        elif str(solar_df.index.tz) != 'Europe/Stockholm': # If already localized but not to Stockholm
-                             solar_df.index = solar_df.index.tz_convert('Europe/Stockholm')
-                        
-                        if not solar_df.empty: # Check again after potential conversion issues
-                            all_min_dates.append(solar_df.index.min())
-                            all_max_dates.append(solar_df.index.max())
-                        else:
-                            print(f"Warning: Solar data file {solar_file_path} is empty after localization/conversion. Cannot use its date range.")
-                    else:
-                         print(f"Warning: Solar data file {solar_file_path} is empty. Cannot use its date range.")
-                except Exception as e:
-                    print(f"Warning: Could not read solar data from {solar_file_path} for date range: {e}. Proceeding without its range.")
-            else:
-                print(f"Warning: Solar data file not found at {solar_file_path}. Proceeding without its range.")
-
-        if not all_min_dates or not all_max_dates:
-            print("Error: Could not establish any valid data date ranges. Exiting.")
-            sys.exit(1)
+                print(f"Error processing date range: {e}")
+                print("Please use format YYYY-MM-DD (e.g., 2023-06-01)")
+                sys.exit(1)
         
-        # Calculate effective overall date range (intersection)
-        effective_min_data_date = max(all_min_dates)
-        effective_max_data_date = min(all_max_dates)
-
-        if effective_min_data_date >= effective_max_data_date:
-            print(f"Error: No overlapping data range found across all required sources. Min: {effective_min_data_date}, Max: {effective_max_data_date}. Exiting.")
+        # Process month selection
+        if args.start_month:
+            try:
+                # Parse YYYY-MM format
+                year_month = args.start_month.split('-')
+                if len(year_month) != 2:
+                    raise ValueError("Invalid format. Use YYYY-MM format.")
+                    
+                start_year = int(year_month[0])
+                start_month = int(year_month[1])
+                
+                if start_month < 1 or start_month > 12:
+                    raise ValueError(f"Invalid month: {start_month}. Month must be between 1 and 12.")
+                    
+                from calendar import monthrange
+                days_in_month = monthrange(start_year, start_month)[1]
+                
+                print(f"Using specified month for evaluation: {args.start_month} ({days_in_month} days)")
+                
+                # Set configuration for specific month
+                config["simulation_days"] = days_in_month
+                config["force_specific_start_month"] = True
+                config["start_year"] = start_year
+                config["start_month"] = start_month
+                
+            except Exception as e:
+                print(f"Error parsing start-month argument: {e}")
+                print("Please use format YYYY-MM (e.g., 2023-06)")
+                sys.exit(1)
+                
+        elif args.random_start:
+            print("Using random episode start dates for evaluation")
+            # Disable the force_specific_start_month to allow random starts
+            config["force_specific_start_month"] = False
+            
+        else:
+            # For now, skip random month selection logic
+            print("Using default month selection")
+        
+        if args.render:
+            config["render_mode"] = "human"
+        
+        # Determine the model path
+        if args.model_path:
+            model_path = args.model_path
+        else:
+            # Always use the default recurrent model path
+            model_name = "final_recurrent_model.zip"
+            print(f"Using default recurrent model path")
+            model_path = os.path.join(config['model_dir'], model_name)
+        
+        print(f"Model path: {model_path}")
+        print(f"Model exists: {os.path.exists(model_path)}")
+        
+        # Run sanity checks if requested
+        if args.sanity_check or args.sanity_check_only:
+            from src.rl.train import run_sanity_checks
+            print(f"\n{'='*80}\nRunning sanity checks...\n{'='*80}")
+            env = HomeEnergyEnv(config=config)
+            run_sanity_checks(env, config, num_steps=args.sanity_check_steps)
+            
+            if args.sanity_check_only:
+                print("Sanity checks complete. Exiting as requested.")
+                sys.exit(0)
+        
+        # Create environment first
+        env = HomeEnergyEnv(config=config)
+        
+        # Pass the environment to load_agent
+        agent = load_agent(model_path, env, config)
+        
+        if agent is None:
+            print(f"Failed to load agent from {model_path}")
             sys.exit(1)
 
-        print(f"Effective data range for selecting simulation month: {effective_min_data_date} to {effective_max_data_date}")
-
-        possible_months = []
-        current_month_start = pd.Timestamp(effective_min_data_date.year, effective_min_data_date.month, 1, tzinfo=effective_min_data_date.tzinfo)
-
-        while current_month_start <= effective_max_data_date:
-            month_end = current_month_start + pd.offsets.MonthEnd(0)
-            if month_end <= effective_max_data_date and current_month_start >= effective_min_data_date:
-                possible_months.append((current_month_start.year, current_month_start.month))
-            current_month_start += pd.offsets.MonthBegin(1)
-
-        if not possible_months:
-            print(f"Error: No full months available in the effective data range {effective_min_data_date} to {effective_max_data_date}. Exiting.")
-            sys.exit(1)
-
-        selected_year, selected_month = random.choice(possible_months)
-        days_in_selected_month = monthrange(selected_year, selected_month)[1]
-
-        print(f"Selected random month for evaluation: {selected_year}-{selected_month:02d} ({days_in_selected_month} days)")
-
-        config["simulation_days"] = days_in_selected_month
-        config["force_specific_start_month"] = True
-        config["start_year"] = selected_year
-        config["start_month"] = selected_month
-        # --- End of existing logic ---
-    
-    if args.render:
-        config["render_mode"] = "human"
-    
-    model_name = "short_term_agent_final"
-    # Load the agent
-    model_path = f"{config['model_dir']}/{model_name}"
-    agent = load_agent(model_path)
-    
-    if agent is None:
-        print(f"Failed to load agent from {model_path}")
-        sys.exit(1)
-    
-    # Evaluate the agent
-    print(f"Evaluating agent for {config['start_year']}-{config['start_month']:02d}...")
-    episode_data = evaluate_episode(agent, config)
-    
-    plot_dir = f"src/rl/simulations/results/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{config['start_year']}_{config['start_month']:02d}" # Added year/month to dir name
-    # Plot the performance
-    fig, axs = plot_agent_performance(episode_data, model_name=model_name, save_dir=plot_dir)
-    
-    # Plot reward components separately
-    plot_reward_components(episode_data, model_name=model_name, save_dir=plot_dir)
-    
-    # Calculate and print metrics
-    print("\n--- Performance Metrics ---")
-    results = calculate_performance_metrics(episode_data, config)
-    
-    plt.show()  # Show all plots 
+        # Run multiple evaluation episodes if requested
+        all_results = []
+        
+        for episode in range(args.num_episodes):
+            print(f"\n{'='*80}\nRunning evaluation episode {episode+1}/{args.num_episodes}\n{'='*80}")
+            
+            # Evaluate the agent
+            if "start_year" in config and "start_month" in config:
+                print(f"Evaluating agent for {config['start_year']}-{config['start_month']:02d}...")
+            else:
+                print("Evaluating agent with random start date...")
+                
+            episode_data = evaluate_episode(agent, config)
+            
+            # Create directory for plots
+            timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+            date_str = ""
+            if "start_year" in config and "start_month" in config:
+                date_str = f"_{config['start_year']}_{config['start_month']:02d}"
+                
+            plot_dir = f"src/rl/simulations/results/{timestamp}{date_str}_episode{episode+1}"
+            os.makedirs(plot_dir, exist_ok=True)
+            
+            # Plot the performance
+            fig, axs = plot_agent_performance(episode_data, model_name=os.path.basename(model_path), save_dir=plot_dir)
+            
+            # Plot reward components separately
+            plot_reward_components(episode_data, output_path=os.path.join(plot_dir, "reward_components.png"))
+            
+            # Calculate and print metrics
+            print(f"\n{'='*30} Performance Metrics {'='*30}")
+            results = calculate_performance_metrics(episode_data, config)
+            all_results.append(results)
+            
+            # Save the results to a JSON file
+            results_file = os.path.join(plot_dir, "metrics.json")
+            with open(results_file, 'w') as f:
+                import json
+                
+                # Convert any numpy types to native Python types
+                def convert_to_serializable(obj):
+                    if isinstance(obj, dict):
+                        return {k: convert_to_serializable(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [convert_to_serializable(i) for i in obj]
+                    elif isinstance(obj, np.integer):
+                        return int(obj)
+                    elif isinstance(obj, np.floating):
+                        return float(obj)
+                    elif isinstance(obj, np.ndarray):
+                        return convert_to_serializable(obj.tolist())
+                    elif isinstance(obj, np.bool_):
+                        return bool(obj)
+                    else:
+                        return obj
+                
+                serializable_results = convert_to_serializable(results)
+                json.dump(serializable_results, f, indent=4)
+                
+            print(f"Metrics saved to {results_file}")
+            
+        # If we ran multiple episodes, print average metrics
+        if len(all_results) > 1:
+            print(f"\n{'='*30} Average Metrics Across {len(all_results)} Episodes {'='*30}")
+            # Calculate and print average metrics
+            # TODO: Implement averaging logic for metrics
+            
+    except Exception as e:
+        import traceback
+        print(f"Error during evaluation: {e}")
+        traceback.print_exc() 

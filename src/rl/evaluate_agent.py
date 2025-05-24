@@ -24,10 +24,11 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 
-from src.rl import config
+from src.rl.config import get_config_dict
 from src.rl.custom_env import HomeEnergyEnv
 from src.rl.agent import RecurrentEnergyAgent
 from gymnasium.wrappers import FlattenObservation
+import gymnasium as gym
 
 
 def plot_agent_performance(episode_data, model_name=None, save_dir=None):
@@ -85,7 +86,6 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
     solar_productions_hourly = hourly_data['current_solar_production_kw'].tolist()
     
     # Calculate discounted grid power for capacity fee
-    from src.rl.config import get_config_dict
     config = get_config_dict()
     night_capacity_discount = config.get('night_capacity_discount', 0.5)
     
@@ -298,7 +298,8 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
 
 def plot_reward_components(episode_data, output_path):
     """
-    Create a detailed plot of reward components over time.
+    Create a detailed plot of reward components over time with grouped components.
+    Components are grouped logically with individual y-axis scaling for better visibility.
     
     Args:
         episode_data: List of dictionaries with episode data
@@ -318,25 +319,82 @@ def plot_reward_components(episode_data, output_path):
     export_bonuses = [data.get('reward_export_bonus', 0) for data in episode_data]
     night_charging_rewards = [data.get('reward_night_charging', 0) for data in episode_data]
     action_mod_penalties = [data.get('reward_action_mod_penalty', 0) for data in episode_data]
-    morning_soc_rewards = [data.get('reward_morning_soc', 0) for data in episode_data]
+    solar_soc_rewards = [data.get('reward_solar_soc', 0) for data in episode_data]
     night_peak_chain_bonuses = [data.get('reward_night_peak_chain', 0) for data in episode_data]
     
-    # Determine which components have non-zero values
-    has_morning_soc = any(abs(r) > 0.001 for r in morning_soc_rewards)
-    has_night_peak_chain = any(abs(r) > 0.001 for r in night_peak_chain_bonuses)
+    # Define component groups - now with 5 groups for less cramped visualization
+    threshold = 0.001
+    component_groups = {
+        'Direct Costs': {
+            'Grid Cost': (grid_costs, 'red', '-'),
+            'Capacity Penalty': (capacity_penalties, 'darkred', '-')
+        },
+        'System Penalties': {
+            'Battery Degradation': (battery_costs, 'orange', '-'),
+            'Action Mod Penalty': (action_mod_penalties, 'maroon', '-')
+        },
+        'Primary Rewards': {
+            'SoC Reward': (soc_rewards, 'green', '-'),
+            'Arbitrage Bonus': (arbitrage_bonuses, 'purple', '-')
+        },
+        'Energy Trading': {
+            'Export Bonus': (export_bonuses, 'blue', '-'),
+            'Night Charging': (night_charging_rewards, 'navy', '-')
+        },
+        'Advanced Strategies': {
+            'Potential Shaping': (shaping_rewards, 'magenta', '-'),
+            'Solar SoC': (solar_soc_rewards, 'darkgreen', '-'),
+            'Night→Peak Chain': (night_peak_chain_bonuses, 'cyan', '-')
+        }
+    }
     
-    # Set up the figure with appropriate number of subplots
-    num_subplots = 5
-    if has_morning_soc or has_night_peak_chain:
-        num_subplots += 1
+    # Filter groups to only include those with meaningful values
+    active_groups = {}
+    for group_name, components in component_groups.items():
+        active_components = {}
+        for comp_name, (values, color, linestyle) in components.items():
+            if any(abs(v) > threshold for v in values):
+                # Calculate stats for the component
+                max_val = max(values)
+                min_val = min(values)
+                avg_val = sum(values) / len(values)
+                std_val = np.std(values)
+                active_components[comp_name] = {
+                    'values': values, 
+                    'color': color,
+                    'linestyle': linestyle,
+                    'max': max_val,
+                    'min': min_val, 
+                    'avg': avg_val,
+                    'std': std_val,
+                    'range': max_val - min_val
+                }
+        
+        if active_components:  # Only include groups that have active components
+            active_groups[group_name] = active_components
     
-    fig, axes = plt.subplots(num_subplots, 1, figsize=(15, 12), sharex=True, gridspec_kw={'height_ratios': [2, 1, 1, 1, 1, 1][:num_subplots]})
+    print(f"Active component groups found: {len(active_groups)}")
+    for group_name, components in active_groups.items():
+        print(f"  {group_name}: {list(components.keys())}")
     
-    # Plot total reward and cumulative reward
+    # Set up the figure - Total reward at top, then grouped components (now 5 component groups max)
+    num_group_plots = len(active_groups)
+    total_subplots = 1 + num_group_plots  # 1 for total/cumulative, rest for groups
+    
+    # Create figure with appropriate sizing - more height for additional subplot
+    fig_height = min(max(10, total_subplots * 2.5), 20)  # Between 10 and 20 inches, more space per subplot
+    fig, axes = plt.subplots(total_subplots, 1, figsize=(16, fig_height), sharex=True)
+    
+    # Ensure axes is always a list
+    if total_subplots == 1:
+        axes = [axes]
+    
+    # Plot 0: Total reward and cumulative reward
     ax0 = axes[0]
-    ax0.plot(timestamps, total_rewards, 'b-', label='Reward')
-    ax0.set_ylabel('Reward')
-    ax0.set_title('Total Reward and Cumulative Reward')
+    ax0.plot(timestamps, total_rewards, 'b-', label='Step Reward', linewidth=1)
+    ax0.set_ylabel('Step Reward', color='blue')
+    ax0.tick_params(axis='y', labelcolor='blue')
+    ax0.set_title('Total Reward per Step and Cumulative Reward', fontsize=12, fontweight='bold')
     ax0.grid(True, alpha=0.3)
     
     # Add night discount periods as shaded areas
@@ -356,81 +414,111 @@ def plot_reward_components(episode_data, output_path):
         night_periods.append((current_night_start, timestamps[-1]))
     
     for start, end in night_periods:
-        ax0.axvspan(start, end, alpha=0.2, color='gray')
+        ax0.axvspan(start, end, alpha=0.15, color='gray', label='Night Discount' if start == night_periods[0][0] else "")
     
     # Add cumulative reward on secondary y-axis
     ax0_twin = ax0.twinx()
-    ax0_twin.plot(timestamps, cumulative_reward, 'y-', label='Cumulative Reward')
-    ax0_twin.set_ylabel('Cumulative Reward')
+    ax0_twin.plot(timestamps, cumulative_reward, 'orange', label='Cumulative Reward', linewidth=1)
+    ax0_twin.set_ylabel('Cumulative Reward', color='orange')
+    ax0_twin.tick_params(axis='y', labelcolor='orange')
     
-    # Add legend
-    lines0, labels0 = ax0.get_legend_handles_labels()
-    lines0_twin, labels0_twin = ax0_twin.get_legend_handles_labels()
-    ax0.legend(lines0 + lines0_twin, labels0 + labels0_twin, loc='upper left')
+    # Add zero line to total reward plot
+    ax0.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
     
-    # Plot cost components (grid, battery, capacity)
-    ax1 = axes[1]
-    ax1.plot(timestamps, grid_costs, 'r-', label='Grid Cost')
-    ax1.plot(timestamps, battery_costs, 'g-', label='Battery Cost')
-    ax1.plot(timestamps, capacity_penalties, 'm-', label='Capacity Penalty')
-    ax1.set_ylabel('Grid Cost')
-    ax1.set_title('Cost Components (Grid, Battery, Capacity)')
-    ax1.grid(True, alpha=0.3)
-    ax1.legend(loc='upper left')
+    # Plot grouped components with individual y-axis scaling
+    for i, (group_name, group_components) in enumerate(active_groups.items()):
+        ax = axes[i + 1]
+        
+        # Plot each component in the group
+        for comp_name, comp_data in group_components.items():
+            values = comp_data['values']
+            color = comp_data['color']
+            linestyle = comp_data['linestyle']
+            
+            # Plot the component
+            ax.plot(timestamps, values, color=color, linestyle=linestyle, 
+                   linewidth=1, label=f"{comp_name} (μ={comp_data['avg']:.3f})")
+        
+        # Set group title and labels
+        ax.set_ylabel(f'{group_name}', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='upper right', fontsize=8)
+        
+        # Individual y-axis scaling - let matplotlib auto-scale each subplot
+        # Calculate range for this group
+        all_group_values = []
+        for comp_data in group_components.values():
+            all_group_values.extend(comp_data['values'])
+        
+        if all_group_values:
+            group_min = min(all_group_values)
+            group_max = max(all_group_values)
+            group_range = group_max - group_min
+            
+            # Add zero line if range includes both positive and negative values
+            if group_min < 0 < group_max:
+                ax.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
+            
+            # Set title with group range statistics
+            range_str = f"Range: [{group_min:.3f}, {group_max:.3f}]"
+            ax.set_title(f'{group_name} - {range_str}', fontsize=10)
+            
+            # Individual y-axis scaling with small margin
+            if group_range > 0:
+                margin = group_range * 0.05  # 5% margin
+                ax.set_ylim(group_min - margin, group_max + margin)
+            else:
+                # Handle case where all values are the same
+                ax.set_ylim(group_min - 0.001, group_max + 0.001)
+        
+        # Add night periods to component plots as well
+        for start, end in night_periods:
+            ax.axvspan(start, end, alpha=0.1, color='gray')
     
-    # Plot SoC management components
-    ax2 = axes[2]
-    ax2.plot(timestamps, soc_rewards, 'g-', label='SoC Reward')
-    ax2.plot(timestamps, shaping_rewards, 'c-', label='Shaping')
-    if has_morning_soc:
-        ax2.plot(timestamps, morning_soc_rewards, 'm-', label='Morning SoC')
-    ax2.set_ylabel('SoC Reward')
-    ax2.set_title('Battery Management Components (SoC Reward, Shaping, Morning SoC)')
-    ax2.grid(True, alpha=0.3)
-    ax2.legend(loc='upper left')
-    
-    # Plot grid optimization components
-    ax3 = axes[3]
-    ax3.plot(timestamps, arbitrage_bonuses, 'r-', label='Arbitrage Bonus')
-    ax3.plot(timestamps, export_bonuses, 'b-', label='Export Bonus')
-    ax3.plot(timestamps, night_charging_rewards, 'c-', label='Night Charging')
-    if has_night_peak_chain:
-        ax3.plot(timestamps, night_peak_chain_bonuses, 'm-', label='Night→Peak Chain')
-    ax3.set_ylabel('Bonus')
-    ax3.set_title('Grid Optimization Components (Arbitrage, Export, Night Charging, Chain)')
-    ax3.grid(True, alpha=0.3)
-    ax3.legend(loc='upper left')
-    
-    # Plot action modification penalties
-    ax4 = axes[4]
-    ax4.plot(timestamps, action_mod_penalties, 'r-', label='Action Mod Penalty')
-    ax4.set_ylabel('Penalty')
-    ax4.set_title('Action Modification Penalty')
-    ax4.grid(True, alpha=0.3)
-    
-    # Add specific plot for morning SoC and night-to-peak chain if present
-    if has_morning_soc or has_night_peak_chain and num_subplots > 5:
-        ax5 = axes[5]
-        if has_morning_soc:
-            ax5.plot(timestamps, morning_soc_rewards, 'g-', label='Morning SoC Reward')
-        if has_night_peak_chain:
-            ax5.plot(timestamps, night_peak_chain_bonuses, 'b-', label='Night→Peak Chain Bonus')
-        ax5.set_ylabel('Reward')
-        ax5.set_title('Advanced Strategy Components (Morning SoC, Night→Peak Chain)')
-        ax5.grid(True, alpha=0.3)
-        ax5.legend(loc='upper left')
-    
-    # Format x-axis with date formatting
-    date_format = mdates.DateFormatter('%Y-%m-%d')
+    # Format x-axis with date formatting only on the bottom plot
+    date_format = mdates.DateFormatter('%m-%d %H:%M')
     axes[-1].xaxis.set_major_formatter(date_format)
-    axes[-1].xaxis.set_major_locator(mdates.DayLocator())
+    
+    # Adjust locator based on episode length
+    episode_hours = (timestamps[-1] - timestamps[0]).total_seconds() / 3600
+    if episode_hours <= 48:  # Less than 2 days - show every 6 hours
+        axes[-1].xaxis.set_major_locator(mdates.HourLocator(interval=6))
+    elif episode_hours <= 168:  # Less than a week - show daily
+        axes[-1].xaxis.set_major_locator(mdates.DayLocator())
+    else:  # Longer periods - show every 2 days
+        axes[-1].xaxis.set_major_locator(mdates.DayLocator(interval=2))
+    
+    axes[-1].set_xlabel('Time')
     fig.autofmt_xdate()
     
+    # Add overall statistics text box
+    total_reward_sum = sum(total_rewards)
+    avg_step_reward = total_reward_sum / len(total_rewards)
+    
+    # Count total active components across all groups
+    total_active_components = sum(len(comps) for comps in active_groups.values())
+    
+    stats_text = f"""Episode Statistics:
+Total Reward: {total_reward_sum:.2f}
+Avg Step Reward: {avg_step_reward:.4f}
+Component Groups: {len(active_groups)}
+Active Components: {total_active_components}
+Episode Duration: {episode_hours:.1f} hours"""
+    
+    # Place stats text box on the first subplot
+    ax0.text(0.02, 0.98, stats_text, transform=ax0.transAxes, fontsize=9,
+             verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    
     plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.show()
-    plt.savefig(output_path)
     plt.close()
-    print(f"Reward components plot saved to {output_path}")
+    print(f"Reward components plot with grouped components saved to {output_path}")
+    print(f"  - {len(active_groups)} component groups plotted")
+    print(f"  - {total_active_components} total active components")
+    print(f"  - Episode duration: {episode_hours:.1f} hours")
+    print(f"  - Total reward: {total_reward_sum:.2f}")
+    print(f"  - Individual y-axis scaling applied to all subplots")
 
 def calculate_performance_metrics(episode_data, config=None):
     """
@@ -900,8 +988,8 @@ def analyze_reward_component_distributions(episode_data):
         'reward_export_bonus',
         'reward_night_charging',
         'reward_action_mod_penalty',
-        'reward_morning_soc',       # Added new component
-        'reward_night_peak_chain'   # Added new component
+        'reward_morning_soc',    
+        'reward_night_peak_chain'
     ]
     
     results = {}
@@ -955,10 +1043,6 @@ if __name__ == "__main__":
                            help="Number of steps to run for sanity checks")
         parser.add_argument("--num-episodes", type=int, default=1, 
                            help="Number of evaluation episodes to run")
-        parser.add_argument("--start-date", type=str, 
-                           help="Start date for evaluation (format: YYYY-MM-DD)")
-        parser.add_argument("--end-date", type=str, 
-                           help="End date for evaluation (format: YYYY-MM-DD)")
         parser.add_argument("--start-month", type=str, 
                            help="Month to evaluate (format: YYYY-MM)")
         parser.add_argument("--random-start", action="store_true", 
@@ -968,33 +1052,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
         
         # Load configuration
-        config = config.get_config_dict()
-        
-        # Process date range if provided
-        if args.start_date and args.end_date:
-            try:
-                start_date = dt.strptime(args.start_date, "%Y-%m-%d")
-                end_date = dt.strptime(args.end_date, "%Y-%m-%d")
-                
-                if start_date > end_date:
-                    raise ValueError("Start date must be before end date")
-                    
-                # Calculate number of days
-                days_diff = (end_date - start_date).days + 1
-                
-                print(f"Restricting evaluation to date range: {args.start_date} to {args.end_date} ({days_diff} days)")
-                config["start_date"] = args.start_date
-                config["end_date"] = args.end_date
-                config["force_specific_date_range"] = True
-                config["simulation_days"] = days_diff
-                
-                # Make sure month-specific settings are disabled
-                config["force_specific_start_month"] = False
-                
-            except Exception as e:
-                print(f"Error processing date range: {e}")
-                print("Please use format YYYY-MM-DD (e.g., 2023-06-01)")
-                sys.exit(1)
+        config = get_config_dict()
         
         # Process month selection
         if args.start_month:
@@ -1043,9 +1101,10 @@ if __name__ == "__main__":
             model_path = args.model_path
         else:
             # Always use the default recurrent model path
-            model_name = "final_recurrent_model.zip"
+            # grabbign the latest model
             print(f"Using default recurrent model path")
-            model_path = os.path.join(config['model_dir'], model_name)
+            latest_model = max(os.listdir(config['model_dir']), key=lambda x: os.path.getmtime(os.path.join(config['model_dir'], x)))
+            model_path = os.path.join(config['model_dir'], latest_model)
         
         print(f"Model path: {model_path}")
         print(f"Model exists: {os.path.exists(model_path)}")

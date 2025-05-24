@@ -22,7 +22,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 # Import our modules
-from src.rl.hpo import run_hpo
+from rl.hpo.hpo import run_hpo
 from src.rl.config import get_config_dict
 from src.rl.custom_env import HomeEnergyEnv
 from src.rl.agent import ShortTermAgent

@@ -89,13 +89,13 @@ battery_charge_efficiency: float = 0.95     # Efficiency when charging (0-1)
 battery_discharge_efficiency: float = 0.95  # Efficiency when discharging (0-1)
 
 # Battery operational limits
-soc_min_limit: float = 0.2                  # Minimum allowable SoC
-soc_max_limit: float = 0.8                  # Maximum allowable SoC
+soc_min_limit: float = 0.1                  # Minimum allowable SoC
+soc_max_limit: float = 0.9                  # Maximum allowable SoC
 
 # Battery economics
 battery_degradation_cost_per_kwh: float = 45.0  # Cost in öre/kWh for battery usage
 # Battery degradation cost in reward
-battery_degradation_reward_scaling_factor: float = 0.05  # Scale degradation cost in reward
+battery_degradation_reward_scaling_factor: float = 0.05  # Reduced from 0.3 - Scale degradation cost in reward
 
 
 
@@ -118,7 +118,8 @@ capacity_fee_sek_per_kw: float = 81.25       # Fee per kW of peak demand per mon
 
 # Special rates
 night_capacity_discount: float = 0.5         # Discount for peaks during 22:00-06:00
-
+enforce_capacity_same_day_constraint: bool = True  # Enforce Swedish regulation: max 1 peak per day in top 3
+night_charging_scaling_factor : float = 2.0  # Reduced from 5.0 - was creating large night rewards
 
 
 
@@ -130,24 +131,28 @@ night_capacity_discount: float = 0.5         # Discount for peaks during 22:00-0
 # ==============================================================================
 
 # Physical limit violation penalties
-soc_limit_penalty_factor: float = 10.0      # Base penalty for SoC outside allowed range
+soc_limit_penalty_factor: float = 5.0       # Increased from 2.0 to discourage limit violations more strongly
 
 # Preferred SoC range (soft constraints)
-preferred_soc_min_base: float = 0.3          # Lower bound of preferred SoC range
-preferred_soc_max_base: float = 0.7          # Upper bound of preferred SoC range
-preferred_soc_reward_factor: float = 5.0    # Reward for staying in preferred range
+preferred_soc_min_base: float = 0.25          # Base minimum preferred SoC
+preferred_soc_max_base: float = 0.75          # Base maximum preferred SoC  
+preferred_soc_reward_factor: float = 2.0    # Increased from 1.5 to encourage staying in preferred range
 
 # High SoC specific penalties
-high_soc_penalty_multiplier: float = 1.0     # Multiplier for penalties above very_high_soc_threshold
-very_high_soc_threshold: float = 0.75        # Threshold for applying extra penalties
+high_soc_penalty_multiplier: float = 2.0     # Increased from 1.2 to stronger discourage high SoC
+very_high_soc_threshold: float = 0.78        # Reduced from 0.80 to be more aggressive
 
 # Action modification penalty
-action_modification_penalty: float = 0.5    # Penalty for actions requiring safety modification
-max_consecutive_penalty_multiplier: float = 6.0  # Maximum escalation factor for repeated invalid actions
+action_modification_penalty: float = 1.0    # Increased from 0.5 to discourage safety violations
+max_consecutive_penalty_multiplier: float = 2.0  # Increased from 1.5 to escalate repeated violations
+
+# New: SoC limit violation tracking
+soc_violation_memory_factor: float = 0.95   # Exponential decay for violation memory
+soc_violation_escalation_factor: float = 1.5  # Escalation for repeated violations
 
 # Potential function parameters
-soc_potential_min_value: float = -7.0       # Finite min value replacing -1e6
-soc_potential_max_value: float = 7.0       # Finite max value replacing -1e6
+soc_potential_min_value: float = -3.0       # Reduced magnitude from -7.0
+soc_potential_max_value: float = 3.0       # Reduced magnitude from 7.0
 
 
 
@@ -160,22 +165,22 @@ soc_potential_max_value: float = 7.0       # Finite max value replacing -1e6
 # ==============================================================================
 
 #consumption * price = grid cost scaling factor
-grid_cost_scaling_factor: float = 0.01
+grid_cost_scaling_factor: float = 0.015  # Reduced from 0.002 to minimize grid cost impact
 
 # Peak shaving incentives
 peak_power_threshold_kw: float = 5.0        # Target maximum grid import
-peak_penalty_factor: float = 1.0           # Penalty per kW above threshold
+peak_penalty_factor: float = 0.5           # Reduced from 1.0 to minimize capacity penalties
 
 # Price arbitrage incentives
-enable_explicit_arbitrage_reward: bool = False    # Whether to include arbitrage bonus rewards
+enable_explicit_arbitrage_reward: bool = True    # Whether to include arbitrage bonus rewards (changed from False)
 
 # Low price charging incentives
 low_price_threshold_ore_kwh: float = 30.0        # Fixed threshold for low prices (for charging)
-charge_at_low_price_reward_factor: float = 2.0  # Reward for charging at low prices
+charge_at_low_price_reward_factor: float = 1.0  # Reduced from 10.0 - Reward for charging at low prices
 
 # High price discharging incentives
 high_price_threshold_ore_kwh: float = 100.0      # Fixed threshold for high prices (for discharging)
-discharge_at_high_price_reward_factor: float = 5.0  # Reward for discharging at high prices
+discharge_at_high_price_reward_factor: float = 2.0  # Reduced from 30.0 - was creating huge rewards
 
 # Dynamic price threshold calculation
 use_percentile_price_thresholds: bool = True     # Whether to use percentiles instead of fixed thresholds
@@ -184,20 +189,19 @@ high_price_percentile: float = 70.0              # Percentile for high price (de
 
 # Export reward
 export_reward_bonus_ore_kwh: float = 60     # Bonus in öre/kWh for exported electricity on top of spot price
-export_reward_scaling_factor: float = 0.01    # Scaling factor for export reward
-# the division is to get a better range for the agent training
+export_reward_scaling_factor: float = 0.001    # Reduced from 0.01 - was creating too large values
 
 # Morning SoC targeting before solar production
-enable_morning_soc_target: bool = True      # Enable morning SoC targeting
+enable_morning_soc_target: bool = False      # Disable simplistic morning emptying strategy
 morning_hours_start: int = 5               # Start of morning hours (e.g., 5 AM)
 morning_hours_end: int = 8                # End of morning hours (e.g., 8 AM)
 morning_target_soc: float = 0.25          # Target SoC in morning before solar production
 morning_solar_threshold_kwh: float = 2.0  # Minimum expected solar production to activate
-morning_soc_reward_factor: float = 5.0    # Reward multiplier for morning SoC targeting
+morning_soc_reward_factor: float = 2.0    # Reduced from 7.0 - reward multiplier for morning SoC targeting
 
 # Night-to-peak chain bonus
 enable_night_peak_chain: bool = True       # Enable night-to-peak chain bonus
-night_to_peak_bonus_factor: float = 15.0   # Bonus multiplier for using night energy at peak
+night_to_peak_bonus_factor: float = 1.0   # Reduced from 25.0 - was creating massive rewards
 night_charge_window_hours: float = 24.0    # How long night energy is valid (hours)
 
 # RecurrentPPO parameters
@@ -206,20 +210,20 @@ lstm_hidden_size: int = 64      # Hidden size of LSTM layers
 
 
 # Global reward scaling
-reward_scaling_factor: float = 0.1            # Global multiplier for all rewards
+reward_scaling_factor: float = 0.2            # Increased from 0.1 to amplify all rewards
 
 # Multi-Objective Reward Component Weights
-w_grid: float = 1.0
-w_cap: float = 2.0           # Increased from 0.1 to make peak penalties more visible
-w_deg: float = 0.8
-w_soc: float = 1.1              # soc limit penalty
-w_shape: float = 1.5            # potential shaping, should guide into the preferred range
-w_night: float = 0.2
-w_arbitrage: float = 2.0
-w_export: float = 1.5
-w_action_mod: float = 1.0
-w_chain: float = 2.5                      # Weight for night-to-peak chain bonus in total reward
-w_morning: float = 1.2                    # Weight for morning SoC reward in total reward
+w_grid: float = 0.8              # Reduced from 1.0 to balance with other components
+w_cap: float = 1.0               # Reduced from 2.0 to minimize capacity penalty dominance
+w_deg: float = 0.5               # Reduced from 0.7 to minimize degradation impact
+w_soc: float = 2.0               # Increased from 1.0 to strengthen SoC management
+w_shape: float = 1.5             # Increased from 1.0 to improve SoC guidance
+w_night: float = 1.5             # Reduced from 2.0 to balance night incentives
+w_arbitrage: float = 2.5         # Increased from 2.0 to strengthen arbitrage incentives  
+w_export: float = 1.5            # Reduced from 1.7 to balance export incentives
+w_action_mod: float = 0.8        # Reduced from 1.5 to minimize action penalty impact
+w_chain: float = 2.0             # Increased from 1.5 to strengthen chain bonuses
+w_solar: float = 1.5             # Increased from 1.2 to improve solar-aware behavior
 
 
 # ==============================================================================
@@ -227,14 +231,14 @@ w_morning: float = 1.2                    # Weight for morning SoC reward in tot
 # ==============================================================================
 
 # Core PPO parameters
-short_term_learning_rate: float = 1e-4        # Learning rate for the optimizer
-short_term_gamma: float = 0.98               # Discount factor for future rewards, higher is more future rewards
-short_term_n_steps: int = 1024                # Steps per update batch
-short_term_batch_size: int = 64              # Minibatch size for updates
-short_term_n_epochs: int = 15                 # Number of epochs per update
-short_term_ent_coeff: float = 0.01           # Entropy coefficient (exploration)
-short_term_gae_lambda: float = 0.96           # GAE lambda parameter, higher means more credit is given to future rewards
-short_term_timesteps: int = 100_000            # Total timesteps for training
+short_term_learning_rate: float = 2e-4        # Reduced from 3e-4 for more stable learning
+short_term_gamma: float = 0.995               # Increased from 0.99 for better long-term planning
+short_term_n_steps: int = 4096                # Increased from 2048 for better sample efficiency
+short_term_batch_size: int = 128              # Increased from 64 for more stable updates
+short_term_n_epochs: int = 8                  # Reduced from 10 to prevent overfitting
+short_term_ent_coeff: float = 0.005           # Reduced from 0.01 for more focused exploration
+short_term_gae_lambda: float = 0.98           # Increased from 0.95 for better advantage estimation
+short_term_timesteps: int = 500_000         # Increased from 500_000 for more thorough training
 
 # ==============================================================================
 #                           HELPER FUNCTION

@@ -1,7 +1,21 @@
 """
-Training script for the hierarchical RL system.
+Training script for the RL energy management system.
 
-Loads models, settings, and trains agents in a hierarchical fashion.
+Enhanced with improvements including:
+- Curriculum learning schedule for progressive training
+- Adaptive exploration with entropy scheduling
+- Reward component analysis and balance monitoring
+- Training issue detection and recommendations
+- Better PPO hyperparameters
+- Advanced callbacks for monitoring
+
+examples:
+python train.py --config config.json --test-only
+python train.py --config config.json --skip-sanity-check
+python train.py --config config.json --sanity-check-only
+python train.py --config config.json --start-date 2023-01-01 --end-date 2023-01-31
+
+Loads models, settings, and trains agents.
 """
 import os
 import json
@@ -15,11 +29,11 @@ import tensorflow as tf  # For loading keras models
 import sys
 import time
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any, List
 import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics # For richer per-episode stats
-from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from sb3_contrib.ppo_recurrent import RecurrentPPO
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 from stable_baselines3.common.logger import configure as sb3_configure_logger
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
@@ -34,17 +48,140 @@ if PROJECT_ROOT not in sys.path:
     
 # Import our custom components
 from src.rl.custom_env import HomeEnergyEnv
-from src.rl.agent import ShortTermAgent, RecurrentEnergyAgent
+from src.rl.agent import (
+    RecurrentEnergyAgent,
+    analyze_reward_components, 
+    detect_training_issues,
+    adaptive_exploration_schedule,
+    create_curriculum_schedule
+)
 from src.rl import config as rl_config # Import the new config
 
-# Set up logging - this is the main logging configuration for the training script
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(asctime)s: %(message)s')
-logger = logging.getLogger(__name__)
+# Set up logging - reduced noise during training
+logging.basicConfig(
+    level=logging.WARNING,  # Only warnings and errors to console
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 
-# Configure the home_energy_env logger to use the same level but avoid duplicate messages
+# Set up file logging for detailed logs
+file_handler = logging.FileHandler('src/rl/logs/training.log', encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+
+# Configure the home_energy_env logger to log to file only
 env_logger = logging.getLogger("home_energy_env")
-env_logger.setLevel(logging.INFO)  
-# No handlers needed as they will inherit from the root logger
+env_logger.setLevel(logging.WARNING)  # Reduce console noise
+
+
+class EnhancedTrainingCallback(BaseCallback):
+    """Enhanced callback with reward analysis and training issue detection."""
+    
+    def __init__(self, curriculum_schedule=None, verbose=0):
+        super().__init__(verbose)
+        self.reward_history = []
+        self.metrics_history = []
+        self.last_analysis_step = 0
+        self.analysis_interval = 100000  # Analyze every 100k steps (reduced frequency)
+        self.curriculum_schedule = curriculum_schedule or []
+        self.current_phase = 0
+        
+    def _on_step(self) -> bool:
+        # Handle curriculum learning
+        if self.curriculum_schedule:
+            self._update_curriculum()
+        
+        # Collect reward components from info
+        if 'reward_components' in self.locals.get('infos', [{}])[0]:
+            self.reward_history.append(self.locals['infos'][0]['reward_components'])
+        
+        # Collect training metrics
+        if hasattr(self.model, 'logger') and self.model.logger.name_to_value:
+            metrics = dict(self.model.logger.name_to_value)
+            metrics['step'] = self.num_timesteps
+            self.metrics_history.append(metrics)
+        
+        # Periodic analysis
+        if self.num_timesteps - self.last_analysis_step >= self.analysis_interval:
+            self._perform_analysis()
+            self.last_analysis_step = self.num_timesteps
+        
+        return True
+    
+    def _update_curriculum(self):
+        """Update curriculum phase if needed."""
+        if self.current_phase < len(self.curriculum_schedule):
+            phase = self.curriculum_schedule[self.current_phase]
+            if self.num_timesteps >= phase['end_step']:
+                self.current_phase += 1
+                if self.current_phase < len(self.curriculum_schedule):
+                    next_phase = self.curriculum_schedule[self.current_phase]
+                    logger.info(f"\n[CURRICULUM] Advancing to phase {self.current_phase + 1}: {next_phase['name']}")
+                    logger.info(f"New phase parameters: {next_phase['config_overrides']}")
+    
+    def _perform_analysis(self):
+        """Perform reward and training analysis."""
+        logger.info(f"\n{'='*60}")
+        logger.info(f"[TRAINING ANALYSIS] AT STEP {self.num_timesteps}")
+        logger.info(f"{'='*60}")
+        
+        # Analyze reward components
+        if len(self.reward_history) > 100:
+            recent_rewards = self.reward_history[-1000:]  # Last 1000 episodes
+            analysis = analyze_reward_components(recent_rewards)
+            
+            logger.info("[REWARD ANALYSIS] Component Analysis:")
+            logger.info(f"Balance Score: {analysis.get('balance_score', 0):.3f}")
+            
+            if 'recommendations' in analysis:
+                for rec in analysis['recommendations']:
+                    logger.warning(f"  WARNING: {rec}")
+        
+        # Detect training issues
+        if len(self.metrics_history) > 50:
+            issues = detect_training_issues(self.metrics_history)
+            logger.info("[TRAINING ISSUES] Detection Results:")
+            for issue in issues:
+                if "No major" in issue:
+                    logger.info(f"  OK: {issue}")
+                else:
+                    logger.warning(f"  WARNING: {issue}")
+        
+        logger.info(f"{'='*60}\n")
+
+
+class AdaptiveEntropyCallback(BaseCallback):
+    """Callback to adaptively adjust entropy coefficient during training."""
+    
+    def __init__(self, total_timesteps: int, base_entropy: float = 0.005, verbose=0):
+        super().__init__(verbose)
+        self.total_timesteps = total_timesteps
+        self.base_entropy = base_entropy
+        
+    def _on_step(self) -> bool:
+        # Update entropy coefficient
+        new_entropy = adaptive_exploration_schedule(
+            self.num_timesteps, 
+            self.total_timesteps, 
+            self.base_entropy
+        )
+        
+        # Update the model's entropy coefficient
+        if hasattr(self.model, 'ent_coef'):
+            self.model.ent_coef = new_entropy
+            
+        # Log entropy changes periodically
+        if self.num_timesteps % 50000 == 0:  # Much less frequent
+            print(f"Step {self.num_timesteps}: Entropy coefficient = {new_entropy:.4f}")
+        
+        return True
+
 
 def create_env(env_config: dict, seed: Optional[int] = None, env_idx: int = 0):
     """
@@ -64,7 +201,7 @@ def create_env(env_config: dict, seed: Optional[int] = None, env_idx: int = 0):
 
 def setup_callbacks(config: dict) -> dict:
     """
-    Set up training callbacks.
+    Set up enhanced training callbacks with all improvements.
     
     Args:
         config: Configuration dictionary
@@ -81,27 +218,32 @@ def setup_callbacks(config: dict) -> dict:
     
     # Create timestamped folders
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
-    short_term_log_dir = log_dir / f"short_term_{timestamp}"
     recurrent_log_dir = log_dir / f"recurrent_{timestamp}"
     
     # Configure TensorBoard loggers
-    short_term_logger = sb3_configure_logger(str(short_term_log_dir), ["stdout", "tensorboard"])
     recurrent_logger = sb3_configure_logger(str(recurrent_log_dir), ["stdout", "tensorboard"])
     
     # Create callbacks
     checkpoint_freq = config.get("checkpoint_freq", 25000)
     eval_freq = config.get("eval_freq", checkpoint_freq) 
 
-    # Short-term checkpoint callback
-    short_term_checkpoint_callback = CheckpointCallback(
-        save_freq=checkpoint_freq,
-        save_path=str(model_dir / "short_term_checkpoints"),
-        name_prefix="short_term_model",
-        save_replay_buffer=True, 
-        save_vecnormalize=True, 
-        verbose=0
+    # Create curriculum schedule
+    total_timesteps = config.get("total_timesteps", 500000)
+    curriculum_schedule = create_curriculum_schedule(total_timesteps)
+    
+    # Enhanced training callback with all improvements
+    enhanced_callback = EnhancedTrainingCallback(
+        curriculum_schedule=curriculum_schedule,
+        verbose=1
     )
     
+    # Adaptive entropy callback
+    entropy_callback = AdaptiveEntropyCallback(
+        total_timesteps=total_timesteps,
+        base_entropy=config.get("ent_coef", 0.005),
+        verbose=1
+    )
+
     # Recurrent checkpoint callback
     recurrent_checkpoint_callback = CheckpointCallback(
         save_freq=checkpoint_freq,
@@ -112,15 +254,14 @@ def setup_callbacks(config: dict) -> dict:
         verbose=0
     )
     
-    # Evaluation callback for the short-term agent
-    # It will save the best model found during evaluation
+    # Evaluation callback for the recurrent agent
     # Create a new HomeEnergyEnv instance for evaluation
     eval_env_config = {
         "battery_capacity": config.get("battery_capacity", 22.0),
         "simulation_days": config.get("simulation_days_eval", 3), # Potentially shorter for eval
         "peak_penalty_factor": config.get("peak_penalty_factor", 10.0),
         "use_price_predictions": config.get("use_price_predictions_eval", False),
-        "price_predictions_path": config.get("price_predictions_path", "data/processed/SE3prices.csv"), # Adjusted default
+        "price_predictions_path": config.get("price_predictions_path", "data/processed/SE3prices.csv"), 
         "fixed_baseload_kw": config.get("fixed_baseload_kw", 0.5),
         "time_step_minutes": config.get("time_step_minutes", 15),
         "use_variable_consumption": config.get("use_variable_consumption", False),
@@ -134,21 +275,10 @@ def setup_callbacks(config: dict) -> dict:
     eval_config = config.copy()
     eval_config.update(eval_env_config)
     
-    short_term_eval_env = Monitor(HomeEnergyEnv(config=eval_config))
     recurrent_eval_env = Monitor(HomeEnergyEnv(config=eval_config))
+    # Wrap with FlattenObservation for RecurrentPPO
+    recurrent_eval_env = FlattenObservation(recurrent_eval_env)
 
-    short_term_eval_callback = EvalCallback(
-        short_term_eval_env,
-        best_model_save_path=str(model_dir / "best_short_term_model"),
-        log_path=str(short_term_log_dir / "evaluations"),
-        eval_freq=eval_freq, 
-        n_eval_episodes=config.get("eval_episodes", 5),
-        deterministic=True,
-        render=False,
-        callback_on_new_best=None, 
-        callback_after_eval=None 
-    )
-    
     recurrent_eval_callback = EvalCallback(
         recurrent_eval_env,
         best_model_save_path=str(model_dir / "best_recurrent_model"),
@@ -161,47 +291,51 @@ def setup_callbacks(config: dict) -> dict:
         callback_after_eval=None 
     )
 
-    short_term_callbacks = [short_term_checkpoint_callback, short_term_eval_callback]
-    recurrent_callbacks = [recurrent_checkpoint_callback, recurrent_eval_callback]
-
-    return {
-        "short_term": short_term_callbacks,
-        "recurrent": recurrent_callbacks,
-    }
+    return [enhanced_callback, entropy_callback, recurrent_checkpoint_callback, recurrent_eval_callback]
 
 
 def create_environments(config: dict) -> HomeEnergyEnv:
     """
-    Create base environment for training the ShortTermAgent.
+    Create enhanced base environment for training.
     
     Args:
         config: Configuration dictionary
         
     Returns:
-        HomeEnergyEnv: The base environment for the short-term agent, wrapped in Monitor.
+        HomeEnergyEnv: The base environment, wrapped in Monitor.
     """
     env_config = {
         "battery_capacity": config.get("battery_capacity", 22.0),
         "simulation_days": config.get("simulation_days", 7),
         "peak_penalty_factor": config.get("peak_penalty_factor", 10.0),
         "use_price_predictions": config.get("use_price_predictions_train", True),
-        "price_predictions_path": config.get("price_predictions_path", "data/processed/SE3prices.csv"), # Adjusted default
+        "price_predictions_path": config.get("price_predictions_path", "data/processed/SE3prices.csv"),
         "fixed_baseload_kw": config.get("fixed_baseload_kw", 0.5),
         "time_step_minutes": config.get("time_step_minutes", 15),
         "use_variable_consumption": config.get("use_variable_consumption", False),
         "consumption_data_path": config.get("consumption_data_path", None),
-        "battery_degradation_cost_per_kwh": config.get("battery_degradation_cost_per_kwh", 45.0), # defaults to 45 if not value set in config
-        "debug_prints": True  # Enable debug prints for timestamp sanity checks
+        "battery_degradation_cost_per_kwh": config.get("battery_degradation_cost_per_kwh", 45.0),
+        "debug_prints": False,  # Reduce debug output during training
+        "log_level": "WARNING"  # Reduce log noise
     }
     
     # Merge with main config to ensure reward parameters are included
     full_config = config.copy()
     full_config.update(env_config)
     
-    base_env = HomeEnergyEnv(config=full_config)
-    base_env = Monitor(base_env) # Wrap in Monitor for logging
+    logger.info("Creating training environment with enhanced configuration...")
+    logger.info(f"Key parameters:")
+    logger.info(f"  - Simulation days: {full_config['simulation_days']}")
+    logger.info(f"  - Battery capacity: {full_config['battery_capacity']} kWh")
+    logger.info(f"  - Reward scaling: {full_config.get('reward_scaling_factor', 'default')}")
+    logger.info(f"  - SoC penalty factor: {full_config.get('soc_limit_penalty_factor', 'default')}")
     
-    return base_env
+    # Create environment
+    env = HomeEnergyEnv(config=full_config)
+    # Wrap with FlattenObservation for RecurrentPPO
+    env = FlattenObservation(env)
+    
+    return env
 
 
 def run_sanity_checks(env: HomeEnergyEnv, config: dict, num_steps: int = 100):
@@ -369,7 +503,7 @@ def run_sanity_checks(env: HomeEnergyEnv, config: dict, num_steps: int = 100):
         stats["is_night_discount"].append(info.get("is_night_discount", False))
         
         # Every 10 steps, log detailed information for that step
-        if i % 10 == 0:
+        if i % 100 == 0:
             logger.info(f"\nStep {i} - Time: {current_dt}")
             logger.info(f"  Price: {info.get('current_price', 0):.2f} öre/kWh")
             logger.info(f"  Grid Power: {info.get('grid_power_kw', 0):.2f} kW")
@@ -475,46 +609,182 @@ def run_sanity_checks(env: HomeEnergyEnv, config: dict, num_steps: int = 100):
     logger.info("="*80 + "\n")
 
 
+def train_recurrent_agent(config: dict, callbacks=None):
+    """
+    Train the recurrent agent for energy management with all improvements.
+    
+    Args:
+        config: Configuration dictionary
+        callbacks: Optional callbacks for training
+    """
+    print("Setting up enhanced recurrent agent training...")
+    
+    # Get hyperparameters with improved defaults
+    timesteps = config.get("short_term_timesteps", 500000)
+    
+    # Print key hyperparameters (to console, won't interrupt progress bar)
+    print(f"Model configuration:")
+    print(f"  - Total timesteps: {timesteps:,}")
+    print(f"  - Learning rate: {config.get('learning_rate', 3e-4)}")
+    print(f"  - Batch size: {config.get('batch_size', 64)}")
+    print(f"  - N steps: {config.get('n_steps', 2048)}")
+    print(f"  - Gamma: {config.get('gamma', 0.99)}")
+    
+    # Create and configure the environment
+    env = create_environments(config)
+    
+    # Create the agent
+    print(f"Creating enhanced recurrent agent...")
+    
+    # Check if we should load an existing model
+    model_path = None
+    if config.get("load_recurrent_model", False):
+        model_dir = config.get("model_dir", "src/rl/saved_models")
+        model_name = config.get("load_recurrent_model_name", "best_recurrent_model")
+        model_path = f"{model_dir}/{model_name}"
+        if not os.path.exists(model_path + ".zip"):
+            print(f"WARNING: Model {model_path}.zip not found, training new model")
+            model_path = None
+        else:
+            print(f"Loading pre-trained model from {model_path}")
+    
+    # Enhanced agent configuration with improved hyperparameters
+    enhanced_config = config.copy()
+    
+    # Apply improved hyperparameters if not already set
+    improved_defaults = {
+        'learning_rate': 2e-4,  # Slightly lower learning rate for stability
+        'n_steps': 4096,        # Larger rollout buffer
+        'batch_size': 128,      # Larger batch size
+        'gamma': 0.995,         # Slightly higher discount factor
+        'gae_lambda': 0.98,     # Higher GAE lambda
+        'ent_coef': 0.005,      # Balanced entropy
+        'n_epochs': 8,          # More training epochs per rollout
+    }
+    
+    for key, value in improved_defaults.items():
+        if key not in enhanced_config:
+            enhanced_config[key] = value
+    
+    # Create and train the agent
+    agent = RecurrentEnergyAgent(env=env, model_path=model_path, config=enhanced_config)
+    
+    # Start training with simple print message
+    print(f"Starting enhanced training for {timesteps:,} timesteps...")
+    print("Training features: Curriculum learning, Adaptive exploration, Reward analysis")
+    print("="*80)
+    
+    try:
+        agent.train(
+            total_timesteps=timesteps,
+            callback=callbacks
+        )
+        
+        # Save the final model with timestamp
+        model_dir = config.get("model_dir", "src/rl/saved_models")
+        os.makedirs(model_dir, exist_ok=True)
+        
+        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+        final_model_path = f"{model_dir}/final_recurrent_model_{timestamp}"
+        agent.save(final_model_path)
+        
+        print(f"\nTraining completed successfully!")
+        print(f"Final model saved to: {final_model_path}")
+        
+    except Exception as e:
+        print(f"Training failed with error: {e}")
+        logger.error(f"Training failed with error: {e}")
+        raise
+    
+    finally:
+        env.close()
+    
+    return agent
+
+
+def test_agent(agent, config: dict):
+    """
+    Test a trained agent on a new episode.
+    
+    Args:
+        agent: The trained agent
+        config: Configuration dictionary
+    """
+    print("Testing trained agent...")
+    
+    # Create a test environment
+    test_config = config.copy()
+    test_config.update({
+        "simulation_days": config.get("test_simulation_days", 7),
+        "log_level": "INFO"
+    })
+    
+    # Create test environment
+    env = HomeEnergyEnv(config=test_config)
+    # For recurrent agents, we need to use the FlattenObservation wrapper
+    env = FlattenObservation(env)
+    
+    # Run a test episode
+    obs, info = env.reset()
+    done = False
+    total_reward = 0
+    episode_steps = 0
+    
+    # For recurrent agents, we need to track state
+    lstm_state = None
+    episode_start = True
+    
+    while not done:
+        action, lstm_state = agent.predict(
+            obs, 
+            state=lstm_state,
+            episode_start=episode_start,
+            deterministic=True
+        )
+        episode_start = False
+        
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        total_reward += reward
+        episode_steps += 1
+        
+        if episode_steps % 100 == 0:
+            print(f"Step {episode_steps}, Current reward: {reward:.2f}, Total reward: {total_reward:.2f}")
+    
+    print(f"Test completed: {episode_steps} steps, Total reward: {total_reward:.2f}")
+    
+    return total_reward
+
+
+
+
+
 def main():
-    """
-    Main entry point for the training script.
-    """
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Train RL agents for home energy management')
-    parser.add_argument('--load-model', type=str, help='Path to load a pre-trained model')
-    parser.add_argument('--test-only', action='store_true', help='Only test the model, no training')
-    parser.add_argument('--timesteps', type=int, help='Override number of timesteps to train')
-    parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
-    parser.add_argument('--recurrent', action='store_true', help='Use RecurrentPPO agent instead of standard PPO')
+    """Main entry point for training."""
     
-    # Add date range options
-    parser.add_argument('--start-date', type=str, help='Start date for training data (format: YYYY-MM-DD)')
-    parser.add_argument('--end-date', type=str, help='End date for training data (format: YYYY-MM-DD)')
-    
-    # Add sanity check options
-    parser.add_argument('--skip-sanity-check', action='store_true', help='Skip sanity checks before training')
-    parser.add_argument('--sanity-check-only', action='store_true', help='Only run sanity checks, then exit')
-    parser.add_argument('--sanity-check-steps', type=int, default=100, help='Number of steps to check during sanity check')
-    
-    # Add data augmentation option
-    parser.add_argument('--augment-data', action='store_true', help='Enable data augmentation for solar and consumption data')
+    # Command line arguments
+    parser = argparse.ArgumentParser(description="Train an RL agent for home energy management")
+    parser.add_argument("--test-only", action="store_true", help="Only run testing, no training")
+    parser.add_argument("--config", type=str, help="Path to config file")
+    parser.add_argument("--skip-sanity-check", action="store_true", help="Skip sanity checks")
+    parser.add_argument("--sanity-check-only", action="store_true", help="Only run sanity checks, then exit")
+    parser.add_argument("--sanity-check-steps", type=int, default=100, help="Number of steps to run for sanity checks")
+    parser.add_argument("--start-date", type=str, help="Start date for training data (format: YYYY-MM-DD)")
+    parser.add_argument("--end-date", type=str, help="End date for training data (format: YYYY-MM-DD)")
+    parser.add_argument("--total-timesteps", type=int, help="Override total timesteps for training")
     
     args = parser.parse_args()
     
-    # Load configuration
-    config = rl_config.get_config_dict()
-    
-    # Update config with command-line arguments
-    if args.load_model:
-        config['load_model'] = True
-        config['load_model_path'] = args.load_model
-    
-    if args.timesteps:
-        config['short_term_timesteps'] = args.timesteps
-    
-    if args.seed:
-        config['seed'] = args.seed
-    
+    # Load configuration, with priority order:
+    # 1. CLI config path
+    # 2. Default config from config.py
+    if args.config:
+        with open(args.config, 'r') as f:
+            config = json.load(f)
+    else:
+        # Use our standard configuration
+        config = rl_config.get_config_dict()
+
     # Process date range if specified
     if args.start_date and args.end_date:
         try:
@@ -532,29 +802,14 @@ def main():
             print(f"Error processing date range: {e}")
             print("Please use format YYYY-MM-DD (e.g., 2023-06-01)")
             sys.exit(1)
-    
-    # Set data augmentation
-    if args.augment_data:
-        print("Enabling data augmentation for solar and consumption")
-        config["use_data_augmentation"] = True
-        config["augment_solar_data"] = True
-        config["augment_consumption_data"] = True
-    
-    # Set up logging
-    log_dir = Path(config.get("log_dir", "src/rl/logs"))
-    log_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"short_term_{timestamp}.log"
-    
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(levelname)s: %(asctime)s: %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
-    )
+            
+    # Override timesteps if specified
+    if args.total_timesteps:
+        config["short_term_timesteps"] = args.total_timesteps
+        print(f"Using {args.total_timesteps} timesteps for training")
+
+    # Print configuration overview
+    print(f"\n{'='*80}\nStarting training with configuration\n{'='*80}")
     
     # Log key configuration parameters
     for key, value in config.items():
@@ -583,12 +838,7 @@ def main():
     callbacks = setup_callbacks(config)
     
     # Train or test based on arguments
-    if args.recurrent:
-        # Train with RecurrentPPO
-        agent = train_recurrent_agent(config)
-    else:
-        # Train with standard PPO
-        agent = train_short_term_agent(config)
+    agent = train_recurrent_agent(config, callbacks)
     
     # Test the agent
     if not args.test_only:
@@ -597,161 +847,6 @@ def main():
     return agent
 
 
-def train_recurrent_agent(config: dict):
-    """
-    Train the recurrent agent for short-term control.
-    
-    Args:
-        config: Configuration dictionary
-    """
-    print("Setting up recurrent agent training...")
-    
-    # Get hyperparameters
-    timesteps = config.get("short_term_timesteps", 50000)
-    
-    # Create and configure the environment
-    env = HomeEnergyEnv(config=config)
-    
-    # Set up callbacks
-    callbacks = setup_callbacks(config)
-    
-    # Create the agent
-    print(f"Creating recurrent agent...")
-    
-    # Check if we should load an existing model
-    model_path = None
-    if config.get("load_recurrent_model", False):
-        model_dir = config.get("model_dir", "src/rl/saved_models")
-        model_name = config.get("load_recurrent_model_name", "best_recurrent_model")
-        model_path = f"{model_dir}/{model_name}"
-        if not os.path.exists(model_path + ".zip"):
-            print(f"WARNING: Model {model_path}.zip not found, training new model")
-            model_path = None
-    
-    # Create and train the agent
-    agent = RecurrentEnergyAgent(env=env, model_path=model_path, config=config)
-    
-    # Start training
-    print(f"Starting recurrent agent training for {timesteps} timesteps")
-    agent.train(
-        total_timesteps=timesteps,
-        callback=callbacks.get("recurrent_callbacks", None)
-    )
-    
-    # Save the final model
-    model_dir = config.get("model_dir", "src/rl/saved_models")
-    os.makedirs(model_dir, exist_ok=True)
-    
-    # Save the final model
-    final_model_path = f"{model_dir}/final_recurrent_model"
-    agent.save(final_model_path)
-    
-    return agent
-
-
-def test_agent(agent, config: dict):
-    """
-    Test a trained agent on a new episode.
-    
-    Args:
-        agent: The trained agent
-        config: Configuration dictionary
-    """
-    print("Testing trained agent...")
-    
-    # Create a test environment
-    test_config = config.copy()
-    test_config.update({
-        "simulation_days": config.get("test_simulation_days", 7),
-        "log_level": "INFO"
-    })
-    
-    # Create test environment
-    if isinstance(agent, RecurrentEnergyAgent):
-        # For recurrent agents, we need to use the same wrapper
-        env = HomeEnergyEnv(config=test_config)
-        if isinstance(env.observation_space, gym.spaces.Dict):
-            env = FlattenObservation(env)
-    else:
-        # For standard agents
-        env = HomeEnergyEnv(config=test_config)
-    
-    # Run a test episode
-    obs, info = env.reset()
-    done = False
-    total_reward = 0
-    episode_steps = 0
-    
-    while not done:
-        if isinstance(agent, RecurrentEnergyAgent):
-            action, _ = agent.predict(obs, deterministic=True)
-        else:
-            action, _ = agent.predict(obs, deterministic=True)
-        
-        obs, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
-        total_reward += reward
-        episode_steps += 1
-        
-        if episode_steps % 100 == 0:
-            print(f"Step {episode_steps}, Current reward: {reward:.2f}, Total reward: {total_reward:.2f}")
-    
-    print(f"Test completed: {episode_steps} steps, Total reward: {total_reward:.2f}")
-    
-    return total_reward
-
-
-def train_short_term_agent(config: dict):
-    """
-    Train the short term agent for home energy management.
-    
-    Args:
-        config: Configuration dictionary
-        
-    Returns:
-        ShortTermAgent: The trained agent
-    """
-    print("Setting up short term agent training...")
-    
-    # Get hyperparameters
-    timesteps = config.get("short_term_timesteps", 100000)
-    
-    # Create and configure the environment
-    env = create_environments(config)
-    
-    # Set up callbacks
-    callbacks = setup_callbacks(config)
-    
-    # Create the agent
-    print(f"Creating short term agent...")
-    
-    # Check if we should load an existing model
-    model_path = None
-    if config.get("load_model", False):
-        model_path = config.get("load_model_path", None)
-        if model_path and not os.path.exists(model_path):
-            print(f"WARNING: Model {model_path} not found, training new model")
-            model_path = None
-    
-    # Create and train the agent
-    agent = ShortTermAgent(env=env, model_path=model_path, config=config)
-    
-    # Start training
-    print(f"Starting short term agent training for {timesteps} timesteps")
-    agent.train(
-        total_timesteps=timesteps,
-        callback=callbacks.get("short_term", None)
-    )
-    
-    # Save the final model
-    model_dir = config.get("model_dir", "src/rl/saved_models")
-    os.makedirs(model_dir, exist_ok=True)
-    
-    # Save the final model
-    final_model_path = f"{model_dir}/short_term_agent_final"
-    agent.save(final_model_path)
-    
-    return agent
 
 
 if __name__ == "__main__":

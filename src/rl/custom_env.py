@@ -20,6 +20,7 @@ import time # Added for profiling
 import sys # Added for sys.exit
 
 from src.rl.components import Battery
+from src.rl.safety_buffer import ensure_soc_limits  # Import the safety buffer function
 
 # Get a logger without re-configuring basicConfig
 logger = logging.getLogger("home_energy_env")
@@ -295,8 +296,8 @@ def total_reward(components: Dict[str, float], weights: Dict[str, float]) -> flo
         total += weights['w_export'] * components['export_bonus']
     
     # Morning SoC target reward (new)
-    if 'morning_soc_reward' in components and 'w_morning' in weights:
-        total += weights['w_morning'] * components['morning_soc_reward']
+    if 'solar_soc_reward' in components and 'w_solar' in weights:
+        total += weights['w_solar'] * components['solar_soc_reward']
     
     # Night-to-peak chain bonus (new)
     if 'night_peak_chain_bonus' in components and 'w_chain' in weights:
@@ -309,6 +310,58 @@ def total_reward(components: Dict[str, float], weights: Dict[str, float]) -> flo
     
     return total
 
+def adaptive_soc_targets(current_hour: int, price_forecast: List[float], solar_forecast: List[float], 
+                        base_min: float, base_max: float) -> Tuple[float, float]:
+    """
+    Dynamically adjusts preferred SoC range based on price and solar forecasts.
+    
+    Args:
+        current_hour: Current hour of day (0-23)
+        price_forecast: Next 24h price forecast
+        solar_forecast: Next 24h solar forecast
+        base_min: Base minimum preferred SoC
+        base_max: Base maximum preferred SoC
+        
+    Returns:
+        Tuple[float, float]: Adjusted (min_pref, max_pref) SoC targets
+    """
+    # Calculate price percentiles for next 24 hours
+    if len(price_forecast) >= 24:
+        next_24h_prices = price_forecast[:24]
+        price_25th = np.percentile(next_24h_prices, 25)
+        price_75th = np.percentile(next_24h_prices, 75)
+        current_price = price_forecast[0] if len(price_forecast) > 0 else price_25th
+    else:
+        # Fallback if insufficient data
+        return base_min, base_max
+    
+    # Calculate expected solar for next 12 hours
+    next_12h_solar = sum(solar_forecast[:12]) if len(solar_forecast) >= 12 else 0
+    
+    # Adjust targets based on time of day and forecasts
+    adjusted_min = base_min
+    adjusted_max = base_max
+    
+    # Night hours (22:00-06:00) - prepare for next day
+    if current_hour >= 22 or current_hour <= 6:
+        if current_price <= price_25th:  # Very low prices
+            adjusted_min = max(0.15, base_min - 0.1)  # Allow lower SoC to charge more
+            adjusted_max = min(0.85, base_max + 0.1)  # Encourage charging
+        elif next_12h_solar > 3.0:  # Significant solar expected
+            adjusted_max = min(0.7, base_max - 0.05)  # Leave room for solar
+    
+    # Morning hours (06:00-10:00) - prepare for solar
+    elif 6 <= current_hour <= 10:
+        if next_12h_solar > 2.0:  # Solar expected
+            adjusted_max = min(0.7, base_max - 0.1)  # Make room for solar charging
+    
+    # Peak hours (16:00-20:00) - prepare for high prices
+    elif 16 <= current_hour <= 20:
+        if current_price >= price_75th:  # High prices
+            adjusted_min = max(0.3, base_min + 0.1)  # Encourage higher SoC for discharge
+    
+    return adjusted_min, adjusted_max
+
 class HomeEnergyEnv(gym.Env):
     """
     Simplified environment for controlling a home battery system
@@ -318,7 +371,7 @@ class HomeEnergyEnv(gym.Env):
     - Battery state of charge
     - Time index (hour of day, minute of hour, day of week)
     - Price forecast for next 24 hours (from historical data)
-    - Solar forecast for the next 4 days (from solar data)
+    - Solar forecast for the next 3 days (from solar data)
     - Capacity metrics
     - Price averages
     - Is night discount flag
@@ -359,6 +412,11 @@ class HomeEnergyEnv(gym.Env):
         # Counter for consecutive invalid actions
         self.consecutive_invalid_actions = 0
         self.max_consecutive_penalty_multiplier = self.config.get("max_consecutive_penalty_multiplier", 5.0)
+        
+        # SoC violation tracking with memory
+        self.soc_violation_memory = 0.0  # Tracks cumulative violation severity
+        self.soc_violation_memory_factor = self.config.get("soc_violation_memory_factor", 0.95)
+        self.soc_violation_escalation_factor = self.config.get("soc_violation_escalation_factor", 1.5)
         
         # Variables for night charge tracking
         self.night_charge_pool = 0.0  # Energy charged during night hours (kWh)
@@ -485,8 +543,8 @@ class HomeEnergyEnv(gym.Env):
             "price_forecast": spaces.Box(
                 low=0.0, high=10.0, shape=(24,), dtype=np.float32 # Placeholder range, actual range depends on data
             ),
-            "solar_forecast": spaces.Box( # 4 days * 24 hours
-                low=0.0, high=10.0, shape=(4 * 24,), dtype=np.float32 # Placeholder high, actual solar capacity
+            "solar_forecast": spaces.Box( # 3 days * 24 hours
+                low=0.0, high=10.0, shape=(3 * 24,), dtype=np.float32 # Placeholder high, actual solar capacity
             ),
             "capacity_metrics": spaces.Box(  # New metrics for capacity tariff
                 low=0.0, 
@@ -498,8 +556,8 @@ class HomeEnergyEnv(gym.Env):
                 low=0.0, high=1000.0, shape=(2,), dtype=np.float32  # [24h_avg, 168h_avg]
             ),
             "is_night_discount": spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            "load_forecast": spaces.Box( # 4 days * 24 hours for household consumption
-                low=0.0, high=20.0, shape=(4 * 24,), dtype=np.float32 # Placeholder high, adjust with actual data
+            "load_forecast": spaces.Box( # 3 days * 24 hours for household consumption
+                low=0.0, high=20.0, shape=(3 * 24,), dtype=np.float32 # Placeholder high, adjust with actual data
             )
         })
         
@@ -562,9 +620,9 @@ class HomeEnergyEnv(gym.Env):
                     if pd.notna(max_solar_val) and max_solar_val > 0:
                         self.observation_space.spaces['solar_forecast'] = spaces.Box(
                             low=0.0, high=float(max_solar_val * 1.1), # Add 10% buffer
-                            shape=(4*24,), dtype=np.float32
+                            shape=(3*24,), dtype=np.float32 # Ensure shape is 72 here too
                         )
-                        logger.info(f"Adjusted solar_forecast observation space high to: {max_solar_val * 1.1:.2f} kW")
+                        logger.info(f"Adjusted solar_forecast observation space high to: {max_solar_val * 1.1:.2f} kW for 72 hours")
 
         # Adjust observation space for load_forecast high value if using variable consumption
         if self.use_variable_consumption and self.all_consumption_data_kw is not None and not self.all_consumption_data_kw.empty:
@@ -576,9 +634,9 @@ class HomeEnergyEnv(gym.Env):
                 if pd.notna(max_load_val) and max_load_val > 0:
                     self.observation_space.spaces['load_forecast'] = spaces.Box(
                         low=0.0, high=float(max_load_val * 1.2), # Add 20% buffer for load, can be more variable
-                        shape=(4*24,), dtype=np.float32
+                        shape=(3*24,), dtype=np.float32
                     )
-                    logger.info(f"Adjusted load_forecast observation space high to: {max_load_val * 1.2:.2f} kW")
+                    logger.info(f"Adjusted load_forecast observation space high to: {max_load_val * 1.2:.2f} kW for 72 hours")
 
 
         logger.info("{:-^80}".format(" Environment Initialized "))
@@ -692,6 +750,7 @@ class HomeEnergyEnv(gym.Env):
         
         self.current_step = 0
         self.consecutive_invalid_actions = 0  # Reset consecutive invalid actions counter
+        self.soc_violation_memory = 0.0  # Reset SoC violation memory
 
         # Log effective data ranges for all sources
         logger.info("--- DATA RANGE SUMMARY ---")
@@ -929,6 +988,18 @@ class HomeEnergyEnv(gym.Env):
             time_step_hours=self.time_step_hours
         )
         
+        # Additional safety check using our safety buffer
+        safe_action = ensure_soc_limits(
+            soc=self.battery.soc,
+            action=safe_action,
+            min_soc=soc_min_limit,
+            max_soc=soc_max_limit,
+            max_charge_power_kw=self.battery_max_charge_power_kw,
+            max_discharge_power_kw=self.battery_max_discharge_power_kw,
+            capacity_kwh=self.battery_capacity,
+            time_step_hours=self.time_step_hours
+        )
+        
         # Record if action was modified
         action_modified = (original_action != safe_action)
         if action_modified and self.debug_prints:
@@ -956,7 +1027,9 @@ class HomeEnergyEnv(gym.Env):
         # Apply action to battery
         actual_battery_power_kw_at_terminals, energy_change_in_storage_kwh, limited_by_soc = self.battery.step(
             target_power_kw=target_battery_terminal_power_kw,
-            duration_hours=self.time_step_hours
+            duration_hours=self.time_step_hours,
+            min_soc=soc_min_limit,
+            max_soc=soc_max_limit
         )
         
         # Get the SoC after action
@@ -996,17 +1069,8 @@ class HomeEnergyEnv(gym.Env):
             night_capacity_discount = self.config.get("night_capacity_discount", 0.5)
             effective_grid_power = grid_power_kw * (night_capacity_discount if is_night else 1.0)
             
-            # Record this power peak with its timestamp for capacity fee calculation
-            self.current_month_peak_data.append((current_dt, effective_grid_power))
-            
-            # Update top3_peaks list
-            if effective_grid_power > min(self.top3_peaks) or 0.0 in self.top3_peaks:
-                self.top3_peaks[self.top3_peaks.index(min(self.top3_peaks))] = effective_grid_power
-                self.top3_peaks.sort(reverse=True)
-                
-                # Calculate rolling average of top 3 peaks (or fewer if we don't have 3 yet)
-                non_zero_peaks = [p for p in self.top3_peaks if p > 0]
-                self.peak_rolling_average = sum(non_zero_peaks) / len(non_zero_peaks) if non_zero_peaks else 0.0
+            # Use the new method that enforces same-day constraint (Swedish regulation)
+            self._update_capacity_peaks_with_same_day_constraint(current_dt, effective_grid_power)
                 
             # Also track overall peak power for the episode
             if grid_power_kw > self.peak_power:
@@ -1031,9 +1095,34 @@ class HomeEnergyEnv(gym.Env):
                         f"Consumption: {current_consumption_kw:.2f} kW, "
                         f"Solar: {current_solar_kw:.2f} kW")
         
-        # Get SoC parameters
-        preferred_soc_min = self.config.get("preferred_soc_min_base", 0.3)
-        preferred_soc_max = self.config.get("preferred_soc_max_base", 0.7)
+        # Get base SoC parameters and adapt them based on forecasts
+        base_preferred_soc_min = self.config.get("preferred_soc_min_base", 0.25)
+        base_preferred_soc_max = self.config.get("preferred_soc_max_base", 0.75)
+        
+        # Get price and solar forecasts for adaptive SoC management
+        price_forecast = []
+        solar_forecast = []
+        
+        # Extract price forecast for next 24 hours (hourly)
+        remaining_steps = len(self.price_forecast_observed) - self.current_step
+        if remaining_steps > 0:
+            price_forecast = self.price_forecast_observed[self.current_step][:24]  # Next 24h hourly prices
+        
+        # Extract solar forecast for next 24 hours (hourly)
+        if hasattr(self, 'solar_forecast_observed') and self.solar_forecast_observed is not None:
+            remaining_solar_steps = len(self.solar_forecast_observed) - self.current_step
+            if remaining_solar_steps > 0:
+                solar_forecast = self.solar_forecast_observed[self.current_step][:24]  # Next 24h hourly solar
+        
+        # Apply adaptive SoC targeting
+        preferred_soc_min, preferred_soc_max = adaptive_soc_targets(
+            current_hour=current_hour,
+            price_forecast=price_forecast,
+            solar_forecast=solar_forecast,
+            base_min=base_preferred_soc_min,
+            base_max=base_preferred_soc_max
+        )
+        
         soc_limit_penalty_factor = self.config.get("soc_limit_penalty_factor", 100.0)
         preferred_soc_reward_factor = self.config.get("preferred_soc_reward_factor", 20.0)
         
@@ -1085,14 +1174,29 @@ class HomeEnergyEnv(gym.Env):
         
         reward_components['degradation_cost'] = degradation_cost
         
-        # Unified SoC reward component
+        # Update SoC violation memory (decay previous violations, add current ones)
+        self.soc_violation_memory *= self.soc_violation_memory_factor
+        
+        # Check for current SoC violations and add to memory
+        current_violation_severity = 0.0
+        if soc_after < soc_min_limit:
+            current_violation_severity = (soc_min_limit - soc_after) * 10.0  # Amplify violation
+        elif soc_after > soc_max_limit:
+            current_violation_severity = (soc_after - soc_max_limit) * 15.0  # Higher penalty for over-charging
+        
+        self.soc_violation_memory += current_violation_severity
+        
+        # Calculate escalated penalty factor based on violation memory
+        violation_escalation = 1.0 + (self.soc_violation_memory * self.soc_violation_escalation_factor)
+        
+        # Unified SoC reward component with violation memory
         soc_rew = soc_reward(
             soc=soc_after, 
             min_soc=soc_min_limit,
             low_pref=preferred_soc_min,
             high_pref=preferred_soc_max,
             max_soc=soc_max_limit,
-            soc_limit_penalty_factor=soc_limit_penalty_factor,
+            soc_limit_penalty_factor=soc_limit_penalty_factor * violation_escalation,  # Apply escalation
             preferred_soc_reward_factor=preferred_soc_reward_factor
         )
         reward_components['soc_reward'] = soc_rew
@@ -1127,8 +1231,8 @@ class HomeEnergyEnv(gym.Env):
         # Arbitrage bonus component
         arbitrage_bonus = 0.0
         if self.enable_explicit_arbitrage_reward:
-            charge_at_low_price_reward_factor = self.config.get("charge_at_low_price_reward_factor", 10.0)
-            discharge_at_high_price_reward_factor = self.config.get("discharge_at_high_price_reward_factor", 20.0)
+            charge_at_low_price_reward_factor = self.config.get("charge_at_low_price_reward_factor", 1.0)
+            discharge_at_high_price_reward_factor = self.config.get("discharge_at_high_price_reward_factor", 2.0)
             
             # Charging at low prices
             if actual_battery_power_kw_at_terminals < 0 and current_price_ore_per_kwh < self.low_price_threshold_actual:
@@ -1147,47 +1251,38 @@ class HomeEnergyEnv(gym.Env):
             battery_charging_power = abs(actual_battery_power_kw_at_terminals)
         reward_components['battery_charging_power'] = battery_charging_power
         
-        # Morning SoC target reward (empty for solar)
-        morning_soc_reward = 0.0
-        if self.config.get("enable_morning_soc_target", False):
-            current_hour = current_dt.hour
+        # Solar-aware SoC management reward (replaces morning emptying)
+        solar_soc_reward = 0.0
+        if self.use_solar_predictions and hasattr(self, 'solar_forecast_observed') and self.current_step < len(self.solar_forecast_observed):
+            solar_fc = self.solar_forecast_observed[self.current_step]
             
-            # Define morning window from config
-            morning_hours_start = self.config.get("morning_hours_start", 5)
-            morning_hours_end = self.config.get("morning_hours_end", 8)
-            is_morning_window = morning_hours_start <= current_hour < morning_hours_end
+            # Look ahead for significant solar production in next 6-12 hours
+            next_6h_solar = sum(solar_fc[:24]) if solar_fc is not None else 0.0  # Next 6 hours (24 * 15min steps)
+            next_12h_solar = sum(solar_fc[:48]) if solar_fc is not None else 0.0  # Next 12 hours
             
-            # Get expected solar production for the day
-            solar_fc = None
-            if self.use_solar_predictions and hasattr(self, 'solar_forecast_observed') and self.current_step < len(self.solar_forecast_observed):
-                solar_fc = self.solar_forecast_observed[self.current_step]
+            solar_threshold = self.config.get("morning_solar_threshold_kwh", 2.0)
+            has_significant_solar_coming = next_6h_solar > solar_threshold
             
-            # Check if significant solar production is expected for the coming day
-            next_day_solar_forecast_kwh = 0.0
-            if solar_fc is not None:
-                # Sum up expected solar production for the next day (first 24 hours)
-                next_day_solar_forecast_kwh = sum(solar_fc[:24])
-            
-            has_significant_solar = next_day_solar_forecast_kwh > self.config.get("morning_solar_threshold_kwh", 2.0)
-            
-            if is_morning_window and has_significant_solar:
-                # Reward lower SoC in morning before solar production
-                # The closer to min_soc, the better
-                soc_min_limit = self.config.get("soc_min_limit", 0.2)
-                morning_target_soc = self.config.get("morning_target_soc", 0.25)  # Just above minimum
+            # If significant solar is coming AND battery is quite full, reward discharge
+            if has_significant_solar_coming and soc_after > 0.6:
+                # Calculate how much room we need for solar charging
+                max_solar_input_kwh = next_6h_solar * 0.8  # Assume 80% will be available for battery
+                current_storage_kwh = soc_after * self.battery_capacity
+                max_storage_kwh = soc_max_limit * self.battery_capacity
+                available_space_kwh = max_storage_kwh - current_storage_kwh
                 
-                # Calculate how far we are from the target morning SoC
-                morning_soc_deviation = max(0, soc_after - morning_target_soc)
-                
-                # Apply reward - negative for being above target, zero for being at or below target
-                morning_soc_reward_factor = self.config.get("morning_soc_reward_factor", 5.0)
-                morning_soc_reward = -morning_soc_deviation * morning_soc_reward_factor
-                
-                if self.debug_prints and (self.current_step % 20 == 0):
-                    logger.debug(f"Morning SoC reward: {morning_soc_reward:.2f} (target: {morning_target_soc:.2f}, " +
-                                f"actual: {soc_after:.2f}, deviation: {morning_soc_deviation:.2f})")
+                # If we don't have enough space for the incoming solar, reward discharge
+                if available_space_kwh < max_solar_input_kwh * 0.5:  # Need at least 50% capacity for solar
+                    # Reward discharging (positive battery power) when space is needed
+                    if actual_battery_power_kw_at_terminals > 0:
+                        energy_discharged_kwh = actual_battery_power_kw_at_terminals * self.time_step_hours
+                        solar_soc_reward = energy_discharged_kwh * 1.0  # Moderate reward for making space
+                        
+                        if self.debug_prints and solar_soc_reward > 0.1:
+                            logger.debug(f"Solar-aware discharge: +{solar_soc_reward:.2f} reward for making space " +
+                                        f"(next 6h solar: {next_6h_solar:.1f} kWh, available space: {available_space_kwh:.1f} kWh)")
             
-        reward_components['morning_soc_reward'] = morning_soc_reward
+        reward_components['solar_soc_reward'] = solar_soc_reward
         
         # Night-to-peak chain bonus
         night_peak_chain_bonus = 0.0
@@ -1218,7 +1313,7 @@ class HomeEnergyEnv(gym.Env):
                     usable_night_energy = min(energy_discharged_kwh, self.night_charge_pool)
                     
                     # Apply the chain bonus - higher than regular arbitrage
-                    night_to_peak_bonus_factor = self.config.get("night_to_peak_bonus_factor", 15.0)
+                    night_to_peak_bonus_factor = self.config.get("night_to_peak_bonus_factor", 2.0)
                     night_peak_chain_bonus = usable_night_energy * night_to_peak_bonus_factor
                     
                     # Deplete the night charge pool
@@ -1262,7 +1357,7 @@ class HomeEnergyEnv(gym.Env):
             'w_arbitrage': self.config.get("w_arbitrage", 1.0),
             'w_export': self.config.get("w_export", 0.2),
             'w_action_mod': self.config.get("w_action_mod", 3.0),
-            'w_morning': self.config.get("w_morning", 1.0),
+            'w_solar': self.config.get("w_solar", 1.0),
             'w_chain': self.config.get("w_chain", 1.0)
         }
         
@@ -1286,7 +1381,7 @@ class HomeEnergyEnv(gym.Env):
         
         # The night_charging_reward for logging should be the raw incentive, not the weighted one.
         # The weights are applied in total_reward.
-        raw_night_charging_incentive = reward_components['night_discount'] * reward_components['battery_charging_power']
+        raw_night_charging_incentive = reward_components['night_discount'] * reward_components['battery_charging_power'] * self.config.get("night_charging_scaling_factor", 1.0)
         
         # Apply overall reward scaling factor if configured
         reward_scaling_factor = self.config.get("reward_scaling_factor", 0.1)
@@ -1320,7 +1415,7 @@ class HomeEnergyEnv(gym.Env):
             'reward_export_bonus': reward_components['export_bonus'],
             'reward_night_charging': raw_night_charging_incentive,  # Storing the raw incentive here
             'reward_action_mod_penalty': -reward_components['action_mod_penalty'],
-            'reward_morning_soc': reward_components['morning_soc_reward'],
+            'reward_solar_soc': reward_components['solar_soc_reward'],
             'reward_night_peak_chain': reward_components['night_peak_chain_bonus'],
             'battery_charging_power': reward_components['battery_charging_power'],
             'night_charge_pool': self.night_charge_pool
@@ -1355,6 +1450,7 @@ class HomeEnergyEnv(gym.Env):
         info["is_night_discount"] = is_night
         info["reward_components"] = formatted_reward_components
         info["total_reward_episode"] = self.total_reward
+        info["soc"] = self.battery.soc  # Add current battery SoC to info dictionary
         
         # For compatibility with evaluate_agent.py
         info.update(formatted_reward_components)
@@ -1527,7 +1623,7 @@ class HomeEnergyEnv(gym.Env):
         if not self.use_solar_predictions or self.all_solar_data_hourly_kw is None or self.all_solar_data_hourly_kw.empty:
             logger.warning("Solar predictions disabled or no solar data loaded. Solar production will be zero.")
             self.solar_forecast_actual = np.zeros(num_steps)
-            self.solar_forecast_observed = np.zeros((num_steps, 4 * 24)) # 4 days * 24 hours
+            self.solar_forecast_observed = np.zeros((num_steps, 3 * 24)) # 3 days * 24 hours
             return
 
         # 1. Initialize solar_forecast_actual (solar production at simulation step frequency)
@@ -1547,15 +1643,15 @@ class HomeEnergyEnv(gym.Env):
              self.solar_forecast_actual = np.pad(self.solar_forecast_actual, (0, num_steps - len(self.solar_forecast_actual)), 'constant')
 
 
-        # 2. Initialize solar_forecast_observed (4-day hourly forecast for the agent)
-        # Each row `i` in solar_forecast_observed contains 96 hourly values for the 4 days
+        # 2. Initialize solar_forecast_observed (3-day hourly forecast for the agent)
+        # Each row `i` in solar_forecast_observed contains 72 hourly values for the 3 days
         # starting from the hour of sim_timestamps[i].
-        self.solar_forecast_observed = np.zeros((num_steps, 4 * 24))
+        self.solar_forecast_observed = np.zeros((num_steps, 3 * 24)) # 3 days * 24 hours
         
         for i in range(num_steps):
             forecast_start_time = sim_timestamps[i]
-            # Create 96 hourly timestamps for the forecast
-            hourly_forecast_timestamps = pd.date_range(start=forecast_start_time, periods=(4 * 24), freq='h')
+            # Create 72 hourly timestamps for the forecast
+            hourly_forecast_timestamps = pd.date_range(start=forecast_start_time, periods=(3 * 24), freq='h') # 3 days * 24 hours
             
             # Reindex the original hourly solar data to these forecast timestamps
             observed_forecast_series = self.all_solar_data_hourly_kw['solar_production_kw'].reindex(
@@ -1590,13 +1686,13 @@ class HomeEnergyEnv(gym.Env):
             logger.warning("Variable consumption disabled or no consumption data loaded. Load forecast will be fixed baseload or zeros.")
             # self.episode_consumption_kw is already set to fixed_baseload_kw in reset() if not use_variable_consumption
             # So, load_forecast_observed should reflect this.
-            self.load_forecast_observed = np.full((num_steps, 4 * 24), self.fixed_baseload_kw, dtype=np.float32)
+            self.load_forecast_observed = np.full((num_steps, 3 * 24), self.fixed_baseload_kw, dtype=np.float32)
             return
 
         # self.episode_consumption_kw already contains the actual load for each simulation step (potentially augmented)
         # We need to generate the 4-day *hourly* forecast for the agent observation
         
-        self.load_forecast_observed = np.zeros((num_steps, 4 * 24)) # 4 days * 24 hours
+        self.load_forecast_observed = np.zeros((num_steps, 3 * 24)) # 3 days * 24 hours
         
         # The source for the forecast is self.all_consumption_data_kw, which is at self.time_step_minutes frequency.
         # For an hourly forecast, we need to ensure we're sampling/aggregating this correctly to hourly points.
@@ -1611,7 +1707,7 @@ class HomeEnergyEnv(gym.Env):
         for i in range(num_steps):
             forecast_start_time = sim_timestamps[i] # This is the start time of the current simulation step
             # Create 96 hourly timestamps for the forecast starting from forecast_start_time
-            hourly_forecast_timestamps = pd.date_range(start=forecast_start_time, periods=(4 * 24), freq='h')
+            hourly_forecast_timestamps = pd.date_range(start=forecast_start_time, periods=(3 * 24), freq='h')
             
             # Reindex the hourly consumption data to these forecast timestamps
             # Use ffill to carry last known value if forecast extends beyond data
@@ -1652,7 +1748,7 @@ class HomeEnergyEnv(gym.Env):
         current_step_idx = min(self.current_step, self.price_forecast_observed.shape[0] - 1)
         price_fc = self.price_forecast_observed[current_step_idx, :]
 
-        solar_fc = np.zeros(4 * 24) # Default to zeros
+        solar_fc = np.zeros(3 * 24) # Default to zeros, CHANGED to 72 hours
         if self.use_solar_predictions and self.solar_forecast_observed is not None:
             current_solar_step_idx = min(self.current_step, self.solar_forecast_observed.shape[0] - 1)
             if current_solar_step_idx < self.solar_forecast_observed.shape[0]:
@@ -1660,7 +1756,7 @@ class HomeEnergyEnv(gym.Env):
             else:
                  logger.warning(f"Current step {self.current_step} is out of bounds for solar_forecast_observed shape {self.solar_forecast_observed.shape}. Using zeros.")
 
-        load_fc = np.zeros(4 * 24) # Default to zeros
+        load_fc = np.zeros(3 * 24) # Default to zeros
         if self.use_variable_consumption and hasattr(self, 'load_forecast_observed') and self.load_forecast_observed is not None:
             current_load_step_idx = min(self.current_step, self.load_forecast_observed.shape[0] - 1)
             if current_load_step_idx < self.load_forecast_observed.shape[0]:
@@ -1668,7 +1764,7 @@ class HomeEnergyEnv(gym.Env):
             else:
                 logger.warning(f"Current step {self.current_step} is out of bounds for load_forecast_observed shape {self.load_forecast_observed.shape}. Using zeros.")
         elif not self.use_variable_consumption: # If not using variable consumption, fill with fixed baseload
-            load_fc = np.full(4 * 24, self.fixed_baseload_kw, dtype=np.float32)
+            load_fc = np.full(3 * 24, self.fixed_baseload_kw, dtype=np.float32)
 
         # Use the pre-calculated night discount flag instead of recalculating
         is_night = float(self.is_night_discount[self.current_step]) if self.current_step < len(self.is_night_discount) else float(hour_of_day >= 22 or hour_of_day < 6)
@@ -2052,6 +2148,63 @@ class HomeEnergyEnv(gym.Env):
         else:
             logger.warning(f"Consumption data file {file_path_to_load} not found or is not a file.")
             self.all_consumption_data_kw = None
+
+    def _update_capacity_peaks_with_same_day_constraint(self, current_dt: datetime.datetime, effective_grid_power: float) -> None:
+        """
+        Update top 3 capacity peaks enforcing the Swedish regulation:
+        Only the 3 highest hourly IMPORT peaks per month that do NOT lie on the same day.
+        
+        Args:
+            current_dt: Current timestamp
+            effective_grid_power: Grid power adjusted for night discount
+        """
+        # Check if same-day constraint is enabled (default: True for Swedish regulation compliance)
+        enforce_same_day_constraint = self.config.get("enforce_capacity_same_day_constraint", True)
+        
+        # Record this peak with its timestamp
+        self.current_month_peak_data.append((current_dt, effective_grid_power))
+        
+        if enforce_same_day_constraint:
+            # Group all peaks by date to enforce same-day constraint
+            peaks_by_date = {}
+            for timestamp, power in self.current_month_peak_data:
+                date_key = timestamp.date()
+                if date_key not in peaks_by_date:
+                    peaks_by_date[date_key] = []
+                peaks_by_date[date_key].append((timestamp, power))
+            
+            # For each date, keep only the highest peak
+            daily_max_peaks = []
+            for date_key, day_peaks in peaks_by_date.items():
+                # Find the highest peak for this day
+                max_peak = max(day_peaks, key=lambda x: x[1])
+                daily_max_peaks.append(max_peak)
+            
+            # Sort all daily max peaks by power (descending) and take top 3
+            daily_max_peaks.sort(key=lambda x: x[1], reverse=True)
+            top_3_daily_peaks = daily_max_peaks[:3]
+            
+            # Update the top3_peaks list with the properly constrained values
+            old_peaks = self.top3_peaks.copy()
+            self.top3_peaks = [0.0, 0.0, 0.0]
+            for i, (_, power) in enumerate(top_3_daily_peaks):
+                if i < 3:
+                    self.top3_peaks[i] = power
+            
+            # Debug logging when peaks change significantly
+            if self.debug_prints and old_peaks != self.top3_peaks:
+                peak_dates = [timestamp.strftime('%Y-%m-%d') for timestamp, _ in top_3_daily_peaks]
+                logger.debug(f"Capacity peaks updated (same-day constraint): {[f'{p:.2f}kW' for p in self.top3_peaks]} " +
+                           f"from dates: {peak_dates}")
+        else:
+            # Original logic without same-day constraint (for comparison/testing)
+            if effective_grid_power > min(self.top3_peaks) or 0.0 in self.top3_peaks:
+                self.top3_peaks[self.top3_peaks.index(min(self.top3_peaks))] = effective_grid_power
+                self.top3_peaks.sort(reverse=True)
+        
+        # Calculate rolling average of actual peaks (excluding zeros)
+        non_zero_peaks = [p for p in self.top3_peaks if p > 0]
+        self.peak_rolling_average = sum(non_zero_peaks) / len(non_zero_peaks) if non_zero_peaks else 0.0
 
 # Example usage (for testing the simplified environment)
 if __name__ == "__main__":

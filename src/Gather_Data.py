@@ -1,6 +1,7 @@
 import subprocess
 import datetime
 import json
+import sys
 from pathlib import Path
 # THIS RUNS AUTOMATICALLY VIA TASK SCHEDULER IN WINDOWS
 
@@ -10,7 +11,7 @@ from pathlib import Path
 # This script fetches the actual solar production data from Home Assistant and merged with the previous data in "ActualSolarProductionData.csv"
 solar_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/solar/actual_data/FetchSolarProductionData.py" 
 
-solar_predictions_script = "C:\_Projects\home-energy-ai\src\predictions\solar\makeSolarPrediction.py"
+solar_predictions_script = "C:/_Projects/home-energy-ai/src/predictions/solar/makeSolarPrediction.py"
 # This script fetches the price related data from ElectricityMaps API (grid features) and mgrey.se/espot API (current e-spot price)
 price_updateData_script = "C:/_Projects/home-energy-ai/src/predictions/prices/getPriceRelatedData.py"
 
@@ -71,8 +72,10 @@ def run_script(script_path, script_name):
         "stderr": None
     }
     try:
+        # Use sys.executable to ensure we use the same Python interpreter (virtual environment)
+        python_executable = sys.executable
         result = subprocess.run(
-            ["python", script_path],
+            [python_executable, script_path],
             capture_output=True,
             text=True,
             check=True

@@ -1,0 +1,17 @@
+evaluation_timestamp: 20250524_191301
+model_path: src/predictions/demand/models/villamichelin_demand_model.pkl
+evaluation_samples: 3489
+evaluation_period_start: 2024-12-26 11:00:00
+evaluation_period_end: 2025-05-21 10:00:00
+model_rmse: 1.4103916049370835
+model_mae: 0.8126040268108484
+model_mape: 66.73167877048625
+model_mape_samples: 2102
+model_r2: 0.700670996713777
+model_mean_actual: 1.98626769848094
+model_std_actual: 2.57789553602551
+model_mean_predicted: 1.9634921550750732
+model_std_predicted: 1.988091230392456
+persistence_rmse: 1.6119399812504402
+persistence_mae: 0.721491112385321
+persistence_mape: 63.075690365181465

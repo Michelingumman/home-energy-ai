@@ -54,7 +54,7 @@ class Battery:
         self.soc = self.initial_soc
         self.current_kwh = self.capacity_kwh * self.soc
 
-    def step(self, target_power_kw: float, duration_hours: float) -> Tuple[float, float, bool]:
+    def step(self, target_power_kw: float, duration_hours: float, min_soc: float = 0.0, max_soc: float = 1.0) -> Tuple[float, float, bool]:
         """
         Charges or discharges the battery based on target_power_kw.
         Args:
@@ -62,6 +62,8 @@ class Battery:
                              Positive to discharge (power flowing out of battery), 
                              negative to charge (power flowing into battery).
             duration_hours: Duration of the step.
+            min_soc: Minimum allowed SoC (default: 0.0)
+            max_soc: Maximum allowed SoC (default: 1.0)
         Returns:
             Tuple[float, float, bool]: 
                 1. actual_power_kw_at_terminals: Actual power at battery terminals (kW).
@@ -149,9 +151,9 @@ class Battery:
             else:
                 actual_power_kw_at_terminals = 0.0
         
-        # Ensure SoC is not numerically unstable
-        self.soc = np.clip(self.soc, 0.0, 1.0)
-        self.current_kwh = np.clip(self.current_kwh, 0.0, self.capacity_kwh)
+        # Ensure SoC is not numerically unstable and respect min/max limits
+        self.soc = np.clip(self.soc, min_soc, max_soc)
+        self.current_kwh = self.soc * self.capacity_kwh  # Recalculate from SoC to ensure consistency
 
         return actual_power_kw_at_terminals, energy_change_in_storage_kwh, limited_by_soc
 

@@ -1,10 +1,4 @@
 # Train file for demand predictions
-
-import os
-import sys
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-
 import pandas as pd
 import numpy as np
 import logging
@@ -27,65 +21,38 @@ print(f"XGBoost Version: {xgb.__version__}")
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Add progress bar support
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
+    # Create a simple fallback
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 # Constants
 CONSUMPTION_DATA_PATH = 'data/processed/villamichelin/VillamichelinEnergyData.csv'
 HEAT_PUMP_DATA_PATH = 'data/processed/villamichelin/Thermia/HeatPumpPower.csv'
 WEATHER_DATA_PATH = 'data/processed/weather_data.csv'
 MODEL_SAVE_PATH = 'src/predictions/demand/models/villamichelin_demand_model.pkl'
-AGENT_MODEL_SAVE_PATH = 'src/predictions/demand/models/baseload/villamichelin_baseload_model.pkl'
 HMM_MODEL_SAVE_PATH = 'src/predictions/demand/models/villamichelin_hmm_model.pkl'
 FEATURE_IMPORTANCE_SAVE_PATH = 'src/predictions/demand/plots/feature_importance.png'
 N_HMM_STATES = 3
 TARGET_COL = 'consumption'
-BASELOAD_TARGET_COL = 'baseload'
 FORECAST_HORIZON = 1 # Predicting t+1
 
 # Ensure model directory exists
 os.makedirs(os.path.dirname(MODEL_SAVE_PATH), exist_ok=True)
-os.makedirs(os.path.dirname(AGENT_MODEL_SAVE_PATH), exist_ok=True)
 os.makedirs(os.path.dirname(FEATURE_IMPORTANCE_SAVE_PATH), exist_ok=True)
 
 # --- Data Pipeline Functions ---
-def load_consumption_data(file_path: str, for_agent: bool = False) -> pd.DataFrame:
+def load_consumption_data(file_path: str) -> pd.DataFrame:
     logging.info(f"Loading consumption data from {file_path}")
     try:
         df = pd.read_csv(file_path, parse_dates=['timestamp'], index_col='timestamp')
         df.index = df.index.tz_localize('Europe/Stockholm', ambiguous=True, nonexistent='shift_forward')
-        
-        if for_agent:
-            # For agent training, calculate true baseload for better prediction
-            # Baseload = consumption (grid import) + production (solar) - battery_flow
-            if 'production' in df.columns and 'consumption' in df.columns:
-                logging.info("Calculating baseload for agent model with improved formula")
-                
-                # Calculate total home demand regardless of source
-                df['baseload'] = df['consumption'] + df['production']
-                
-                # If battery data exists, account for it in baseload calculation
-                if 'battery_flow' in df.columns:
-                    logging.info("Battery flow data found, adjusting baseload calculation")
-                    # Positive battery flow = discharging (contributing to home demand)
-                    # Negative battery flow = charging (not part of home demand)
-                    # Only subtract the positive values (discharge) from baseload
-                    battery_discharge = df['battery_flow'].copy()
-                    battery_discharge[battery_discharge < 0] = 0  # Keep only discharge values
-                    df['baseload'] = df['baseload'] - battery_discharge
-                    
-                # Keep relevant columns
-                columns_to_keep = ['baseload', 'consumption', 'production']
-                if 'battery_flow' in df.columns:
-                    columns_to_keep.append('battery_flow')
-                df = df[columns_to_keep]
-                
-                logging.info(f"Enhanced baseload data created successfully. Shape: {df.shape}")
-            else:
-                logging.warning("Production data not found. Using consumption as baseload.")
-                df['baseload'] = df['consumption']
-                df = df[['baseload', 'consumption']]
-        else:
-            # For regular training, just use consumption
-            df = df[['consumption']]
-            
+        df = df[['consumption']]
         logging.info(f"Consumption data loaded successfully. Shape: {df.shape}")
         print("\nConsumption data head: \n", df.head())
         return df
@@ -165,9 +132,9 @@ def clean_and_impute_data(df: pd.DataFrame) -> pd.DataFrame:
         logging.info("Missing values imputed successfully.")
     return df_cleaned
 
-def run_data_pipeline(consumption_path: str, heat_pump_path: str, weather_path: str, for_agent: bool = False) -> pd.DataFrame:
+def run_data_pipeline(consumption_path: str, heat_pump_path: str, weather_path: str) -> pd.DataFrame:
     logging.info("Starting data pipeline")
-    consumption_data = load_consumption_data(consumption_path, for_agent)
+    consumption_data = load_consumption_data(consumption_path)
     heat_pump_data = load_heat_pump_data(heat_pump_path)
     weather_data = load_weather_data(weather_path)
     heat_pump_hourly = resample_heat_pump_data(heat_pump_data)
@@ -259,83 +226,118 @@ def add_hmm_features(df: pd.DataFrame, consumption_col: str, n_states: int) -> p
     return df
 
 # --- Feature Engineering Functions ---
-def add_lagged_features(df: pd.DataFrame, target_col: str, lags: list = None) -> pd.DataFrame:
+def add_lagged_features(df: pd.DataFrame, target_col: str, lags: list = [1, 2, 3, 24, 48, 72, 168]) -> pd.DataFrame:
     """
-    Add lagged features for the target column.
+    Add advanced lagged and time series features to capture temporal patterns in energy consumption.
     
-    Enhanced to include more diverse time horizons and statistical features calculated over these lags.
+    Args:
+        df: DataFrame with target column
+        target_col: Name of target column (consumption)
+        lags: List of lag periods to include (default includes hours, days, and week)
+        
+    Returns:
+        DataFrame with added lag features
     """
-    logging.info("Adding lagged features")
-    
-    # Base set of lags
-    if lags is None:
-        # Hourly lags for short term patterns
-        hourly_lags = [1, 2, 3, 4, 6, 12]
-        
-        # Daily lags for day-to-day patterns
-        daily_lags = [24, 48, 72]
-        
-        # Weekly lags for weekly patterns
-        weekly_lags = [168, 336, 504]
-        
-        # Combine all lags
-        lags = hourly_lags + daily_lags + weekly_lags
-    
+    logging.info(f"Adding advanced lagged features for '{target_col}'")
     df_copy = df.copy()
     
-    # Add basic lag features
+    # Basic lag features
     for lag in lags:
-        col_name = f'{target_col}_lag_{lag}'
-        df_copy[col_name] = df_copy[target_col].shift(lag)
-        
-    # Add statistical aggregations over different windows
-    windows = [6, 12, 24, 168]
+        df_copy[f'{target_col}_lag_{lag}h'] = df_copy[target_col].shift(lag)
     
+    # Moving averages at different time scales
+    windows = [6, 12, 24, 48, 72, 168]  # 6h, 12h, 24h, 2d, 3d, 7d
     for window in windows:
-        # Mean over window
-        df_copy[f'{target_col}_mean_{window}h'] = df_copy[target_col].rolling(window=window).mean()
+        # Moving average
+        df_copy[f'{target_col}_ma_{window}h'] = df_copy[target_col].rolling(
+            window=window, min_periods=1).mean().shift(1)
         
-        # Standard deviation to capture volatility
-        df_copy[f'{target_col}_std_{window}h'] = df_copy[target_col].rolling(window=window).std()
+        # Moving standard deviation (volatility)
+        df_copy[f'{target_col}_std_{window}h'] = df_copy[target_col].rolling(
+            window=window, min_periods=1).std().shift(1)
         
-        # Min and max to capture range
-        df_copy[f'{target_col}_min_{window}h'] = df_copy[target_col].rolling(window=window).min()
-        df_copy[f'{target_col}_max_{window}h'] = df_copy[target_col].rolling(window=window).max()
-        
-        # Median (more robust to outliers than mean)
-        df_copy[f'{target_col}_median_{window}h'] = df_copy[target_col].rolling(window=window).median()
+        # Moving min/max (range)
+        df_copy[f'{target_col}_min_{window}h'] = df_copy[target_col].rolling(
+            window=window, min_periods=1).min().shift(1)
+        df_copy[f'{target_col}_max_{window}h'] = df_copy[target_col].rolling(
+            window=window, min_periods=1).max().shift(1)
     
-    # Add trend indicators
-    df_copy[f'{target_col}_diff'] = df_copy[target_col].diff()
+    # Differencing features
+    df_copy[f'{target_col}_diff_1h'] = df_copy[target_col].diff(1)
     df_copy[f'{target_col}_diff_24h'] = df_copy[target_col].diff(24)
     df_copy[f'{target_col}_diff_168h'] = df_copy[target_col].diff(168)
     
-    # Add percentage change features
-    df_copy[f'{target_col}_pct_change'] = df_copy[target_col].pct_change()
-    df_copy[f'{target_col}_pct_change_24h'] = df_copy[target_col].pct_change(24)
+    # Percentage change features
+    df_copy[f'{target_col}_pct_1h'] = df_copy[target_col].pct_change(1)
+    df_copy[f'{target_col}_pct_24h'] = df_copy[target_col].pct_change(24)
     
-    # Add exponentially weighted moving averages
-    df_copy[f'{target_col}_ewm_12h'] = df_copy[target_col].ewm(span=12).mean()
-    df_copy[f'{target_col}_ewm_24h'] = df_copy[target_col].ewm(span=24).mean()
-    df_copy[f'{target_col}_ewm_168h'] = df_copy[target_col].ewm(span=168).mean()
+    # Rate of change features (momentum)
+    df_copy[f'{target_col}_roc_24h'] = (df_copy[target_col] / df_copy[target_col].shift(24) - 1) * 100
     
-    # Calculate day-of-week average if we have enough historical data
-    if len(df_copy) >= 168:  # At least 1 week of data
-        df_copy[f'{target_col}_dow_mean'] = df_copy.groupby(df_copy.index.dayofweek)[target_col].transform('mean')
-        df_copy[f'{target_col}_hour_mean'] = df_copy.groupby(df_copy.index.hour)[target_col].transform('mean')
-        df_copy[f'{target_col}_hour_dow_mean'] = df_copy.groupby([df_copy.index.dayofweek, df_copy.index.hour])[target_col].transform('mean')
+    # Time of day patterns
+    # Same hour in previous days
+    for days_ago in [1, 2, 3, 7, 14]:
+        df_copy[f'{target_col}_same_hour_{days_ago}d_ago'] = df_copy[target_col].shift(24 * days_ago)
     
-    # Calculate ratios between different timeframes
-    if len(df_copy) >= 672:  # At least 4 weeks of data
-        # Compare this week to last week
-        for h in range(24):
-            this_week = df_copy[df_copy.index.hour == h][target_col]
-            last_week = df_copy[df_copy.index.hour == h][target_col].shift(168)
-            ratio_col_name = f'{target_col}_hour{h}_week_ratio'
-            df_copy.loc[df_copy.index.hour == h, ratio_col_name] = this_week / last_week.replace(0, np.nan)
+    # Weekly patterns - same hour and day in previous weeks
+    for weeks_ago in [1, 2, 4]:
+        df_copy[f'{target_col}_same_hour_dow_{weeks_ago}w_ago'] = df_copy[target_col].shift(168 * weeks_ago)
     
-    # Handle any NaN values created by the lag operations
-    logging.info(f"Added {sum([col.startswith(f'{target_col}_') for col in df_copy.columns])} lag features")
+    # Hour of day average consumption (captures daily patterns)
+    if isinstance(df_copy.index, pd.DatetimeIndex):
+        df_copy['hour'] = df_copy.index.hour
+        hour_avg = df_copy.groupby('hour')[target_col].transform('mean')
+        df_copy[f'{target_col}_hour_avg_ratio'] = df_copy[target_col] / hour_avg
+        df_copy.drop('hour', axis=1, inplace=True)
+    
+    # Day of week average consumption (captures weekly patterns)
+    if isinstance(df_copy.index, pd.DatetimeIndex):
+        df_copy['dayofweek'] = df_copy.index.dayofweek
+        dow_avg = df_copy.groupby('dayofweek')[target_col].transform('mean')
+        df_copy[f'{target_col}_dow_avg_ratio'] = df_copy[target_col] / dow_avg
+        df_copy.drop('dayofweek', axis=1, inplace=True)
+    
+    # Lag features for power input if available
+    power_col = 'power_input_kwh'
+    if power_col in df_copy.columns:
+        for lag in [1, 24, 168]:
+            df_copy[f'{power_col}_lag_{lag}h'] = df_copy[power_col].shift(lag)
+        
+        # Moving averages for power
+        for window in [24, 168]:
+            df_copy[f'{power_col}_ma_{window}h'] = df_copy[power_col].rolling(
+                window=window, min_periods=1).mean().shift(1)
+        
+        # Interaction between power and consumption
+        df_copy[f'{target_col}_power_ratio'] = df_copy[target_col] / (df_copy[power_col] + 0.1)
+    
+    # Fill NaN values in lag features with appropriate statistical measures
+    # Create a list of columns that might have NaN values
+    cols_to_fill = []
+    for col in df_copy.columns:
+        if (col.startswith(f'{target_col}_lag_') or 
+            col.startswith(f'{target_col}_ma_') or 
+            col.startswith(f'{target_col}_std_') or 
+            col.startswith(f'{target_col}_diff_') or
+            col.startswith(f'{target_col}_pct_') or 
+            col.startswith(f'{target_col}_roc_') or
+            col.startswith(f'{target_col}_same_hour_')):
+            if df_copy[col].isnull().any():
+                cols_to_fill.append(col)
+        
+        if power_col in df_copy.columns:
+            if (col.startswith(f'{power_col}_lag_') or 
+                col.startswith(f'{power_col}_ma_')):
+                if df_copy[col].isnull().any():
+                    cols_to_fill.append(col)
+    
+    # Calculate means for columns with NaNs
+    fill_values = {col: df_copy[col].mean() for col in cols_to_fill}
+    
+    # Fill NaNs all at once
+    df_copy = df_copy.fillna(fill_values)
+    
+    logging.info(f"Added {len(df_copy.columns) - len(df.columns)} new lagged and time series features.")
     return df_copy
 
 def add_calendar_features(df: pd.DataFrame, country_code: str = 'SE', years_range: tuple = (2020, 2025)) -> pd.DataFrame:
@@ -497,219 +499,192 @@ def add_calendar_features(df: pd.DataFrame, country_code: str = 'SE', years_rang
     return df_copy
 
 def add_weather_transforms(df: pd.DataFrame, temp_col: str = 'temperature_2m', t_base: float = 18.0) -> pd.DataFrame:
-    logging.info("Adding weather transformations")
+    """
+    Add advanced weather transformation features to improve model performance.
     
-    # Make a copy to avoid modifying the original DataFrame
+    Args:
+        df: DataFrame with weather data
+        temp_col: Name of temperature column
+        t_base: Base temperature for heating/cooling degree calculations (Celsius)
+        
+    Returns:
+        DataFrame with added weather features
+    """
+    logging.info("Adding advanced weather transformation features.")
     df_copy = df.copy()
     
-    # --- Temperature transformations ---
-    if temp_col in df_copy.columns:
-        # Heating Degree Days (HDD) - measures heating demand
-        df_copy['hdd'] = np.maximum(t_base - df_copy[temp_col], 0)
-        
-        # Cooling Degree Days (CDD) - measures cooling demand
-        df_copy['cdd'] = np.maximum(df_copy[temp_col] - t_base, 0)
-        
-        # Non-linear temperature effects
-        df_copy['temperature_squared'] = df_copy[temp_col] ** 2
-        
-        # Add temperature range feature
-        # First resample to daily, get min/max, then project back to hourly
-        daily_temp = df_copy[temp_col].resample('D').agg(['min', 'max'])
-        daily_temp['range'] = daily_temp['max'] - daily_temp['min']
-        df_copy['daily_temp_range'] = daily_temp['range'].reindex(df_copy.index, method='ffill')
-        
-        # Exponentially weighted moving average of temperature (captures inertia)
-        df_copy['temp_ewma_6h'] = df_copy[temp_col].ewm(span=6).mean()
-        df_copy['temp_ewma_24h'] = df_copy[temp_col].ewm(span=24).mean()
-        
-        # Rate of temperature change (derivative)
-        df_copy['temp_change_rate'] = df_copy[temp_col].diff().fillna(0)
-    else:
-        logging.warning(f"Temperature column '{temp_col}' not found. Skipping temperature transformations.")
-
-    # --- Humidity transformations ---
-    if 'relative_humidity_2m' in df_copy.columns:
-        # Non-linear humidity effects
-        df_copy['humidity_squared'] = df_copy['relative_humidity_2m'] ** 2
-        
-        # Binned humidity
-        df_copy['humidity_high'] = (df_copy['relative_humidity_2m'] > 80).astype(int)
-        df_copy['humidity_low'] = (df_copy['relative_humidity_2m'] < 40).astype(int)
-        
-        # Dew point calculation (approximate)
-        if temp_col in df_copy.columns:
-            df_copy['dew_point'] = df_copy[temp_col] - ((100 - df_copy['relative_humidity_2m']) / 5)
-        
-        # Moving average
-        df_copy['humidity_ma_24h'] = df_copy['relative_humidity_2m'].rolling(window=24).mean().fillna(
-            df_copy['relative_humidity_2m'])
-    else:
-        logging.warning("Humidity column not found. Skipping humidity transformations.")
-        
-    # --- Solar radiation transformations ---
-    if 'shortwave_radiation_sum' in df_copy.columns:
-        # Log transform for radiation (often better distribution)
-        df_copy['log_radiation'] = np.log1p(df_copy['shortwave_radiation_sum'])
-        
-        # Binary flags for solar radiation
-        df_copy['is_sunny'] = (df_copy['shortwave_radiation_sum'] > 
-                            df_copy['shortwave_radiation_sum'].quantile(0.75)).astype(int)
-        
-        # Create solar intensity levels
-        df_copy['radiation_level'] = pd.qcut(
-            df_copy['shortwave_radiation_sum'], 
-            q=5, 
-            labels=False, 
-            duplicates='drop'
-        ).fillna(0).astype(int)
-        
-        # Day/night indicator using radiation
-        df_copy['is_daytime'] = (df_copy['shortwave_radiation_sum'] > 10).astype(int)
-    else:
-        logging.warning("Radiation column not found. Skipping radiation transformations.")
-
-    # --- Cloud cover transformations ---
+    if temp_col not in df_copy.columns:
+        logging.error(f"Temperature column '{temp_col}' not found.")
+        raise ValueError(f"Temperature column '{temp_col}' not found.")
+    
+    # Basic heating/cooling degree hours
+    df_copy['heating_degree_hours'] = np.maximum(0, t_base - df_copy[temp_col])
+    df_copy['cooling_degree_hours'] = np.maximum(0, df_copy[temp_col] - t_base)
+    
+    # Exponential temperature impact
+    # These capture the non-linear relationship between temperature and energy consumption
+    df_copy['temp_exp_heating'] = np.exp(-np.maximum(0, t_base - df_copy[temp_col]) / 10)
+    df_copy['temp_exp_cooling'] = np.exp(-np.maximum(0, df_copy[temp_col] - t_base) / 10)
+    
+    # Temperature rate of change (hourly delta)
+    df_copy['temp_change_1h'] = df_copy[temp_col].diff()
+    
+    # Temperature moving average features
+    df_copy['temp_ma_6h'] = df_copy[temp_col].rolling(window=6, min_periods=1).mean()
+    df_copy['temp_ma_24h'] = df_copy[temp_col].rolling(window=24, min_periods=1).mean()
+    
+    # Temperature variability
+    df_copy['temp_std_24h'] = df_copy[temp_col].rolling(window=24, min_periods=1).std()
+    
+    # Seasonal temperature normalization
+    # Calculate monthly averages for temperature (climate normal)
+    df_copy['month'] = df_copy.index.month
+    monthly_avg_temp = df_copy.groupby('month')[temp_col].transform('mean')
+    df_copy['temp_vs_monthly_avg'] = df_copy[temp_col] - monthly_avg_temp
+    df_copy.drop('month', axis=1, inplace=True)
+    
+    # Weather interaction features
     if 'cloud_cover' in df_copy.columns:
-        # Cloud cover bins
-        df_copy['clear_sky'] = (df_copy['cloud_cover'] < 25).astype(int)
-        df_copy['partly_cloudy'] = ((df_copy['cloud_cover'] >= 25) & 
-                                  (df_copy['cloud_cover'] < 75)).astype(int)
-        df_copy['overcast'] = (df_copy['cloud_cover'] >= 75).astype(int)
+        # Cloud cover affects solar radiation and heating/cooling needs
+        df_copy['clear_sky_heating'] = df_copy['heating_degree_hours'] * (100 - df_copy['cloud_cover']) / 100
+        df_copy['clear_sky_cooling'] = df_copy['cooling_degree_hours'] * (100 - df_copy['cloud_cover']) / 100
+    
+    if 'relative_humidity_2m' in df_copy.columns:
+        # Humidity affects perceived temperature
+        df_copy['humid_heat_index'] = df_copy[temp_col] * (1 + 0.005 * df_copy['relative_humidity_2m'])
         
-        # Interaction with temperature
-        if temp_col in df_copy.columns:
-            df_copy['cloud_temp_interaction'] = df_copy['cloud_cover'] * df_copy[temp_col]
-    else:
-        logging.warning("Cloud cover column not found. Skipping cloud cover transformations.")
-        
-    # --- Wind transformations ---
     if 'wind_speed_100m' in df_copy.columns:
-        # Wind chill factor (approximate)
-        if temp_col in df_copy.columns and df_copy[temp_col].min() < 10:  # Only relevant for cold weather
-            df_copy['wind_chill'] = 13.12 + 0.6215 * df_copy[temp_col] - 11.37 * (df_copy['wind_speed_100m'] ** 0.16) + 0.3965 * df_copy[temp_col] * (df_copy['wind_speed_100m'] ** 0.16)
-            df_copy['wind_chill'] = df_copy[['wind_chill', temp_col]].min(axis=1)  # Wind chill shouldn't exceed air temp
-        
-        # Wind speed bins
-        df_copy['wind_light'] = (df_copy['wind_speed_100m'] < 3.5).astype(int)
-        df_copy['wind_moderate'] = ((df_copy['wind_speed_100m'] >= 3.5) & 
-                                  (df_copy['wind_speed_100m'] < 8)).astype(int)
-        df_copy['wind_strong'] = (df_copy['wind_speed_100m'] >= 8).astype(int)
-    else:
-        logging.warning("Wind speed column not found. Skipping wind transformations.")
-        
-    # --- Weather condition complexes ---
-    # Create combined weather condition features when possible
-    weather_cols = [col for col in [temp_col, 'relative_humidity_2m', 'cloud_cover', 'wind_speed_100m'] 
-                    if col in df_copy.columns]
+        # Wind chill effect for heating
+        df_copy['wind_chill_factor'] = np.where(
+            df_copy[temp_col] < 10,  # Only apply wind chill when cold
+            df_copy[temp_col] - (0.1 * df_copy['wind_speed_100m']),
+            df_copy[temp_col]
+        )
+        df_copy['wind_enhanced_hdh'] = np.maximum(0, t_base - df_copy['wind_chill_factor'])
     
-    if len(weather_cols) >= 2:
-        # Calculate z-scores for each weather parameter
-        for col in weather_cols:
-            z_col = f"{col.split('_')[0]}_zscore"  # Simplified naming
-            df_copy[z_col] = (df_copy[col] - df_copy[col].mean()) / df_copy[col].std()
-            
-        # Create a weather severity index (sum of absolute z-scores)
-        z_cols = [f"{col.split('_')[0]}_zscore" for col in weather_cols]
-        df_copy['weather_severity_index'] = df_copy[z_cols].abs().sum(axis=1)
+    if 'shortwave_radiation_sum' in df_copy.columns:
+        # Solar radiation impact on heating/cooling
+        df_copy['solar_heating_offset'] = df_copy['heating_degree_hours'] * np.exp(-df_copy['shortwave_radiation_sum'] / 100)
         
-        # Create comfort index if both temp and humidity are available
-        if temp_col in df_copy.columns and 'relative_humidity_2m' in df_copy.columns:
-            # Simple heat index approximation
-            T = df_copy[temp_col]
-            RH = df_copy['relative_humidity_2m']
-            
-            # Heat index approximation (simplified)
-            df_copy['heat_index'] = -8.784695 + 1.61139411 * T + 2.338549 * RH - 0.14611605 * T * RH - 0.012308094 * T**2 - 0.016424828 * RH**2 + 0.002211732 * T**2 * RH + 0.00072546 * T * RH**2 - 0.000003582 * T**2 * RH**2
-            
-            # Simple discomfort index
-            df_copy['discomfort_index'] = T - 0.55 * (1 - 0.01 * RH) * (T - 14.5)
+        # Day/night indicator based on solar radiation
+        df_copy['is_daylight'] = (df_copy['shortwave_radiation_sum'] > 10).astype(int)
+        
+        # Interaction between solar radiation and temperature
+        df_copy['solar_temp_interaction'] = df_copy[temp_col] * df_copy['shortwave_radiation_sum'] / 100
     
-    # Drop any NaN values created by the transformations
-    na_count_before = df_copy.isna().sum().sum()
-    if na_count_before > 0:
-        df_copy = df_copy.fillna(method='ffill').fillna(method='bfill')
-        na_count_after = df_copy.isna().sum().sum()
-        logging.info(f"Filled {na_count_before - na_count_after} NaNs from weather transformations")
-
-    logging.info(f"Added weather transformations. New dataframe shape: {df_copy.shape}")
+    # Weather change indicators
+    for col in ['cloud_cover', 'relative_humidity_2m', 'wind_speed_100m', 'shortwave_radiation_sum']:
+        if col in df_copy.columns:
+            # Rate of change in weather parameters
+            df_copy[f'{col}_change'] = df_copy[col].diff()
+            
+            # 24h difference to capture daily patterns
+            df_copy[f'{col}_24h_diff'] = df_copy[col].diff(24)
+    
+    logging.info(f"Added {len(df_copy.columns) - len(df.columns)} new weather transformation features.")
     return df_copy
 
 def add_interaction_terms(df: pd.DataFrame, hmm_state_col: str = 'hmm_state', temp_col: str = 'temperature_2m') -> pd.DataFrame:
-    logging.info("Adding interaction terms")
-    feature_count_before = len(df.columns)
+    """
+    Add advanced interaction features to capture complex relationships between variables.
     
-    # Make a copy to avoid modifying the original DataFrame
+    Args:
+        df: DataFrame with features
+        hmm_state_col: Name of HMM state column
+        temp_col: Name of temperature column
+        
+    Returns:
+        DataFrame with added interaction features
+    """
+    logging.info("Adding advanced interaction features.")
     df_copy = df.copy()
     
-    # --- Time-HMM state interactions ---
-    if hmm_state_col in df_copy.columns:
-        # Hour of day * HMM state
-        df_copy['hour_hmm_interaction'] = df_copy.index.hour * df_copy[hmm_state_col]
-        
-        # Is weekend * HMM state
-        if 'is_weekend' in df_copy.columns:
-            df_copy['weekend_hmm_interaction'] = df_copy['is_weekend'] * df_copy[hmm_state_col]
+    feature_count_before = len(df_copy.columns)
     
-    # --- Weather-time interactions ---
+    # Base features to interact with
+    base_features = []
+    
+    # HMM state interactions
+    if hmm_state_col in df_copy.columns:
+        base_features.append(hmm_state_col)
+    else:
+        logging.warning(f"HMM state column '{hmm_state_col}' not found. Skipping HMM interactions.")
+    
+    # Temperature interactions
     if temp_col in df_copy.columns:
-        # Hour of day * temperature interactions
-        morning_hours = (df_copy.index.hour >= 6) & (df_copy.index.hour < 10)
-        evening_hours = (df_copy.index.hour >= 17) & (df_copy.index.hour < 23)
-        night_hours = (df_copy.index.hour >= 23) | (df_copy.index.hour < 6)
+        base_features.append(temp_col)
         
-        df_copy['morning_temp'] = np.where(morning_hours, df_copy[temp_col], 0)
-        df_copy['evening_temp'] = np.where(evening_hours, df_copy[temp_col], 0)
-        df_copy['night_temp'] = np.where(night_hours, df_copy[temp_col], 0)
-        
-        # Weekend * temperature interaction
-        if 'is_weekend' in df_copy.columns:
-            df_copy['weekend_temp'] = df_copy[temp_col] * df_copy['is_weekend']
-        
-        # Holiday * temperature interaction
-        if 'is_holiday' in df_copy.columns:
-            df_copy['holiday_temp'] = df_copy[temp_col] * df_copy['is_holiday']
-    
-    # --- HMM-Weather interactions ---
-    if hmm_state_col in df_copy.columns:
-        for weather_var in ['temperature_2m', 'relative_humidity_2m', 'cloud_cover', 
-                          'hdd', 'cdd', 'is_sunny', 'daily_temp_range', 'weather_severity_index']:
-            if weather_var in df_copy.columns:
-                df_copy[f'hmm_{weather_var}_interaction'] = df_copy[hmm_state_col] * df_copy[weather_var]
-    
-    # --- Baseload-specific interaction terms ---
-    if 'power_input_kwh' in df_copy.columns:  # Heat pump energy
-        # Heat pump energy * temperature interactions
-        if temp_col in df_copy.columns:
-            df_copy['heatpump_temp_interaction'] = df_copy['power_input_kwh'] * df_copy[temp_col]
-            
-            # More specific: heat pump usage when cold vs. warm
-            cold_condition = df_copy[temp_col] < 5
-            df_copy['heatpump_when_cold'] = np.where(cold_condition, df_copy['power_input_kwh'], 0)
-            
-            warm_condition = df_copy[temp_col] > 15
-            df_copy['heatpump_when_warm'] = np.where(warm_condition, df_copy['power_input_kwh'], 0)
-        
-        # Heat pump energy * hour of day
-        df_copy['heatpump_morning'] = np.where(morning_hours, df_copy['power_input_kwh'], 0)
-        df_copy['heatpump_evening'] = np.where(evening_hours, df_copy['power_input_kwh'], 0)
-        df_copy['heatpump_night'] = np.where(night_hours, df_copy['power_input_kwh'], 0)
-        
-        # Heat pump energy * HMM state
+        # Special temperature interaction with HMM
         if hmm_state_col in df_copy.columns:
-            df_copy['heatpump_hmm_interaction'] = df_copy['power_input_kwh'] * df_copy[hmm_state_col]
+            df_copy[f'{hmm_state_col}_x_{temp_col}'] = df_copy[hmm_state_col] * df_copy[temp_col]
+            
+            # More complex temperature-state relationship (quadratic)
+            df_copy[f'{hmm_state_col}_x_{temp_col}_squared'] = df_copy[hmm_state_col] * (df_copy[temp_col] ** 2)
     
-    # --- Solar and baseload interactions ---
-    if 'shortwave_radiation_sum' in df_copy.columns and 'baseload' in df_copy.columns:
-        # Baseload during sunny vs. cloudy periods
-        high_radiation = df_copy['shortwave_radiation_sum'] > df_copy['shortwave_radiation_sum'].quantile(0.75)
-        df_copy['baseload_sunny'] = np.where(high_radiation, df_copy['baseload'], 0)
+    # Weather derivatives interactions
+    weather_features = [
+        'heating_degree_hours', 'cooling_degree_hours',
+        'temp_exp_heating', 'temp_exp_cooling', 
+        'humid_heat_index', 'wind_chill_factor'
+    ]
+    
+    weather_cols = [col for col in weather_features if col in df_copy.columns]
+    
+    # Time features
+    time_features = [col for col in df_copy.columns if 
+                     col.startswith('hour_') or 
+                     col.startswith('day_of_week_') or
+                     col.startswith('is_weekend') or
+                     col.startswith('is_holiday') or
+                     col.startswith('is_morning_peak') or 
+                     col.startswith('is_evening_peak')]
+    
+    # For each feature in base_features, create interactions with time features
+    for base_feature in base_features:
+        for time_feature in time_features:
+            if time_feature in df_copy.columns:
+                df_copy[f'{time_feature}_x_{base_feature}'] = df_copy[time_feature] * df_copy[base_feature]
+    
+    # Weather feature interactions with time features
+    for weather_col in weather_cols:
+        # Interact with weekend/holiday/peak indicators
+        for indicator in ['is_weekend', 'is_holiday', 'is_morning_peak', 'is_evening_peak']:
+            if indicator in df_copy.columns:
+                df_copy[f'{indicator}_x_{weather_col}'] = df_copy[indicator] * df_copy[weather_col]
+    
+    # Heating/cooling degree hours with seasonal indicators
+    for season in ['season_winter', 'season_summer']:
+        if season in df_copy.columns:
+            if 'heating_degree_hours' in df_copy.columns:
+                df_copy[f'{season}_x_heating_degree_hours'] = df_copy[season] * df_copy['heating_degree_hours']
+            if 'cooling_degree_hours' in df_copy.columns:
+                df_copy[f'{season}_x_cooling_degree_hours'] = df_copy[season] * df_copy['cooling_degree_hours']
+    
+    # Solar radiation interactions 
+    if 'shortwave_radiation_sum' in df_copy.columns:
+        # Solar x Temperature
+        if temp_col in df_copy.columns:
+            df_copy[f'solar_x_{temp_col}'] = df_copy['shortwave_radiation_sum'] * df_copy[temp_col]
         
-        low_radiation = df_copy['shortwave_radiation_sum'] <= df_copy['shortwave_radiation_sum'].quantile(0.25)
-        df_copy['baseload_cloudy'] = np.where(low_radiation, df_copy['baseload'], 0)
+        # Solar x Time of day
+        if 'hour_sin' in df_copy.columns and 'hour_cos' in df_copy.columns:
+            df_copy['solar_x_hour_sin'] = df_copy['shortwave_radiation_sum'] * df_copy['hour_sin']
+            df_copy['solar_x_hour_cos'] = df_copy['shortwave_radiation_sum'] * df_copy['hour_cos']
     
-    # --- Create special consumption ratio features if lag features exist ---
-    consumption_col = 'baseload' if 'baseload' in df_copy.columns else 'consumption'
+    # Power consumption with weather
+    if 'power_input_kwh' in df_copy.columns:
+        power_col = 'power_input_kwh'
+        
+        # Power x Temperature
+        if temp_col in df_copy.columns:
+            df_copy[f'{power_col}_x_{temp_col}'] = df_copy[power_col] * df_copy[temp_col]
+        
+        # Power x Weather features
+        for weather_col in weather_cols:
+            df_copy[f'{power_col}_x_{weather_col}'] = df_copy[power_col] * df_copy[weather_col]
+    
+    # Create special consumption ratio features if lag features exist
+    consumption_col = 'consumption'
     lag_cols = [col for col in df_copy.columns if col.startswith(f'{consumption_col}_lag_')]
     
     # If we have enough lag columns, create ratio features
@@ -717,19 +692,6 @@ def add_interaction_terms(df: pd.DataFrame, hmm_state_col: str = 'hmm_state', te
         # Ratio between different timeframes
         df_copy['consumption_ratio_day'] = df_copy[lag_cols[0]] / (df_copy[lag_cols[1]] + 1e-6)  # day/day ratio
         df_copy['consumption_ratio_week'] = df_copy[lag_cols[1]] / (df_copy[lag_cols[2]] + 1e-6)  # day/week ratio
-        
-        # Add week-over-week ratio (comparing same day last week)
-        day_of_week_lag = 168  # hours in a week
-        if any(lag >= day_of_week_lag for lag in [int(col.split('_')[-1]) for col in lag_cols]):
-            week_lag_col = f"{consumption_col}_lag_{day_of_week_lag}"
-            if week_lag_col in df_copy.columns:
-                df_copy['week_over_week_ratio'] = df_copy[consumption_col] / (df_copy[week_lag_col] + 1e-6)
-    
-    # Handle any NaN values created
-    na_count_before = df_copy.isna().sum().sum()
-    if na_count_before > 0:
-        df_copy = df_copy.fillna(0)  # Simple imputation for interaction terms
-        logging.info(f"Filled {na_count_before} NaNs from interaction terms")
     
     # Limit the number of interaction features to avoid dimensionality explosion
     # Keep track of how many features we've added and limit if necessary
@@ -739,56 +701,154 @@ def add_interaction_terms(df: pd.DataFrame, hmm_state_col: str = 'hmm_state', te
     logging.info(f"Added {num_features_added} new interaction features.")
     return df_copy
 
+def add_heat_pump_baseload_features(df: pd.DataFrame, consumption_col: str = 'consumption', 
+                                    power_col: str = 'power_input_kwh', temp_col: str = 'temperature_2m') -> pd.DataFrame:
+    """
+    Add specialized features for heat pump baseload demand prediction.
+    
+    Heat pump baseload is primarily driven by:
+    1. Heating/cooling needs based on outdoor temperature
+    2. Building thermal dynamics (thermal mass effects)
+    3. Heat pump efficiency curves
+    4. Occupancy patterns
+    
+    Args:
+        df: DataFrame with consumption, power, and temperature data
+        consumption_col: Name of consumption column
+        power_col: Name of heat pump power consumption column  
+        temp_col: Name of temperature column
+        
+    Returns:
+        DataFrame with heat pump baseload features
+    """
+    logging.info("Adding heat pump baseload specific features")
+    df_copy = df.copy()
+    
+    if temp_col not in df_copy.columns:
+        logging.warning(f"Temperature column '{temp_col}' not found. Skipping heat pump specific features.")
+        return df_copy
+    
+    # Heat pump efficiency features based on temperature
+    # Heat pump efficiency drops significantly at extreme temperatures
+    df_copy['temp_squared'] = df_copy[temp_col] ** 2
+    df_copy['temp_cubed'] = df_copy[temp_col] ** 3
+    
+    # COP (Coefficient of Performance) estimation based on outdoor temperature
+    # Simplified COP model: COP decreases as temperature difference increases
+    t_indoor = 21.0  # Assumed indoor temperature
+    df_copy['temp_diff_indoor'] = np.abs(df_copy[temp_col] - t_indoor)
+    df_copy['estimated_cop'] = np.maximum(2.0, 5.0 - 0.1 * df_copy['temp_diff_indoor'])
+    
+    # Heat pump operating regime indicators
+    df_copy['extreme_cold'] = (df_copy[temp_col] < -5).astype(int)  # Below -5°C
+    df_copy['cold'] = ((df_copy[temp_col] >= -5) & (df_copy[temp_col] < 5)).astype(int)  # -5 to 5°C
+    df_copy['mild'] = ((df_copy[temp_col] >= 5) & (df_copy[temp_col] < 15)).astype(int)  # 5 to 15°C
+    df_copy['warm'] = ((df_copy[temp_col] >= 15) & (df_copy[temp_col] < 25)).astype(int)  # 15 to 25°C
+    df_copy['hot'] = (df_copy[temp_col] >= 25).astype(int)  # Above 25°C
+    
+    # Thermal mass effects - building responds slowly to temperature changes
+    # Rolling temperature features capture thermal inertia
+    df_copy['temp_ma_3h'] = df_copy[temp_col].rolling(window=3, min_periods=1).mean()
+    df_copy['temp_ma_6h'] = df_copy[temp_col].rolling(window=6, min_periods=1).mean()
+    df_copy['temp_ma_12h'] = df_copy[temp_col].rolling(window=12, min_periods=1).mean()
+    
+    # Temperature trend (building heating/cooling inertia)
+    df_copy['temp_trend_3h'] = df_copy[temp_col] - df_copy['temp_ma_3h']
+    df_copy['temp_trend_6h'] = df_copy[temp_col] - df_copy['temp_ma_6h']
+    
+    # Degree hours with more precise base temperatures for heat pumps
+    # Heat pumps typically start significant heating around 15-18°C
+    for base_temp in [15.0, 16.0, 17.0, 18.0, 19.0, 20.0]:
+        df_copy[f'hdh_{base_temp}c'] = np.maximum(0, base_temp - df_copy[temp_col])
+        df_copy[f'cdh_{base_temp}c'] = np.maximum(0, df_copy[temp_col] - base_temp)
+    
+    # Heat pump power consumption features if available
+    if power_col in df_copy.columns:
+        # Heat pump efficiency (consumption per unit of heat delivered)
+        # Higher efficiency when power consumption is lower for same heating need
+        df_copy['hp_efficiency_proxy'] = df_copy[f'hdh_18.0c'] / (df_copy[power_col] + 0.1)
+        
+        # Heat pump cycling behavior (frequent on/off indicates inefficiency)
+        df_copy['hp_power_change'] = df_copy[power_col].diff().abs()
+        df_copy['hp_cycling_indicator'] = df_copy['hp_power_change'].rolling(window=6).sum()
+        
+        # Heat pump utilization rate
+        max_power = df_copy[power_col].quantile(0.95)  # Assume 95th percentile is near max capacity
+        if max_power > 0:
+            df_copy['hp_utilization'] = df_copy[power_col] / max_power
+        else:
+            # If max power is 0 or very small, set utilization to 0
+            df_copy['hp_utilization'] = 0.0
+        
+        # Power consumption in different temperature regimes
+        df_copy['hp_power_extreme_cold'] = df_copy[power_col] * df_copy['extreme_cold']
+        df_copy['hp_power_cold'] = df_copy[power_col] * df_copy['cold']
+        df_copy['hp_power_mild'] = df_copy[power_col] * df_copy['mild']
+        
+        # Non-heat pump baseload estimation
+        # Estimate minimum consumption when heat pump is not running much
+        min_consumption_percentile = df_copy[consumption_col].quantile(0.05)
+        df_copy['estimated_baseload'] = np.minimum(df_copy[consumption_col], min_consumption_percentile * 1.2)
+        df_copy['hp_contribution'] = df_copy[consumption_col] - df_copy['estimated_baseload']
+    
+    # Weather-related heat loss/gain features
+    if 'wind_speed_100m' in df_copy.columns:
+        # Wind increases heat loss from building
+        df_copy['wind_chill_heat_loss'] = df_copy['temp_diff_indoor'] * (1 + 0.1 * df_copy['wind_speed_100m'])
+    
+    if 'shortwave_radiation_sum' in df_copy.columns:
+        # Solar gain reduces heating need during day
+        df_copy['solar_heat_gain'] = df_copy['shortwave_radiation_sum'] / (df_copy['temp_diff_indoor'] + 1)
+        
+        # Solar availability affects heat pump supplement strategies
+        df_copy['solar_available'] = (df_copy['shortwave_radiation_sum'] > 50).astype(int)
+        df_copy['solar_low'] = ((df_copy['shortwave_radiation_sum'] > 10) & 
+                               (df_copy['shortwave_radiation_sum'] <= 50)).astype(int)
+        df_copy['no_solar'] = (df_copy['shortwave_radiation_sum'] <= 10).astype(int)
+    
+    # Seasonal adjustment for heat pump baseload
+    if isinstance(df_copy.index, pd.DatetimeIndex):
+        df_copy['month'] = df_copy.index.month
+        
+        # Different base temperatures for different seasons
+        winter_months = [12, 1, 2]
+        summer_months = [6, 7, 8]
+        
+        df_copy['is_winter'] = df_copy['month'].isin(winter_months).astype(int)
+        df_copy['is_summer'] = df_copy['month'].isin(summer_months).astype(int)
+        df_copy['is_transition'] = (~df_copy['month'].isin(winter_months + summer_months)).astype(int)
+        
+        # Seasonal degree hours
+        df_copy['winter_hdh'] = df_copy['is_winter'] * df_copy['hdh_18.0c']
+        df_copy['summer_cdh'] = df_copy['is_summer'] * df_copy['cdh_18.0c']
+        df_copy['transition_hdh'] = df_copy['is_transition'] * df_copy['hdh_18.0c']
+        
+        df_copy.drop('month', axis=1, inplace=True)
+    
+    # Heat pump defrost cycle indicators (typically needed in cold, humid conditions)
+    if 'relative_humidity_2m' in df_copy.columns and temp_col in df_copy.columns:
+        # Defrost cycles typically needed when temp is below 5°C and humidity is high
+        df_copy['defrost_conditions'] = ((df_copy[temp_col] < 5) & 
+                                        (df_copy['relative_humidity_2m'] > 80)).astype(int)
+        df_copy['frost_risk'] = ((df_copy[temp_col] < 2) & 
+                                (df_copy['relative_humidity_2m'] > 70)).astype(int)
+    
+    # Thermal comfort zone indicators
+    df_copy['in_comfort_zone'] = ((df_copy[temp_col] >= 18) & (df_copy[temp_col] <= 22)).astype(int)
+    df_copy['below_comfort'] = (df_copy[temp_col] < 18).astype(int)
+    df_copy['above_comfort'] = (df_copy[temp_col] > 22).astype(int)
+    
+    logging.info(f"Added {len(df_copy.columns) - len(df.columns)} heat pump baseload features")
+    return df_copy
+
 def engineer_features(df: pd.DataFrame, target_col: str, country_code_for_holidays: str = 'SE', create_target: bool = True) -> pd.DataFrame:
     logging.info("Starting feature engineering pipeline.")
     df_featured = df.copy()
-    
-    # Order matters! First add lagged features from the target column
     df_featured = add_lagged_features(df_featured, target_col=target_col)
-    
-    # Add calendar features (will generate time-based features)
     df_featured = add_calendar_features(df_featured, country_code=country_code_for_holidays)
-    
-    # Add weather transformations
     df_featured = add_weather_transforms(df_featured)
-    
-    # Add HMM features if not already present
-    if 'hmm_state' not in df_featured.columns and target_col in df_featured.columns:
-        df_featured = add_hmm_features(df_featured, consumption_col=target_col, n_states=N_HMM_STATES)
-        
-    # Add interaction features last (they depend on other features being present)
     df_featured = add_interaction_terms(df_featured)
-    
-    # Add seasonality components for baseload prediction
-    if target_col == BASELOAD_TARGET_COL:
-        # Extract baseload patterns at specific hours
-        morning_peak_hours = (df_featured.index.hour >= 6) & (df_featured.index.hour <= 9)
-        evening_peak_hours = (df_featured.index.hour >= 17) & (df_featured.index.hour <= 22)
-        night_hours = (df_featured.index.hour >= 23) | (df_featured.index.hour < 6)
-        
-        df_featured['is_morning_peak'] = morning_peak_hours.astype(int)
-        df_featured['is_evening_peak'] = evening_peak_hours.astype(int)
-        df_featured['is_night_hours'] = night_hours.astype(int)
-        
-        # Add day-of-week specific patterns if enough data
-        if len(df_featured) >= 168:  # At least a week of data
-            # For each day of week, calculate typical consumption patterns
-            for day in range(7):
-                day_filter = df_featured.index.dayofweek == day
-                
-                # Calculate typical patterns for this day
-                if day_filter.sum() > 0:  # Ensure we have data for this day
-                    day_name = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'][day]
-                    
-                    # Day-specific hourly patterns
-                    for hour in range(24):
-                        hour_filter = df_featured.index.hour == hour
-                        combined_filter = day_filter & hour_filter
-                        
-                        if combined_filter.sum() > 0:
-                            col_name = f'{day_name}_hour{hour}_pattern'
-                            df_featured[col_name] = 0
-                            df_featured.loc[combined_filter, col_name] = 1
+    df_featured = add_heat_pump_baseload_features(df_featured)
     
     if create_target:
         # Define target variable y (demand at t+1)
@@ -830,16 +890,47 @@ def plot_feature_importance(model, feature_names, top_n=20, save_path=None):
     
     # Get feature importance from the model
     importance_dict = {}
-    for importance_type in ['weight', 'gain', 'cover', 'total_gain', 'total_cover']:
-        try:
-            importance = model.get_score(importance_type=importance_type)
-            importance_dict[importance_type] = importance
-        except Exception as e:
-            logging.warning(f"Could not get {importance_type} importance: {e}")
+    
+    # Try different methods to get feature importance
+    try:
+        # Method 1: Using feature_importances_ attribute (sklearn-style)
+        if hasattr(model, 'feature_importances_'):
+            importance_dict['importance'] = dict(zip(feature_names, model.feature_importances_))
+            logging.info("Successfully extracted feature importance using feature_importances_")
+    except Exception as e:
+        logging.warning(f"Could not get feature_importances_: {e}")
+    
+    try:
+        # Method 2: Using get_score method (if model is trained)
+        if hasattr(model, 'get_score'):
+            for importance_type in ['weight', 'gain', 'cover', 'total_gain', 'total_cover']:
+                try:
+                    importance = model.get_score(importance_type=importance_type)
+                    importance_dict[importance_type] = importance
+                    logging.info(f"Successfully extracted {importance_type} importance")
+                except Exception as e:
+                    logging.warning(f"Could not get {importance_type} importance: {e}")
+    except Exception as e:
+        logging.warning(f"Could not use get_score method: {e}")
+    
+    try:
+        # Method 3: Using booster feature importance (if booster exists)
+        if hasattr(model, 'get_booster'):
+            booster = model.get_booster()
+            if hasattr(booster, 'get_score'):
+                for importance_type in ['weight', 'gain', 'cover']:
+                    try:
+                        importance = booster.get_score(importance_type=importance_type)
+                        importance_dict[f'booster_{importance_type}'] = importance
+                        logging.info(f"Successfully extracted booster {importance_type} importance")
+                    except Exception as e:
+                        logging.warning(f"Could not get booster {importance_type} importance: {e}")
+    except Exception as e:
+        logging.warning(f"Could not access booster: {e}")
     
     if not importance_dict:
-        logging.error("Could not retrieve feature importance from model")
-        return
+        logging.error("Could not retrieve feature importance from model using any method")
+        return None
     
     # Create a DataFrame for visualization
     importance_df = pd.DataFrame({k: pd.Series(v) for k, v in importance_dict.items()})
@@ -850,41 +941,41 @@ def plot_feature_importance(model, feature_names, top_n=20, save_path=None):
         if importance_df[col].sum() > 0:
             importance_df[col] = importance_df[col] / importance_df[col].sum()
     
-    # Sort by 'gain' if available, otherwise by first available importance type
-    sort_by = 'gain' if 'gain' in importance_df.columns else importance_df.columns[0]
+    # Select best available importance type for sorting
+    sort_by = None
+    for preferred_type in ['gain', 'booster_gain', 'importance', 'weight', 'booster_weight']:
+        if preferred_type in importance_df.columns:
+            sort_by = preferred_type
+            break
+    
+    if sort_by is None:
+        sort_by = importance_df.columns[0]
+    
     importance_df = importance_df.sort_values(by=sort_by, ascending=False).head(top_n)
     
     # Prepare a more readable index
-    importance_df.index = [str(idx).replace('_', ' ').capitalize() for idx in importance_df.index]
+    importance_df.index = [str(idx).replace('_', ' ').title() for idx in importance_df.index]
     
     # Create plot
     plt.figure(figsize=(12, 8))
     sns.set_style('whitegrid')
     
     # Plot bars
-    if 'gain' in importance_df.columns:
-        ax = sns.barplot(x=importance_df['gain'], y=importance_df.index)
-        plt.title(f'Top {top_n} Features (by Gain)', fontsize=16)
-        plt.xlabel('Normalized Gain', fontsize=12)
-    else:
-        column_to_plot = importance_df.columns[0]
-        ax = sns.barplot(x=importance_df[column_to_plot], y=importance_df.index)
-        plt.title(f'Top {top_n} Features (by {column_to_plot})', fontsize=16)
-        plt.xlabel(f'Normalized {column_to_plot}', fontsize=12)
-    
+    ax = sns.barplot(x=importance_df[sort_by], y=importance_df.index, palette='viridis')
+    plt.title(f'Top {top_n} Features (by {sort_by.replace("_", " ").title()})', fontsize=16)
+    plt.xlabel(f'Normalized {sort_by.replace("_", " ").title()}', fontsize=12)
     plt.ylabel('Features', fontsize=12)
     plt.tight_layout()
     
     # Add values as text
-    for i in ax.containers:
-        ax.bar_label(i, fmt='%.3f')
+    for i, v in enumerate(importance_df[sort_by]):
+        ax.text(v + 0.001, i, f'{v:.3f}', va='center', fontsize=10)
     
     # Save if path provided
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         logging.info(f"Feature importance plot saved to {save_path}")
     
-    plt.show()
     return importance_df
 
 # --- Model Training Functions ---
@@ -899,8 +990,6 @@ def preprocess_data_for_xgboost(X, y):
     Returns:
         Cleaned X, y
     """
-    logging.info("Preprocessing data for XGBoost")
-    
     # Make copies to avoid modifying originals
     X_clean = X.copy()
     y_clean = y.copy()
@@ -911,37 +1000,77 @@ def preprocess_data_for_xgboost(X, y):
     # Check for and log any remaining infinity values
     inf_counts = np.isinf(X_clean.values).sum()
     if inf_counts > 0:
-        logging.warning(f"Found {inf_counts} infinity values even after replacement. Further cleaning needed.")
+        logging.warning(f"Found {inf_counts} infinity values even after replacement.")
     
     # Get numeric columns
     numeric_cols = X_clean.select_dtypes(include=np.number).columns
     
+    # Count total extreme values and NaNs for reporting
+    total_nans = 0
+    total_extremes = 0
+    cols_with_significant_nans = []
+    cols_with_significant_extremes = []
+    
     # For each numeric column, calculate stats and cap extreme values
     for col in numeric_cols:
         # Calculate column statistics
-        col_mean = X_clean[col].mean()
-        col_std = X_clean[col].std()
+        col_values = X_clean[col].dropna()
+        if len(col_values) == 0:
+            X_clean[col] = 0
+            continue
+            
+        col_mean = col_values.mean()
+        col_std = col_values.std()
+        col_median = col_values.median()
         
         # Check for NaN values
         nan_count = X_clean[col].isna().sum()
         if nan_count > 0:
-            logging.info(f"Column {col} has {nan_count} NaN values. Filling with mean.")
-            X_clean[col].fillna(col_mean, inplace=True)
+            total_nans += nan_count
+            # Use median for imputation instead of mean for robustness
+            X_clean[col] = X_clean[col].fillna(col_median)
+            if nan_count > 50:  # Only log significant NaN counts
+                cols_with_significant_nans.append((col, nan_count, col_median))
         
-        # Cap extreme values (5 standard deviations)
-        lower_bound = col_mean - 5 * col_std
-        upper_bound = col_mean + 5 * col_std
-        
-        # Check for extreme values
-        extreme_count = ((X_clean[col] < lower_bound) | (X_clean[col] > upper_bound)).sum()
-        if extreme_count > 0:
-            logging.info(f"Column {col} has {extreme_count} extreme values. Capping.")
-            X_clean[col] = np.clip(X_clean[col], lower_bound, upper_bound)
+        # Use more conservative outlier detection (6 standard deviations instead of 5)
+        # and use IQR method for highly skewed data
+        if col_std > 0:
+            # Method 1: Standard deviation (for normal-ish distributions)
+            lower_bound_std = col_mean - 6 * col_std
+            upper_bound_std = col_mean + 6 * col_std
+            
+            # Method 2: IQR method (for skewed distributions)
+            q1 = col_values.quantile(0.25)
+            q3 = col_values.quantile(0.75)
+            iqr = q3 - q1
+            if iqr > 0:
+                lower_bound_iqr = q1 - 3 * iqr  # 3 * IQR instead of 1.5 for more conservative approach
+                upper_bound_iqr = q3 + 3 * iqr
+            else:
+                lower_bound_iqr = lower_bound_std
+                upper_bound_iqr = upper_bound_std
+            
+            # Use the more conservative (wider) bounds
+            lower_bound = min(lower_bound_std, lower_bound_iqr)
+            upper_bound = max(upper_bound_std, upper_bound_iqr)
+            
+            # Check for extreme values
+            extreme_mask = (X_clean[col] < lower_bound) | (X_clean[col] > upper_bound)
+            extreme_count = extreme_mask.sum()
+            
+            if extreme_count > 0:
+                total_extremes += extreme_count
+                # Only cap if there are significant outliers (>1% of data or >5 values)
+                if extreme_count > max(len(X_clean) * 0.01, 5):
+                    X_clean[col] = np.clip(X_clean[col], lower_bound, upper_bound)
+                    if extreme_count > 50:  # Only log significant extreme counts
+                        cols_with_significant_extremes.append((col, extreme_count, lower_bound, upper_bound))
     
     # Handle NaN values in target if any
     if y_clean.isna().sum() > 0:
-        logging.warning(f"Found {y_clean.isna().sum()} NaN values in target. Filling with mean.")
-        y_clean.fillna(y_clean.mean(), inplace=True)
+        target_nans = y_clean.isna().sum()
+        logging.warning(f"Found {target_nans} NaN values in target. Filling with median.")
+        y_clean.fillna(y_clean.median(), inplace=True)
     
     # Check for final NaN values
     final_X_nans = X_clean.isna().sum().sum()
@@ -949,13 +1078,17 @@ def preprocess_data_for_xgboost(X, y):
     
     if final_X_nans > 0:
         logging.warning(f"Still found {final_X_nans} NaN values in features after cleaning.")
-        # Last resort: drop columns with many NaNs
+        # Last resort: fill remaining NaNs with 0 instead of dropping columns to maintain feature consistency
         nan_cols = X_clean.columns[X_clean.isna().any()].tolist()
-        X_clean.drop(columns=nan_cols, inplace=True, errors='ignore')
-        logging.warning(f"Dropped columns with NaNs: {nan_cols}")
-        
-        # Fill any remaining NaNs with 0
+        if len(nan_cols) > 10:
+            logging.warning(f"Filling remaining NaNs in {len(nan_cols)} columns (showing first 10): {nan_cols[:10]}")
+        else:
+            logging.warning(f"Filling remaining NaNs in columns: {nan_cols}")
         X_clean.fillna(0, inplace=True)
+        
+        final_X_nans_after_fill = X_clean.isna().sum().sum()
+        if final_X_nans_after_fill > 0:
+            logging.error(f"Still have {final_X_nans_after_fill} NaN values after filling with 0")
     
     if final_y_nans > 0:
         logging.error(f"Target still has {final_y_nans} NaN values after cleaning.")
@@ -967,47 +1100,61 @@ def preprocess_data_for_xgboost(X, y):
         X_clean.replace([np.inf, -np.inf], 0, inplace=True)
         y_clean.replace([np.inf, -np.inf], y_clean.median(), inplace=True)
     
-    logging.info(f"Data preprocessing complete. X shape: {X_clean.shape}")
+    # Summary log - only show significant events
+    if total_nans > 0 or total_extremes > 0 or cols_with_significant_nans or cols_with_significant_extremes:
+        logging.info(f"Data preprocessing: X shape {X_clean.shape}")
+        if total_nans > 0:
+            logging.info(f"  • Total NaN values imputed: {total_nans}")
+        if total_extremes > 0:
+            logging.info(f"  • Total extreme values processed: {total_extremes}")
+        
+        # Log significant NaN imputations
+        for col, count, median_val in cols_with_significant_nans:
+            logging.info(f"  • Column '{col}': {count} NaNs filled with median ({median_val:.3f})")
+        
+        # Log significant extreme value capping
+        for col, count, lower, upper in cols_with_significant_extremes:
+            logging.info(f"  • Column '{col}': {count} extreme values capped to [{lower:.3f}, {upper:.3f}]")
+    
     return X_clean, y_clean
 
-def objective(trial, X, y, cv):
+def objective_heat_pump_baseload(trial, X, y, cv):
     """
-    Advanced objective function for XGBoost hyperparameter optimization with Optuna.
+    Enhanced objective function specifically optimized for heat pump baseload demand prediction.
+    
+    This objective function focuses on:
+    1. Better performance during heating season (higher weight)
+    2. Accuracy in different temperature regimes
+    3. Balanced performance across different times of day
+    4. Lower penalty for small errors in low consumption periods
     
     Args:
         trial: Optuna trial object
         X: Features DataFrame
         y: Target Series
-        cv: Cross-validation strategy (e.g., TimeSeriesSplit)
+        cv: Cross-validation strategy
         
     Returns:
-        Mean RMSE across all validation folds
+        Weighted RMSE optimized for heat pump applications
     """
-    # Selective parameter space to avoid excessive dimensionality
+    
+    # Enhanced hyperparameter space for heat pump applications
     params = {
+        'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
+        'max_depth': trial.suggest_int('max_depth', 3, 8),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2),
+        'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 10.0, log=True),
+        'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True),
+        'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
         'objective': 'reg:squarederror',
         'eval_metric': 'rmse',
-        
-        # Primary parameters
-        'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-        'max_depth': trial.suggest_int('max_depth', 3, 10),
-        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
-        
-        # Regularization parameters
-        'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 1.0, log=True),
-        'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 1.0, log=True),
-        
-        # Sampling parameters
-        'subsample': trial.suggest_float('subsample', 0.7, 1.0),
-        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.7, 1.0),
-        
-        # Other parameters
         'random_state': 42,
-        'tree_method': 'hist',  # Use histogram-based algorithm for efficiency
-        'early_stopping_rounds': 20,  # Use this instead of callbacks
+        'tree_method': 'hist',
+        'early_stopping_rounds': 20,
     }
     
-    # Cross-validation with TimeSeriesSplit
+    # Cross-validation with custom scoring
     cv_scores = []
     
     for fold, (train_idx, valid_idx) in enumerate(cv.split(X)):
@@ -1020,7 +1167,7 @@ def objective(trial, X, y, cv):
         
         model = xgb.XGBRegressor(**params)
         
-        # Fit model with early stopping but without callbacks
+        # Fit model with early stopping
         model.fit(
             X_train_fold, y_train_fold,
             eval_set=[(X_valid_fold, y_valid_fold)],
@@ -1030,104 +1177,356 @@ def objective(trial, X, y, cv):
         # Make predictions on validation set
         y_pred = model.predict(X_valid_fold)
         
-        # Calculate RMSE
-        rmse = np.sqrt(mean_squared_error(y_valid_fold, y_pred))
-        cv_scores.append(rmse)
+        # Custom weighted scoring for heat pump baseload
+        score = calculate_heat_pump_score(y_valid_fold, y_pred, X_valid_fold)
+        cv_scores.append(score)
         
         # Log progress
-        trial.set_user_attr(f"fold_{fold+1}_rmse", rmse)
+        trial.set_user_attr(f"fold_{fold+1}_heat_pump_score", score)
         if hasattr(model, 'best_iteration'):
             trial.set_user_attr(f"best_iteration_fold_{fold+1}", model.best_iteration)
     
-    # Calculate mean RMSE across all folds
-    mean_rmse = np.mean(cv_scores)
+    # Calculate mean score across all folds
+    mean_score = np.mean(cv_scores)
     
     # Log additional information about the trial
-    trial.set_user_attr("mean_rmse", mean_rmse)
-    trial.set_user_attr("std_rmse", np.std(cv_scores))
+    trial.set_user_attr("mean_heat_pump_score", mean_score)
+    trial.set_user_attr("std_heat_pump_score", np.std(cv_scores))
     
-    return mean_rmse
+    return mean_score
 
-def train_demand_model(df: pd.DataFrame, target_col_name: str = 'y', n_splits: int = 5, n_trials_optuna: int = 50):
+def calculate_heat_pump_score(y_true, y_pred, X_valid=None):
     """
-    Train an XGBoost model for energy demand prediction
+    Calculate a custom scoring metric optimized for heat pump baseload demand prediction.
+    
+    Args:
+        y_true: True consumption values
+        y_pred: Predicted consumption values  
+        X_valid: Validation features (optional, for context-aware scoring)
+        
+    Returns:
+        Custom weighted score (lower is better)
     """
-    logging.info("Starting model training")
+    # Base RMSE
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    
+    if X_valid is None:
+        return rmse
+    
+    # Try to access temperature and time features for weighted scoring
+    weights = np.ones(len(y_true))
+    
+    try:
+        # Higher weight during heating season (when heat pump is working harder)
+        if 'temperature_2m' in X_valid.columns:
+            temp = X_valid['temperature_2m'].values
+            # More weight when temperature is low (heating needed)
+            heating_weight = np.where(temp < 10, 2.0, 1.0)  # 2x weight below 10°C
+            weights *= heating_weight
+            
+            # Additional weight for extreme conditions where heat pump efficiency matters most
+            extreme_weight = np.where(temp < -5, 1.5, 1.0)  # 1.5x more weight below -5°C
+            weights *= extreme_weight
+        
+        # Higher weight during peak hours when demand prediction is most critical
+        if hasattr(X_valid.index, 'hour'):
+            hour = X_valid.index.hour
+            # Morning and evening peaks
+            peak_weight = np.where((hour >= 6) & (hour <= 9) | (hour >= 17) & (hour <= 21), 1.3, 1.0)
+            weights *= peak_weight
+        elif 'hour_of_day' in X_valid.columns:
+            hour = X_valid['hour_of_day'].values
+            peak_weight = np.where((hour >= 6) & (hour <= 9) | (hour >= 17) & (hour <= 21), 1.3, 1.0)
+            weights *= peak_weight
+        
+        # Lower penalty for small errors in very low consumption periods (baseload only)
+        consumption_percentile_20 = np.percentile(y_true, 20)
+        low_consumption_weight = np.where(y_true < consumption_percentile_20, 0.7, 1.0)
+        weights *= low_consumption_weight
+        
+        # Normalize weights to prevent score inflation
+        weights = weights / np.mean(weights)
+        
+    except Exception as e:
+        logging.warning(f"Could not apply custom weighting in heat pump score: {e}")
+        # Fall back to unweighted RMSE
+        return rmse
+    
+    # Calculate weighted RMSE
+    squared_errors = (y_true - y_pred) ** 2
+    weighted_mse = np.average(squared_errors, weights=weights)
+    weighted_rmse = np.sqrt(weighted_mse)
+    
+    return weighted_rmse
+
+def train_demand_model(df: pd.DataFrame, target_col_name: str = 'y', n_splits: int = 5, n_trials_optuna: int = 50, 
+                       use_proper_splits: bool = True, train_ratio: float = 0.70, val_ratio: float = 0.15, test_ratio: float = 0.15):
+    """
+    Train an XGBoost model for energy demand prediction with proper temporal splits
+    
+    Args:
+        df: Featured dataframe with target column
+        target_col_name: Name of target column
+        n_splits: Number of CV splits for hyperparameter optimization
+        n_trials_optuna: Number of Optuna trials
+        use_proper_splits: Whether to use proper temporal splits (True) or legacy approach (False)
+        train_ratio: Proportion for training (default 0.70)
+        val_ratio: Proportion for validation (default 0.15) 
+        test_ratio: Proportion for test (default 0.15)
+        
+    Returns:
+        model, splits_info
+    """
+    logging.info("Starting model training with improved temporal splitting")
     
     # Prepare data
     X = df.drop(columns=[target_col_name])
     y = df[target_col_name]
     
-    # Create TimeSeriesSplit for time-based cross validation
+    if use_proper_splits:
+        # IMPROVED APPROACH: Proper temporal splits with dedicated test set
+        logging.info(f"Using proper temporal splits: {train_ratio:.0%}/{val_ratio:.0%}/{test_ratio:.0%}")
+        
+        # Sort by time
+        df_sorted = df.sort_index()
+        total_samples = len(df_sorted)
+        
+        # Account for lag buffer at the beginning (168 hours for weekly patterns)
+        lag_buffer = 168
+        effective_start_idx = lag_buffer
+        effective_samples = total_samples - lag_buffer
+        
+        # Calculate split indices
+        train_size = int(effective_samples * train_ratio)
+        val_size = int(effective_samples * val_ratio)
+        
+        # Split indices (all relative to effective start)
+        train_start_idx = effective_start_idx
+        train_end_idx = train_start_idx + train_size
+        val_start_idx = train_end_idx
+        val_end_idx = val_start_idx + val_size
+        test_start_idx = val_end_idx
+        test_end_idx = total_samples
+        
+        # Create splits - NO OVERLAP
+        train_df = df_sorted.iloc[train_start_idx:train_end_idx].copy()
+        val_df = df_sorted.iloc[val_start_idx:val_end_idx].copy()
+        test_df = df_sorted.iloc[test_start_idx:test_end_idx].copy()
+        
+        # Verify no overlap
+        assert train_df.index[-1] < val_df.index[0], "Train and validation overlap!"
+        assert val_df.index[-1] < test_df.index[0], "Validation and test overlap!"
+        
+        # Prepare training data
+        X_train = train_df.drop(columns=[target_col_name])
+        y_train = train_df[target_col_name]
+        X_val = val_df.drop(columns=[target_col_name])
+        y_val = val_df[target_col_name]
+        X_test = test_df.drop(columns=[target_col_name])
+        y_test = test_df[target_col_name]
+        
+        logging.info("✅ Proper temporal splits created:")
+        logging.info(f"  Train: {train_df.index[0]} to {train_df.index[-1]} ({len(train_df)} samples, {(train_df.index[-1] - train_df.index[0]).days} days)")
+        logging.info(f"  Val:   {val_df.index[0]} to {val_df.index[-1]} ({len(val_df)} samples, {(val_df.index[-1] - val_df.index[0]).days} days)")
+        logging.info(f"  Test:  {test_df.index[0]} to {test_df.index[-1]} ({len(test_df)} samples, {(test_df.index[-1] - test_df.index[0]).days} days)")
+        
+        # Create proper splits info structure
+        splits_info = {
+            'approach': 'proper_temporal_splits',
+            'lag_buffer_hours': lag_buffer,
+            'ratios': {'train': train_ratio, 'val': val_ratio, 'test': test_ratio},
+            'train': {
+                'start_date': train_df.index[0].strftime('%Y-%m-%d %H:%M:%S'),
+                'end_date': train_df.index[-1].strftime('%Y-%m-%d %H:%M:%S'),
+                'n_samples': len(train_df),
+                'days': (train_df.index[-1] - train_df.index[0]).days
+            },
+            'validation': {
+                'start_date': val_df.index[0].strftime('%Y-%m-%d %H:%M:%S'),
+                'end_date': val_df.index[-1].strftime('%Y-%m-%d %H:%M:%S'),
+                'n_samples': len(val_df),
+                'days': (val_df.index[-1] - val_df.index[0]).days
+            },
+            'test': {
+                'start_date': test_df.index[0].strftime('%Y-%m-%d %H:%M:%S'),
+                'end_date': test_df.index[-1].strftime('%Y-%m-%d %H:%M:%S'),
+                'n_samples': len(test_df),
+                'days': (test_df.index[-1] - test_df.index[0]).days
+            },
+            'full_dataset': {
+                'start_date': df.index[0].strftime('%Y-%m-%d %H:%M:%S'),
+                'end_date': df.index[-1].strftime('%Y-%m-%d %H:%M:%S'),
+                'n_samples': len(df)
+            }
+        }
+        
+    else:
+        # LEGACY APPROACH: For backward compatibility
+        logging.warning("Using legacy split approach - only for backward compatibility!")
+        X_train, X_val = X.iloc[:-180], X.iloc[-180:]
+        y_train, y_val = y.iloc[:-180], y.iloc[-180:]
+        X_test, y_test = None, None  # No test set in legacy approach
+        
+        splits_info = {
+            'approach': 'legacy_no_test_set',
+            'final_train': {
+                'start_date': df.iloc[:-180].index[0].strftime('%Y-%m-%d %H:%M:%S'),
+                'end_date': df.iloc[:-180].index[-1].strftime('%Y-%m-%d %H:%M:%S'),
+                'n_samples': len(df.iloc[:-180])
+            },
+            'final_val': {
+                'start_date': df.iloc[-180:].index[0].strftime('%Y-%m-%d %H:%M:%S'),
+                'end_date': df.iloc[-180:].index[-1].strftime('%Y-%m-%d %H:%M:%S'),
+                'n_samples': len(df.iloc[-180:])
+            }
+        }
+    
+    # Create TimeSeriesSplit for hyperparameter optimization (only on training data)
     ts_cv = TimeSeriesSplit(n_splits=n_splits)
+    cv_splits = list(ts_cv.split(X_train))
     
-    # Save the splits info for later use in evaluation
-    splits_info = {
-        'test_sizes': [],
-        'test_start_dates': [],
-        'test_end_dates': [],
-        'train_sizes': [],
-        'train_start_dates': [],
-        'train_end_dates': []
-    }
-    
-    for i, (train_idx, test_idx) in enumerate(ts_cv.split(X)):
-        test_df = df.iloc[test_idx]
-        train_df = df.iloc[train_idx]
-        
-        splits_info['test_sizes'].append(len(test_df))
-        splits_info['test_start_dates'].append(test_df.index[0])
-        splits_info['test_end_dates'].append(test_df.index[-1])
-        
-        splits_info['train_sizes'].append(len(train_df))
-        splits_info['train_start_dates'].append(train_df.index[0])
-        splits_info['train_end_dates'].append(train_df.index[-1])
-        
-        logging.info(f"Split {i+1}: Train from {train_df.index[0]} to {train_df.index[-1]}, "
-                   f"Test from {test_df.index[0]} to {test_df.index[-1]}")
+    logging.info(f"Using {len(cv_splits)} CV folds for hyperparameter optimization on training data")
     
     # Use Optuna for hyperparameter optimization
     logging.info("Starting hyperparameter optimization with Optuna")
     study = optuna.create_study(direction='minimize')
     
-    # Objective function for Optuna
-    def objective_wrapper(trial):
-        return objective(trial, X, y, ts_cv)
+    # Improved objective function with robust MAPE
+    def objective_improved(trial):
+        # Enhanced hyperparameter space for time series prediction
+        params = {
+            'n_estimators': trial.suggest_int('n_estimators', 200, 1500),  # Increased range for better fit
+            'max_depth': trial.suggest_int('max_depth', 4, 12),  # Slightly deeper trees
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.2, log=True),  # Lower minimum for stability
+            'subsample': trial.suggest_float('subsample', 0.7, 0.95),  # More conservative range
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.7, 0.95),  # More conservative range
+            'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 1.0, log=True),  # L1 regularization
+            'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True),  # L2 regularization
+            'min_child_weight': trial.suggest_int('min_child_weight', 1, 7),  # Add min_child_weight
+            'gamma': trial.suggest_float('gamma', 0, 0.5),  # Add gamma for complexity control
+            'objective': 'reg:squarederror',
+            'eval_metric': 'rmse',
+            'random_state': 42,
+            'tree_method': 'hist',
+            'grow_policy': 'depthwise'  # Better for time series patterns
+        }
+        
+        cv_scores = []
+        for train_idx, val_idx in cv_splits:
+            X_train_fold, X_val_fold = X_train.iloc[train_idx], X_train.iloc[val_idx]
+            y_train_fold, y_val_fold = y_train.iloc[train_idx], y_train.iloc[val_idx]
+            
+            # Preprocess data
+            X_train_clean, y_train_clean = preprocess_data_for_xgboost(X_train_fold, y_train_fold)
+            X_val_clean, y_val_clean = preprocess_data_for_xgboost(X_val_fold, y_val_fold)
+            
+            # Train model
+            model = xgb.XGBRegressor(**params)
+            model.fit(X_train_clean, y_train_clean, verbose=False)
+            
+            # Predict and score
+            y_pred = model.predict(X_val_clean)
+            
+            # Improved scoring with robust MAPE
+            rmse = np.sqrt(np.mean((y_val_clean - y_pred) ** 2))
+            mae = np.mean(np.abs(y_val_clean - y_pred))
+            
+            # Robust MAPE calculation (only for values above threshold)
+            threshold = 0.1
+            mask = np.abs(y_val_clean) > threshold
+            if mask.sum() > 0:
+                mape_values = np.abs((y_val_clean[mask] - y_pred[mask]) / y_val_clean[mask]) * 100
+                robust_mape = np.mean(mape_values)
+            else:
+                robust_mape = 200  # High penalty if no valid MAPE values
+            
+            # Combined score (cap MAPE contribution)
+            mape_capped = min(robust_mape, 200)
+            combined_score = 0.4 * rmse + 0.4 * mae + 0.2 * (mape_capped / 100)
+            cv_scores.append(combined_score)
+        
+        return np.mean(cv_scores)
     
-    # Run optimization
-    study.optimize(objective_wrapper, n_trials=n_trials_optuna)
+    # Add progress callback if tqdm is available
+    if TQDM_AVAILABLE:
+        def progress_callback(study, trial):
+            tqdm.write(f"Trial {trial.number + 1}/{n_trials_optuna}: Score = {trial.value:.4f}")
+        
+        with tqdm(total=n_trials_optuna, desc="Hyperparameter optimization", unit="trial") as pbar:
+            def callback_with_progress(study, trial):
+                progress_callback(study, trial)
+                pbar.update(1)
+            
+            study.optimize(objective_improved, n_trials=n_trials_optuna, callbacks=[callback_with_progress])
+    else:
+        logging.info(f"Running {n_trials_optuna} optimization trials...")
+        study.optimize(objective_improved, n_trials=n_trials_optuna)
     
     # Get best parameters
     best_params = study.best_params
     logging.info(f"Best hyperparameters: {best_params}")
     
-    # Add fixed parameters that weren't part of the optimization
+    # Add fixed parameters
     best_params.update({
         'objective': 'reg:squarederror',
         'eval_metric': 'rmse',
         'random_state': 42,
         'tree_method': 'hist',
-        'early_stopping_rounds': 15
+        'early_stopping_rounds': 20
     })
     
     # Train final model with best parameters
     logging.info("Training final model with best parameters")
     final_model = xgb.XGBRegressor(**best_params)
     
-    # Split into train/val for final model
-    X_train, X_val = X.iloc[:-180], X.iloc[-180:]
-    y_train, y_val = y.iloc[:-180], y.iloc[-180:]
+    # Preprocess data for final training
+    X_train_clean, y_train_clean = preprocess_data_for_xgboost(X_train, y_train)
+    X_val_clean, y_val_clean = preprocess_data_for_xgboost(X_val, y_val)
     
-    # Preprocess data for XGBoost
-    X_train, y_train = preprocess_data_for_xgboost(X_train, y_train)
-    X_val, y_val = preprocess_data_for_xgboost(X_val, y_val)
-    
-    # Fit the model without callbacks
+    # Fit the model
     final_model.fit(
-        X_train, y_train,
-        eval_set=[(X_val, y_val)],
+        X_train_clean, y_train_clean,
+        eval_set=[(X_val_clean, y_val_clean)],
         verbose=False
     )
+    
+    # Calculate validation metrics
+    y_val_pred = final_model.predict(X_val_clean)
+    val_rmse = np.sqrt(np.mean((y_val_clean - y_val_pred) ** 2))
+    val_mae = np.mean(np.abs(y_val_clean - y_val_pred))
+    
+    # Robust MAPE calculation
+    threshold = 0.1
+    mask = np.abs(y_val_clean) > threshold
+    if mask.sum() > 0:
+        mape_values = np.abs((y_val_clean[mask] - y_val_pred[mask]) / y_val_clean[mask]) * 100
+        val_mape = np.mean(mape_values)
+    else:
+        val_mape = np.inf
+    
+    logging.info(f"Validation metrics:")
+    logging.info(f"  RMSE: {val_rmse:.4f}")
+    logging.info(f"  MAE:  {val_mae:.4f}")
+    logging.info(f"  Robust MAPE: {val_mape:.2f}%")
+    
+    # Add validation metrics to splits_info
+    splits_info['validation_metrics'] = {
+        'rmse': val_rmse,
+        'mae': val_mae,
+        'mape': val_mape
+    }
+    
+    # Add optimization info
+    splits_info['optimization'] = {
+        'n_trials': n_trials_optuna,
+        'best_params': best_params,
+        'best_score': study.best_value
+    }
+    
+    if use_proper_splits:
+        logging.info("⚠️  IMPORTANT: Test set is reserved for final evaluation only!")
+        logging.info("   Do NOT use test set for model selection or hyperparameter tuning!")
+        logging.info(f"   Test set: {len(test_df)} samples from {test_df.index[0]} to {test_df.index[-1]}")
     
     # Save the model and split information
     with open(MODEL_SAVE_PATH, 'wb') as f:
@@ -1139,14 +1538,14 @@ def train_demand_model(df: pd.DataFrame, target_col_name: str = 'y', n_splits: i
         pickle.dump(splits_info, f)
     logging.info(f"Model splits info saved to {splits_info_path}")
     
-    # Also save the feature columns for future use
+    # Save feature columns for future use
     feature_columns_path = MODEL_SAVE_PATH.replace('.pkl', '_feature_columns.pkl')
     with open(feature_columns_path, 'wb') as f:
-        pickle.dump(list(X_train.columns), f)
+        pickle.dump(list(X_train_clean.columns), f)
     logging.info(f"Model feature columns saved to {feature_columns_path}")
     
     # Plot feature importance
-    plot_feature_importance(final_model, X_train.columns, save_path=FEATURE_IMPORTANCE_SAVE_PATH)
+    plot_feature_importance(final_model, X_train_clean.columns, save_path=FEATURE_IMPORTANCE_SAVE_PATH)
     
     return final_model, splits_info
 
@@ -1155,66 +1554,129 @@ def main():
     """
     Main function to train the demand prediction model
     """
+    # Load and process data
+    df = run_data_pipeline(CONSUMPTION_DATA_PATH, HEAT_PUMP_DATA_PATH, WEATHER_DATA_PATH)
+    
+    # Add HMM features
+    df = add_hmm_features(df, TARGET_COL, N_HMM_STATES)
+    
+    # Feature engineering
+    featured_df = engineer_features(df, TARGET_COL, create_target=True)
+    
+    # Use more trials for better model performance (increased from 5)
+    n_trials = 30  # Increased default for better hyperparameter optimization
+    
+    # Train model
+    model, splits_info = train_demand_model(featured_df, n_trials_optuna=n_trials)
+    
+    # Check if tqdm is available and suggest installation if not
+    if not TQDM_AVAILABLE:
+        logging.info("💡 Tip: Install tqdm for progress bars: pip install tqdm")
+    
+    print("Training complete.")
+    
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train demand prediction model')
-    parser.add_argument('--trials', type=int, default=5,
-                        help='Number of trials for hyperparameter optimization')
+    parser.add_argument('--trials', type=int, default=30,
+                        help='Number of trials for hyperparameter optimization (increased default)')
     parser.add_argument('--save-path', type=str, default=MODEL_SAVE_PATH,
                         help='Path to save the trained model')
-    parser.add_argument('--for-agent', action='store_true',
-                        help='Train model for agent use (predicts baseload instead of net consumption)')
+    parser.add_argument('--legacy-splits', action='store_true',
+                        help='Use legacy split approach (not recommended)')
+    parser.add_argument('--train-ratio', type=float, default=0.70,
+                        help='Proportion of data for training (default: 0.70)')
+    parser.add_argument('--val-ratio', type=float, default=0.15,
+                        help='Proportion of data for validation (default: 0.15)')
+    parser.add_argument('--test-ratio', type=float, default=0.15,
+                        help='Proportion of data for test (default: 0.15)')
+    
     args = parser.parse_args()
     
-    # Update global variables if needed
-    save_path = args.save_path
-    if args.for_agent and args.save_path == MODEL_SAVE_PATH:
-        # If using agent mode with default path, use the agent-specific path
-        save_path = AGENT_MODEL_SAVE_PATH
-        logging.info(f"Training in agent mode. Model will be saved to {save_path}")
+    # Validate ratios
+    if abs(args.train_ratio + args.val_ratio + args.test_ratio - 1.0) > 0.01:
+        logging.error("Train, validation, and test ratios must sum to 1.0")
+        exit(1)
     
-    # Set target column based on agent mode
-    target_column = BASELOAD_TARGET_COL if args.for_agent else TARGET_COL
-    logging.info(f"Using target column: {target_column}")
+    # Update global variables if needed
+    if args.save_path != MODEL_SAVE_PATH:
+        MODEL_SAVE_PATH = args.save_path
+    
+    # Determine split approach
+    use_proper_splits = not args.legacy_splits
+    
+    if use_proper_splits:
+        logging.info("🎯 Using PROPER temporal splits (recommended)")
+        logging.info(f"   Ratios: Train={args.train_ratio:.0%}, Val={args.val_ratio:.0%}, Test={args.test_ratio:.0%}")
+        logging.info("   This creates a dedicated test set for final evaluation")
+    else:
+        logging.warning("⚠️  Using LEGACY splits (not recommended - no test set!)")
+        logging.warning("   This approach has data leakage issues")
     
     # Start the main process
     try:
         # Load and process data
-        df = run_data_pipeline(CONSUMPTION_DATA_PATH, HEAT_PUMP_DATA_PATH, WEATHER_DATA_PATH, args.for_agent)
+        df = run_data_pipeline(CONSUMPTION_DATA_PATH, HEAT_PUMP_DATA_PATH, WEATHER_DATA_PATH)
         
         # Add HMM features
-        df = add_hmm_features(df, target_column, N_HMM_STATES)
+        df = add_hmm_features(df, TARGET_COL, N_HMM_STATES)
         
         # Feature engineering
-        featured_df = engineer_features(df, target_column, create_target=True)
+        featured_df = engineer_features(df, TARGET_COL, create_target=True)
         
-        # Train model
-        model, splits_info = train_demand_model(featured_df, n_trials_optuna=args.trials)
+        # Train model with improved splits
+        model, splits_info = train_demand_model(
+            featured_df, 
+            n_trials_optuna=args.trials,
+            use_proper_splits=use_proper_splits,
+            train_ratio=args.train_ratio,
+            val_ratio=args.val_ratio,
+            test_ratio=args.test_ratio
+        )
         
-        # Save the model
-        with open(save_path, 'wb') as f:
-            pickle.dump(model, f)
+        # Print final summary
+        logging.info("="*60)
+        logging.info("🎉 TRAINING COMPLETED SUCCESSFULLY")
+        logging.info("="*60)
         
-        # Save split info and feature columns with the correct path
-        splits_info_path = save_path.replace('.pkl', '_splits_info.pkl')
-        with open(splits_info_path, 'wb') as f:
-            pickle.dump(splits_info, f)
+        if use_proper_splits:
+            logging.info("✅ Model trained with proper temporal splits")
+            logging.info(f"✅ Validation RMSE: {splits_info['validation_metrics']['rmse']:.4f}")
+            logging.info(f"✅ Validation MAE: {splits_info['validation_metrics']['mae']:.4f}")
+            logging.info(f"✅ Validation Robust MAPE: {splits_info['validation_metrics']['mape']:.2f}%")
+            logging.info("")
+            logging.info("📋 Data splits:")
+            logging.info(f"   Train: {splits_info['train']['n_samples']} samples ({splits_info['train']['days']} days)")
+            logging.info(f"   Val:   {splits_info['validation']['n_samples']} samples ({splits_info['validation']['days']} days)")
+            logging.info(f"   Test:  {splits_info['test']['n_samples']} samples ({splits_info['test']['days']} days)")
+            logging.info("")
+            logging.info("⚠️  IMPORTANT NOTES:")
+            logging.info("   • Test set is RESERVED for final evaluation only")
+            logging.info("   • Use evaluate.py with the test set for final performance")
+            logging.info("   • Do NOT retrain using test set results")
             
-        feature_columns_path = save_path.replace('.pkl', '_feature_columns.pkl')
-        with open(feature_columns_path, 'wb') as f:
-            pickle.dump(list(featured_df.drop(columns=['y']).columns), f)
-            
-        # Update feature importance path if in agent mode
-        feature_importance_path = FEATURE_IMPORTANCE_SAVE_PATH
-        if args.for_agent:
-            feature_importance_path = FEATURE_IMPORTANCE_SAVE_PATH.replace('feature_importance.png', 'agent_feature_importance.png')
+            # Performance advice
+            mape = splits_info['validation_metrics']['mape']
+            if mape > 50:
+                logging.warning("⚠️  High MAPE detected. Consider:")
+                logging.warning("   • Increasing --trials for better hyperparameters")
+                logging.warning("   • Checking data quality and feature engineering")
+                logging.warning("   • Using domain-specific preprocessing")
+            elif mape > 30:
+                logging.info("💡 Moderate MAPE. Model could benefit from:")
+                logging.info("   • More trials for hyperparameter optimization")
+                logging.info("   • Additional feature engineering")
+        else:
+            logging.warning("⚠️  Model trained with legacy splits (no test set)")
+            logging.warning("   Consider retraining with --legacy-splits flag removed")
         
-        # Plot feature importance
-        plot_feature_importance(model, featured_df.drop(columns=['y']).columns, save_path=feature_importance_path)
+        # Check if tqdm is available and suggest installation if not
+        if not TQDM_AVAILABLE:
+            logging.info("💡 Tip: Install tqdm for progress bars: pip install tqdm")
         
-        print(f"Training complete. Model saved to {save_path}")
+        logging.info(f"📁 Model saved to: {MODEL_SAVE_PATH}")
+        logging.info("="*60)
+        
     except Exception as e:
         logging.error(f"Error during model training: {str(e)}")
         raise
-
-
-if __name__ == "__main__":
-    main()

@@ -17,7 +17,6 @@ This directory contains the core components for a reinforcement learning (RL) sy
     - [Action Space](#action-space)
     - [Reward Components](#reward-components)
   - [`agent.py` - Agent Classes](#agentpy---agent-classes)
-    - [ShortTermAgent](#shorttermagent)
     - [RecurrentEnergyAgent](#recurrentenergyagent)
   - [`config.py`](#configpy)
   - [`components.py`](#componentspy)
@@ -26,13 +25,11 @@ This directory contains the core components for a reinforcement learning (RL) sy
   - [1. Configuration](#1-configuration)
   - [2. Running Hyperparameter Optimization (HPO) and Training](#2-running-hyperparameter-optimization-hpo-and-training)
   - [3. Training Only (from parameters file or default config)](#3-training-only-from-parameters-file-or-default-config)
-  - [4. Training a Recurrent Agent](#4-training-a-recurrent-agent)
-  - [5. Evaluating a Trained Agent](#5-evaluating-a-trained-agent)
+  - [4. Evaluating a Trained Agent](#4-evaluating-a-trained-agent)
 - [Evaluation Metrics and Plotting](#evaluation-metrics-and-plotting)
 - [Hyperparameter Optimization (HPO) Details](#hyperparameter-optimization-hpo-details)
 - [Key Simulated Features](#key-simulated-features)
 - [Agent Types](#agent-types)
-  - [ShortTermAgent](#shorttermAgent)
   - [RecurrentEnergyAgent](#recurrentenergyagent)
 - [Reward Function](#reward-function)
 - [Command Line Options](#command-line-options)
@@ -47,15 +44,13 @@ The primary goal of this RL module is to train an agent that can intelligently m
 - Maintain battery health by operating within desired State of Charge (SoC) limits and penalizing excessive degradation.
 - Optimize charging/discharging based on daily patterns such as morning consumption and price forecasts.
 
-The system uses two types of agents:
-1. **ShortTermAgent**: Uses the Proximal Policy Optimization (PPO) algorithm from the Stable Baselines3 library.
-2. **RecurrentEnergyAgent**: Uses RecurrentPPO with LSTM layers to maintain memory of past states, enabling more complex strategies.
+The system uses a **RecurrentEnergyAgent** that uses RecurrentPPO with LSTM layers to maintain memory of past states, enabling complex strategies that can learn patterns over time.
 
 ## Directory Structure
 
 ```
 src/rl/
-├── agent.py                # Defines the RL agents (ShortTermAgent and RecurrentEnergyAgent)
+├── agent.py                # Defines the RecurrentEnergyAgent
 ├── components.py           # Defines simulation components like the Battery
 ├── config.py               # Central configuration file for all parameters
 ├── custom_env.py           # Defines the `HomeEnergyEnv` RL environment
@@ -65,15 +60,12 @@ src/rl/
 ├── run_optimization.py     # Main script to run HPO and then train an agent with best params
 ├── safety_buffer.py        # (for future use)
 ├── test_load_agent.py      # Helper script to test agent loading
-├── train.py                # Alternative/older script for training agents
+├── train.py                # Script for training agents
 ├── logs/                   # Directory for TensorBoard logs, HPO results, etc.
 │   ├── hpo_results/        # Stores results from HPO runs
-│   ├── short_term_<timestamp>/ # TensorBoard logs for standard agent training runs
 │   └── recurrent_<timestamp>/  # TensorBoard logs for recurrent agent training runs
 ├── saved_models/           # Directory for saved model checkpoints
-│   ├── best_short_term_model/  # Best standard model saved during training
 │   ├── best_recurrent_model/   # Best recurrent model saved during training
-│   ├── short_term_checkpoints/ # Periodic checkpoints for standard agent
 │   └── recurrent_checkpoints/  # Periodic checkpoints for recurrent agent
 └── simulations/
     └── results/            # Directory for evaluation plots and metrics from `run_optimization.py`
@@ -98,20 +90,18 @@ This is the **primary script** for a full workflow: running hyperparameter optim
 - **Purpose**: Implements the hyperparameter optimization logic using Optuna and the TPESampler. It defines the `objective` function that Optuna tries to maximize. This script is primarily called by `run_optimization.py`.
 - **Functionality**:
     - Samples hyperparameters for reward component weights and PPO algorithm parameters.
-    - Trains a temporary PPO model for a limited number of timesteps.
+    - Trains a temporary RecurrentPPO model for a limited number of timesteps.
     - Evaluates the temporary model based on a custom score (combining mean reward, price correlation, peak average, SoC violations, costs, arbitrage, and export).
     - Saves the best parameters found to a JSON file (e.g., `best_hpo_params.json`) in a timestamped HPO results directory.
     - Generates HPO diagnostic plots (optimization history, parameter importances, parallel coordinate).
 
 ### `train.py`
-- **Purpose**: An alternative script for training both `ShortTermAgent` and `RecurrentEnergyAgent`. It offers more granular control over Stable Baselines3 callbacks (like `CheckpointCallback` and `EvalCallback`) for a single training run.
+- **Purpose**: Script for training the `RecurrentEnergyAgent`. It offers granular control over Stable Baselines3 callbacks (like `CheckpointCallback` and `EvalCallback`) for a single training run.
 - **Key Arguments (consult script for full list)**:
-    - `--short_term_model FILE_PATH`: Load a pre-trained standard model to continue training.
+    - `--config FILE_PATH`: Path to a custom configuration JSON file.
     - `--total_timesteps VAL`: Set the total number of training timesteps.
     - `--start-date YYYY-MM-DD --end-date YYYY-MM-DD`: Restrict training data to a specific period.
-    - `--augment-data`: Enable data augmentation for solar and consumption.
     - `--skip-sanity-check`, `--sanity-check-only`, `--sanity-check-steps N`: Options related to pre-training environment checks.
-    - `--recurrent`: Use RecurrentPPO agent instead of standard PPO.
 - **Relationship to `run_optimization.py`**: `run_optimization.py` is generally preferred for finding good hyperparameters and then training. `train.py` can be used for more manual training sessions.
 
 ### `evaluate_agent.py`
@@ -197,24 +187,7 @@ The total reward is a weighted sum of several components, designed to guide the 
     - **Calculation**: If action modified: `abs(original_action - safe_action) * action_modification_penalty * escalation_factor`. Escalation factor increases with consecutive invalid actions up to `max_consecutive_penalty_multiplier`.
     - **Contribution**: `total_reward -= weights['w_action_mod'] * components['action_mod_penalty']`
 
-10. **Morning SoC Targeting (`morning_soc`)**:
-    - **Purpose**: Encourages maintaining a lower SoC in the morning before solar production, to make room for storing solar energy.
-    - **Calculation**: If in morning hours (defined by `morning_hours_start` and `morning_hours_end`) and significant solar production is expected: reward based on how close SoC is to `morning_target_soc`.
-    - **Contribution**: `weights['w_morning'] * components['morning_soc']`
-
-11. **Night-to-Peak Chain Bonus (`night_peak_chain`)**:
-    - **Purpose**: Rewards using energy charged at night during later peak price/demand periods, creating a connection between overnight charging and daytime discharging.
-    - **Calculation**: When discharging, a bonus is given proportional to amount of energy "tagged" from night charging within a time window (`night_charge_window_hours`).
-    - **Contribution**: `weights['w_chain'] * components['night_peak_chain']`
-
-The sum of these weighted components is then scaled by a global `reward_scaling_factor`.
-
 ### `agent.py` - Agent Classes
-
-#### ShortTermAgent
-- **Purpose**: Defines the `ShortTermAgent` class, a wrapper around the Stable Baselines3 `PPO` ("MultiInputPolicy") model.
-- **Functionality**: Initializes the PPO model with hyperparameters from the configuration. Provides `train()`, `predict()`, and `save()` methods.
-- **Best suited for**: Standard scenarios where immediate optimization without memory of past states is sufficient.
 
 #### RecurrentEnergyAgent
 - **Purpose**: Defines the `RecurrentEnergyAgent` class using the `RecurrentPPO` ("MlpLstmPolicy") model from sb3-contrib.
@@ -296,31 +269,7 @@ To continue training a specific model using `train.py`:
 python src/rl/train.py --short_term_model src/rl/saved_models/short_term_checkpoints/your_model.zip --total_timesteps 100000
 ```
 
-### 4. Training a Recurrent Agent
-To train a RecurrentPPO agent with LSTM layers:
-
-```bash
-python src/rl/train.py --recurrent --total_timesteps 500000
-```
-
-This will:
-1. Create a RecurrentEnergyAgent with LSTM layers as defined in the configuration
-2. Train it using RecurrentPPO algorithm from sb3-contrib
-3. Save checkpoints to src/rl/saved_models/recurrent_checkpoints/
-4. Save the best model to src/rl/saved_models/best_recurrent_model/
-
-The recurrent agent is particularly effective for:
-- Learning daily patterns in solar production
-- Coordinating night charging with daytime peak prices
-- Maintaining and applying context from past timesteps
-- Optimizing SoC for anticipated future events
-
-To continue training an existing recurrent model:
-```bash
-python src/rl/train.py --recurrent --load-model src/rl/saved_models/best_recurrent_model/best_model.zip --total_timesteps 200000
-```
-
-### 5. Evaluating a Trained Agent
+### 4. Evaluating a Trained Agent
 Use `evaluate_agent.py` to assess a previously trained model.
 
 **Example: Evaluate a specific model for a specific month.**
@@ -398,9 +347,6 @@ The `evaluate_agent.py` script (and `run_optimization.py` when it evaluates) cal
 
 ## Agent Types
 
-### ShortTermAgent
-The ShortTermAgent uses a standard PPO algorithm with a MultiInputPolicy. It processes the current observation only and has no memory of past states. This makes it suitable for environments where the current state contains all necessary information for decision-making.
-
 ### RecurrentEnergyAgent
 The RecurrentEnergyAgent uses RecurrentPPO with LSTM layers to maintain memory across timesteps. This allows the agent to learn patterns over time and make decisions based on historical data.
 
@@ -463,11 +409,6 @@ python src/rl/evaluate_agent.py [options]
 
 ## Usage Examples
 
-### Training a short-term agent
-```bash
-python src/rl/train.py --start-date 2025-01-01 --end-date 2025-03-31
-```
-
 ### Training a recurrent agent
 ```bash
 python src/rl/train.py --recurrent --start-date 2025-01-01 --end-date 2025-03-31
@@ -480,7 +421,7 @@ python src/rl/train.py --sanity-check-only --sanity-check-steps 20
 
 ### Evaluating a trained model
 ```bash
-python src/rl/evaluate_agent.py --model-path src/rl/saved_models/best_short_term_model/best_model.zip --start-month 2025-02
+python src/rl/evaluate_agent.py --model-path src/rl/saved_models/best_recurrent_model/best_model.zip --start-month 2025-02
 ```
 
 # Training and Evaluation
@@ -490,9 +431,6 @@ python src/rl/evaluate_agent.py --model-path src/rl/saved_models/best_short_term
 To train a new agent, use the `train.py` script with the following options:
 
 ```bash
-# Train a standard agent
-python src/rl/train.py --timesteps 500000
-
 # Train a recurrent agent
 python src/rl/train.py --recurrent --timesteps 500000
 
@@ -508,9 +446,6 @@ python src/rl/train.py --sanity-check-only
 To evaluate a trained agent, use the `evaluate_agent.py` script:
 
 ```bash
-# Evaluate a standard agent for a specific month
-python src/rl/evaluate_agent.py --model-path src/rl/saved_models/best_short_term_model/best_model.zip --start-month 2025-02
-
 # Evaluate a recurrent agent by specifying the model path
 python src/rl/evaluate_agent.py --model-path src/rl/saved_models/final_recurrent_model.zip --start-month 2025-02
 
@@ -518,11 +453,5 @@ python src/rl/evaluate_agent.py --model-path src/rl/saved_models/final_recurrent
 python src/rl/evaluate_agent.py --recurrent --start-month 2025-02
 
 # Run multiple evaluation episodes
-python src/rl/evaluate_agent.py --model-path src/rl/saved_models/best_short_term_model/best_model.zip --start-month 2025-02 --num-episodes 3
+python src/rl/evaluate_agent.py --model-path src/rl/saved_models/best_recurrent_model/best_model.zip --start-month 2025-02 --num-episodes 3
 ```
-
-The evaluation script will:
-1. Generate performance plots
-2. Calculate detailed metrics
-3. Show reward component distributions
-4. Save results to the `src/rl/simulations/results/` directory 

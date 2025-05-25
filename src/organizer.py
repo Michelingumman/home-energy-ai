@@ -87,9 +87,49 @@ SCRIPT_PATHS = {
 # UTILITY TASKS
 # =============================================================================
 
-@task(retries=1, retry_delay_seconds=60)
+def get_descriptive_name_from_script_path(script_path: str, args: List[str] = None) -> str:
+    """Generate a descriptive task name based on the script path and arguments."""
+    if args is None:
+        args = []
+    
+    # Map script paths to descriptive names
+    script_name_map = {
+        'src/predictions/solar/actual_data/FetchSolarProductionData.py': 'fetch-solar-actual-data',
+        'src/predictions/solar/makeSolarPrediction.py': 'fetch-solar-predictions',
+        'src/predictions/prices/getPriceRelatedData.py': 'fetch-price-data',
+        'data/FetchCO2GasCoal.py': 'fetch-co2-gas-coal-data',
+        'src/predictions/demand/FetchWeatherData.py': 'fetch-weather-data',
+        'src/predictions/demand/FetchEnergyData.py': 'fetch-energy-consumption',
+        'src/predictions/demand/FetchActualLoad.py': 'fetch-actual-load',
+        'src/predictions/demand/Thermia/UpdateHeatPumpData.py': 'fetch-thermia-data',
+        'src/predictions/prices/train.py': 'train-price-models',
+        'src/predictions/demand/train.py': 'train-demand-model',
+        'src/rl/train.py': 'train-rl-agent',
+        'src/predictions/prices/run_model.py': 'generate-price-predictions',
+        'src/predictions/demand/predict.py': 'generate-demand-predictions',
+        'src/rl/run_production_agent.py': 'run-rl-control'
+    }
+    
+    base_name = script_name_map.get(script_path)
+    if base_name:
+        # Add model type for training scripts if specified in args
+        if 'train.py' in script_path and args:
+            for i, arg in enumerate(args):
+                if arg == '--model' and i + 1 < len(args):
+                    return f"{base_name}-{args[i+1]}"
+                elif arg == '--trials' and i + 1 < len(args):
+                    return f"{base_name}-{args[i+1]}-trials"
+        return base_name
+    
+    # Fallback: extract filename
+    filename = script_path.split('/')[-1].replace('.py', '').lower().replace('_', '-')
+    return f"run-{filename}"
+
+@task(retries=1, retry_delay_seconds=60, 
+      task_run_name="{task_name}")
 def run_python_script(script_path: str, args: List[str] = None, 
-                     working_dir: str = None, timeout: int = 3600) -> Dict[str, Any]:
+                     working_dir: str = None, timeout: int = 3600,
+                     task_name: str = None) -> Dict[str, Any]:
     """
     Run a Python script with proper error handling and logging.
     
@@ -98,6 +138,7 @@ def run_python_script(script_path: str, args: List[str] = None,
         args: Command line arguments for the script
         working_dir: Working directory for script execution
         timeout: Timeout in seconds (default 1 hour)
+        task_name: Custom name for the task run (auto-generated if None)
     
     Returns:
         Dict with execution results and metadata
@@ -108,6 +149,10 @@ def run_python_script(script_path: str, args: List[str] = None,
     if working_dir is None:
         working_dir = str(PROJECT_ROOT)
     
+    # Generate descriptive name if not provided
+    if task_name is None:
+        task_name = get_descriptive_name_from_script_path(script_path, args)
+    
     full_script_path = PROJECT_ROOT / script_path
     if not full_script_path.exists():
         raise FileNotFoundError(f"Script not found: {full_script_path}")
@@ -115,7 +160,7 @@ def run_python_script(script_path: str, args: List[str] = None,
     cmd = [sys.executable, str(full_script_path)] + args
     cmd_str = ' '.join(cmd)
     
-    logger.info(f"Executing: {cmd_str}")
+    logger.info(f"Executing ({task_name}): {cmd_str}")
     logger.info(f"Working directory: {working_dir}")
     
     start_time = datetime.now()
@@ -142,7 +187,8 @@ def run_python_script(script_path: str, args: List[str] = None,
             'success': True,
             'stdout': result.stdout,
             'stderr': result.stderr,
-            'return_code': result.returncode
+            'return_code': result.returncode,
+            'task_name': task_name
         }
         
         logger.info(f"Script completed successfully in {duration:.2f}s")
@@ -161,6 +207,71 @@ def run_python_script(script_path: str, args: List[str] = None,
     except Exception as e:
         logger.error(f"Unexpected error running script {script_path}: {str(e)}")
         raise
+
+# Specific named tasks for better UI readability
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-price-data")
+def fetch_price_data() -> Dict[str, Any]:
+    """Fetch SE3 electricity price data."""
+    return run_python_script(
+        SCRIPT_PATHS['prices_data'], 
+        task_name="fetch-price-data"
+    )
+
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-co2-gas-coal")  
+def fetch_co2_gas_coal() -> Dict[str, Any]:
+    """Fetch CO2, gas, and coal commodity data."""
+    return run_python_script(
+        SCRIPT_PATHS['co2_gas_coal'],
+        task_name="fetch-co2-gas-coal"
+    )
+
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-weather-data")
+def fetch_weather_data() -> Dict[str, Any]:
+    """Fetch weather data from Open-Meteo."""
+    return run_python_script(
+        SCRIPT_PATHS['weather_data'],
+        task_name="fetch-weather-data"
+    )
+
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-energy-consumption")
+def fetch_energy_consumption() -> Dict[str, Any]:
+    """Fetch home energy consumption data."""
+    return run_python_script(
+        SCRIPT_PATHS['consumption_data'],
+        task_name="fetch-energy-consumption"
+    )
+
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-actual-load")
+def fetch_actual_load() -> Dict[str, Any]:
+    """Fetch actual load consumption data."""
+    return run_python_script(
+        SCRIPT_PATHS['consumption_actual_load'],
+        task_name="fetch-actual-load"
+    )
+
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-thermia-data")
+def fetch_thermia_data() -> Dict[str, Any]:
+    """Fetch Thermia heat pump data."""
+    return run_python_script(
+        SCRIPT_PATHS['thermia_data'],
+        task_name="fetch-thermia-data"
+    )
+
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-solar-actual")
+def fetch_solar_actual() -> Dict[str, Any]:
+    """Fetch actual solar production data."""
+    return run_python_script(
+        SCRIPT_PATHS['solar_actual'],
+        task_name="fetch-solar-actual"
+    )
+
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-solar-predictions")
+def fetch_solar_predictions() -> Dict[str, Any]:
+    """Generate solar production predictions.""" 
+    return run_python_script(
+        SCRIPT_PATHS['solar_predictions'],
+        task_name="fetch-solar-predictions"
+    )
 
 @task
 def check_data_freshness(file_path: str, max_age_hours: int = 24) -> Dict[str, Any]:
@@ -200,7 +311,7 @@ def check_data_freshness(file_path: str, max_age_hours: int = 24) -> Dict[str, A
         'reason': f"File is {age_hours:.1f} hours old" if not is_fresh else "File is fresh"
     }
 
-@task
+@task(task_run_name="create-execution-report")
 def create_execution_report(task_results: List[Dict[str, Any]], 
                           flow_name: str) -> str:
     """
@@ -254,7 +365,7 @@ def create_execution_report(task_results: List[Dict[str, Any]],
 # DATA FETCHING TASKS
 # =============================================================================
 
-@task(retries=1, retry_delay_seconds=120)
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-exogenic-data")
 def fetch_exogenic_data() -> Dict[str, Any]:
     """Fetch external/exogenic data: prices, CO2/gas/coal, weather."""
     logger.info("Starting exogenic data fetching")
@@ -263,7 +374,7 @@ def fetch_exogenic_data() -> Dict[str, Any]:
     
     # Fetch price-related data
     try:
-        result = run_python_script(SCRIPT_PATHS['prices_data'])
+        result = fetch_price_data()
         results.append(result)
         logger.info("✅ Price data fetched successfully")
     except Exception as e:
@@ -272,7 +383,7 @@ def fetch_exogenic_data() -> Dict[str, Any]:
     
     # Fetch CO2, gas, coal data
     try:
-        result = run_python_script(SCRIPT_PATHS['co2_gas_coal'])
+        result = fetch_co2_gas_coal()
         results.append(result)
         logger.info("✅ CO2/Gas/Coal data fetched successfully")
     except Exception as e:
@@ -281,7 +392,7 @@ def fetch_exogenic_data() -> Dict[str, Any]:
     
     # Fetch weather data
     try:
-        result = run_python_script(SCRIPT_PATHS['weather_data'])
+        result = fetch_weather_data()
         results.append(result)
         logger.info("✅ Weather data fetched successfully")
     except Exception as e:
@@ -317,7 +428,7 @@ def home_data_flow() -> str:
     
     return report
 
-@task(retries=1, retry_delay_seconds=120)
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-home-data")
 def fetch_home_data() -> Dict[str, Any]:
     """Fetch home-related data: consumption and Thermia heat pump."""
     logger.info("Starting home data fetching")
@@ -326,7 +437,7 @@ def fetch_home_data() -> Dict[str, Any]:
     
     # Fetch consumption data
     try:
-        result = run_python_script(SCRIPT_PATHS['consumption_data'])
+        result = fetch_energy_consumption()
         results.append(result)
         logger.info("✅ Consumption data fetched successfully")
     except Exception as e:
@@ -335,7 +446,7 @@ def fetch_home_data() -> Dict[str, Any]:
     
     # Fetch consumption data
     try:
-        result = run_python_script(SCRIPT_PATHS['consumption_actual_load'])
+        result = fetch_actual_load()
         results.append(result)
         logger.info("✅ Consumption actual load data fetched successfully")
     except Exception as e:
@@ -344,7 +455,7 @@ def fetch_home_data() -> Dict[str, Any]:
     
     # Fetch Thermia heat pump data
     try:
-        result = run_python_script(SCRIPT_PATHS['thermia_data'])
+        result = fetch_thermia_data()
         results.append(result)
         logger.info("✅ Thermia data fetched successfully")
     except Exception as e:
@@ -361,7 +472,7 @@ def fetch_home_data() -> Dict[str, Any]:
         'total_count': len(results)
     }
 
-@task(retries=1, retry_delay_seconds=120)
+@task(retries=1, retry_delay_seconds=120, task_run_name="fetch-solar-data")
 def fetch_solar_data() -> Dict[str, Any]:
     """Fetch solar production data and generate predictions."""
     logger.info("Starting solar data fetching and predictions")
@@ -370,7 +481,7 @@ def fetch_solar_data() -> Dict[str, Any]:
     
     # Fetch actual solar production data
     try:
-        result = run_python_script(SCRIPT_PATHS['solar_actual'])
+        result = fetch_solar_actual()
         results.append(result)
         logger.info("✅ Solar actual data fetched successfully")
     except Exception as e:
@@ -379,7 +490,7 @@ def fetch_solar_data() -> Dict[str, Any]:
     
     # Generate solar predictions
     try:
-        result = run_python_script(SCRIPT_PATHS['solar_predictions'])
+        result = fetch_solar_predictions()
         results.append(result)
         logger.info("✅ Solar predictions generated successfully")
     except Exception as e:
@@ -400,7 +511,7 @@ def fetch_solar_data() -> Dict[str, Any]:
 # MODEL TRAINING TASKS
 # =============================================================================
 
-@task(retries=1, retry_delay_seconds=300, timeout_seconds=7200)  # 2 hour timeout
+@task(retries=1, retry_delay_seconds=300, timeout_seconds=7200, task_run_name="train-price-models")  # 2 hour timeout
 def train_price_models(production_mode: bool = True) -> Dict[str, Any]:
     """Train all price prediction models: trend, peak, valley."""
     logger.info(f"Starting price model training (production={production_mode})")
@@ -417,7 +528,8 @@ def train_price_models(production_mode: bool = True) -> Dict[str, Any]:
             result = run_python_script(
                 SCRIPT_PATHS['prices_train'], 
                 args=args,
-                timeout=7200  # 2 hours per model
+                timeout=7200,  # 2 hours per model
+                task_name=f"train-price-model-{model_type}"
             )
             results.append(result)
             logger.info(f"✅ {model_type} price model trained successfully")
@@ -442,7 +554,7 @@ def train_price_models(production_mode: bool = True) -> Dict[str, Any]:
         'production_mode': production_mode
     }
 
-@task(retries=1, retry_delay_seconds=300, timeout_seconds=10800)  # 3 hour timeout
+@task(retries=1, retry_delay_seconds=300, timeout_seconds=10800, task_run_name="train-demand-model")  # 3 hour timeout
 def train_demand_model(production_mode: bool = True, trials: int = 30) -> Dict[str, Any]:
     """Train demand prediction model."""
     logger.info(f"Starting demand model training (production={production_mode}, trials={trials})")
@@ -456,7 +568,8 @@ def train_demand_model(production_mode: bool = True, trials: int = 30) -> Dict[s
         result = run_python_script(
             SCRIPT_PATHS['demand_train'],
             args=args,
-            timeout=10800  # 3 hours
+            timeout=10800,  # 3 hours
+            task_name=f"train-demand-model-{trials}-trials"
         )
         
         logger.info("✅ Demand model trained successfully")
@@ -484,7 +597,7 @@ def train_demand_model(production_mode: bool = True, trials: int = 30) -> Dict[s
             'trials': trials
         }
 
-@task(retries=1, retry_delay_seconds=300, timeout_seconds=21600)  # 6 hour timeout
+@task(retries=1, retry_delay_seconds=300, timeout_seconds=21600, task_run_name="train-rl-agent")  # 6 hour timeout
 def train_rl_agent(sanity_check_steps: int = 10, start_date: str = None, 
                   end_date: str = None, total_timesteps: int = None) -> Dict[str, Any]:
     """Train RL battery control agent."""
@@ -509,7 +622,8 @@ def train_rl_agent(sanity_check_steps: int = 10, start_date: str = None,
         result = run_python_script(
             SCRIPT_PATHS['rl_train'],
             args=args,
-            timeout=21600  # 6 hours
+            timeout=21600,  # 6 hours
+            task_name=f"train-rl-agent-{sanity_check_steps}-steps"
         )
         
         logger.info("✅ RL agent trained successfully")
@@ -541,7 +655,7 @@ def train_rl_agent(sanity_check_steps: int = 10, start_date: str = None,
 # PREDICTION/INFERENCE TASKS
 # =============================================================================
 
-@task(retries=1, retry_delay_seconds=60)
+@task(retries=1, retry_delay_seconds=60, task_run_name="generate-price-predictions")
 def run_price_predictions(model: str = "merged", start_date: str = None, 
                          horizon_days: float = 1.0) -> Dict[str, Any]:
     """Run price predictions using trained models."""
@@ -558,7 +672,11 @@ def run_price_predictions(model: str = "merged", start_date: str = None,
             '--valley-threshold', '0.5'
         ]
         
-        result = run_python_script(SCRIPT_PATHS['price_predictions'], args=args)
+        result = run_python_script(
+            SCRIPT_PATHS['price_predictions'], 
+            args=args,
+            task_name=f"generate-price-predictions-{model}"
+        )
         logger.info("✅ Price predictions completed successfully")
         
         return {
@@ -830,8 +948,8 @@ def serve_flows():
         # 15-minute home data update  
         home_data_flow.to_deployment(
             name="15min-home-data",
-            interval=900,  # 15 minutes in seconds
-            description="15-minute update of home data (consumption, Thermia)",
+            cron="0,15,30,45 * * * *",  # At 00, 15, 30, 45 minutes past every hour
+            description="15-minute update of home data (consumption, Thermia) - runs at specific clock times",
             tags=["data-fetching", "15min", "home"]
         ),
         

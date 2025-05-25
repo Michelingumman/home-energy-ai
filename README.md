@@ -18,6 +18,7 @@
 </div>
 
 ---
+![image](https://github.com/user-attachments/assets/872ddf7c-6ff6-4002-aff3-15b583c8c595)
 
 ## 🎯 **Academic Overview**
 

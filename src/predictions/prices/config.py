@@ -1,6 +1,6 @@
 """
 Configuration file for the electricity price forecasting models.
-This unified configuration is used by SARIMAX trend, peak, and valley models.
+This unified configuration is used by trend, peak, and valley models.
 """
 from pathlib import Path
 import os
@@ -72,7 +72,7 @@ WEIGHTED_LOSS_PARAMS = {
 #############################################################################
 
 # ----- XGBoost Model Parameters -----
-# For Exogenous variables in SARIMAX model
+# For Exogenous variables in model
 TREND_EXOG_FEATURES = [
     # Grid data - key electricity system factors
     "powerConsumptionTotal",  # Electricity demand is crucial

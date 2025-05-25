@@ -176,8 +176,8 @@ def configure_logging():
     logging.info(f"Logging configured for {model_type} model. Log file: {log_file}")
 
 def prepare_trend_data(use_extended_features=True):
-    """Load and prepare data specifically for the SARIMAX trend model."""
-    logging.info("Preparing data for SARIMAX trend model training...")
+    """Load and prepare data specifically for the trend model."""
+    logging.info("Preparing data for trend model training...")
     
     # Load and merge the data
     df = load_and_merge_data()

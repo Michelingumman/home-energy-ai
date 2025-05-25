@@ -131,19 +131,19 @@ graph TB
         🎯 95.2% Accuracy (MAPE)
         📊 220+ Features
         🔍 HMM Occupancy States
-        ⏱️ ~45min Training`"]:::mlModels
+        ⏱️ ~1hour Training`"]:::mlModels
         
-        PRICE["`**SARIMAX Price Models**
+        PRICE["`**TCN & XGboost Price Models**
         📈 Trend: 87.8% Accuracy
         🔺 Peak: 91.4% F1-Score
         🔻 Valley: 89.6% F1-Score
-        ⏱️ ~30min Training`"]:::mlModels
+        ⏱️ ~5hour Training`"]:::mlModels
         
         RL["`**Recurrent PPO Agent**
         🧠 LSTM Memory (24h)
         🎯 94.1% Efficiency
         💰 28% Cost Reduction
-        ⏱️ ~6h Training`"]:::mlModels
+        ⏱️ ~12h Training`"]:::mlModels
         
         SOLAR_ML["`**Solar Forecasting**
         ☀️ 4-day Horizon
@@ -216,31 +216,50 @@ graph TB
 
 ---
 
-## ✨ **Implemented Features**
+# ✨ **Implemented Features**
 
-### 🧠 **Advanced Machine Learning Pipeline**
+## 🧠 **Advanced Machine Learning Pipeline**
 
-#### **Energy Demand Forecasting**
+## **Energy Demand Forecasting**
 - **Model**: XGBoost Regression with 220+ engineered features
 - **Performance**: 95.2% accuracy on hourly consumption prediction
 - **Features**: Hidden Markov Model occupancy states, weather integrations, calendar features
 - **Optimization**: Optuna hyperparameter tuning with 50+ trials
 - **Validation**: Time-series cross-validation with proper temporal splits
 
-#### **Electricity Price Prediction**
-- **Architecture**: Multi-model SARIMAX approach (Trend/Peak/Valley)
+![image](https://github.com/user-attachments/assets/800de23e-bf44-4944-8cea-27d191130847)
+
+## **Electricity Price Prediction**
+- **Architecture**: Multi-model TCN and XGboost (Trend/Peak/Valley)
 - **Accuracy**: 87.8% accuracy on SE3 market price forecasting
 - **Specialized Models**: 
-  - Trend Model: General price movement prediction
-  - Peak Model: High-price period detection (binary classification)
-  - Valley Model: Low-price period detection (binary classification)
-- **Integration**: Merged predictions with confidence-weighted results
+### Trend Model: General price movement prediction
+  
+![image](https://github.com/user-attachments/assets/133d78d8-db86-4efe-8f85-5155ebd6a8de)
 
-#### **Solar Production Forecasting**
+### Peak Model: High-price period detection (binary classification)
+
+![image](https://github.com/user-attachments/assets/f892981a-cd66-494f-b1d3-fe0064172673)
+
+### Valley Model: Low-price period detection (binary classification)
+
+![image](https://github.com/user-attachments/assets/eb01a0ef-0e47-4ea6-ac05-424ec689be67)
+
+### **Integration**: Merged predictions with confidence-weighted results
+
+![image](https://github.com/user-attachments/assets/06e7b1a0-404d-40ed-ac5f-400aa347da31)
+
+
+
+## **Solar Production Forecasting**
 - **Data Source**: forecast.solar API with authenticated access
 - **Configuration**: Dual-orientation system (24 SE panels, 26 NW panels, 20.3 kW total)
 - **Horizon**: 4-day ahead predictions with hourly resolution
 - **Validation**: Continuous comparison with SolarEdge actual production data
+
+![image](https://github.com/user-attachments/assets/bd70f4c6-a952-44ee-a302-b2b63b468df9)
+![image](https://github.com/user-attachments/assets/c4175d0a-5d67-4c28-a9e4-654080b8b2df)
+
 
 ### 🤖 **Reinforcement Learning Battery Control**
 
@@ -473,7 +492,7 @@ python src/predictions/demand/evaluate.py --plot 2024-03 --dashboard
 
 ### **Key Findings**
 
-1. **Multi-Modal Forecasting Effectiveness**: The combination of XGBoost for demand prediction and SARIMAX for price forecasting achieved superior performance compared to single-model approaches.
+1. **Multi-Modal Forecasting Effectiveness**: The combination of XGBoost for demand prediction and TCN for price forecasting achieved superior performance compared to single-model approaches.
 
 2. **Recurrent RL Benefits**: Memory-enabled PPO agents demonstrated 15% better long-term optimization compared to memoryless variants, particularly in multi-day battery strategy planning.
 
@@ -501,7 +520,7 @@ home-energy-ai/
 │   │   │   ├── train.py                 # Model training with Optuna HPO
 │   │   │   ├── predict.py               # Inference and evaluation  
 │   │   │   └── evaluate.py              # Performance analysis
-│   │   ├── prices/                      # SARIMAX price prediction
+│   │   ├── prices/                      # TCN & XGboost price prediction
 │   │   │   ├── train.py                 # Multi-model training pipeline
 │   │   │   ├── run_model.py             # Merged prediction system
 │   │   │   └── config.py                # Model configuration

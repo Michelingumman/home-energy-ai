@@ -108,6 +108,12 @@ def get_current_battery_soc(config: dict) -> float:
     Fetches the current battery State of Charge (SoC) by calling the
     downloadEntityData.py script.
     """
+    # Check for test scenario override
+    if "_test_soc_override" in config:
+        test_soc = config["_test_soc_override"]
+        logger.info(f"Using test scenario SoC: {test_soc:.1%}")
+        return test_soc
+    
     logger.info("Getting current battery SoC...")
 
     script_path = project_root / "src" / "downloadEntityData.py"
@@ -207,6 +213,12 @@ def get_price_forecast_production(current_dt: datetime.datetime, config: dict) -
 
     np.set_printoptions(suppress=True, precision=2)
     output_forecast_ore = merged_prices[current_hour_of_day:current_hour_of_day+24]
+    
+    # Apply test scenario price multiplier if present
+    if "_test_price_multiplier" in config:
+        multiplier = config["_test_price_multiplier"]
+        output_forecast_ore = output_forecast_ore * multiplier
+        logger.info(f"Applied test price multiplier: {multiplier}x")
     
     logger.info(f"Price forecast range: {output_forecast_ore.min():.2f} to {output_forecast_ore.max():.2f} öre/kWh")
     return output_forecast_ore.astype(np.float32)
@@ -408,6 +420,134 @@ def map_action_to_battery_power(action: float, config: dict) -> float:
     else:  # Charging (-1 to 0 maps to -max_charge to 0)
         return action * max_charge_kw
 
+def _log_beautiful_state_summary(
+    current_soc: float,
+    current_dt: datetime.datetime,
+    price_forecast: np.ndarray,
+    solar_forecast: np.ndarray,
+    load_forecast: np.ndarray,
+    action: float,
+    battery_power: float,
+    config: dict
+) -> None:
+    """
+    Creates a beautiful, aesthetic summary of the current state and recommended action.
+    """
+    # Calculate some derived metrics
+    battery_capacity = config.get("battery_capacity", 22.0)
+    current_energy = current_soc * battery_capacity
+    
+    # Determine action description
+    if battery_power < 0:
+        action_desc = f"CHARGE at {abs(battery_power):.1f} kW"
+        action_symbol = ">>>"
+    elif battery_power > 0:
+        action_desc = f"DISCHARGE at {battery_power:.1f} kW"
+        action_symbol = "<<<"
+    else:
+        action_desc = "IDLE / NO CHANGE"
+        action_symbol = "==="
+    
+    # Price context
+    current_price = price_forecast[0]
+    avg_price_24h = np.mean(price_forecast[:24])
+    price_trend = "HIGH" if current_price > avg_price_24h * 1.1 else "LOW" if current_price < avg_price_24h * 0.9 else "AVERAGE"
+    
+    # Solar context
+    solar_sum_24h = np.sum(solar_forecast[:24])
+    solar_context = "GOOD" if solar_sum_24h > 2.0 else "LIMITED" if solar_sum_24h > 0.5 else "MINIMAL"
+    
+    # Load context
+    avg_load_24h = np.mean(load_forecast[:24])
+    load_context = "HIGH" if avg_load_24h > 2.0 else "MODERATE" if avg_load_24h > 1.0 else "LOW"
+    
+    # Time context
+    time_str = current_dt.strftime("%H:%M")
+    date_str = current_dt.strftime("%Y-%m-%d")
+    weekday = current_dt.strftime("%A")
+    
+    # Create the beautiful display
+    border = "=" * 80
+    section_border = "-" * 80
+    
+    lines = [
+        "",
+        border,
+        f"{'ENERGY MANAGEMENT SYSTEM DECISION':^80}",
+        border,
+        "",
+        f"  TIMESTAMP: {date_str} {time_str} ({weekday})",
+        "",
+        section_border,
+        f"{'CURRENT SYSTEM STATE':^80}",
+        section_border,
+        "",
+        f"  BATTERY STATUS:",
+        f"    State of Charge:     {current_soc:>6.1%}  ({current_energy:>5.1f} kWh / {battery_capacity:.1f} kWh)",
+        "",
+        f"  MARKET CONDITIONS:",
+        f"    Current Price:       {current_price:>6.1f} ore/kWh  [{price_trend}]",
+        f"    24h Average:         {avg_price_24h:>6.1f} ore/kWh",
+        f"    Price Range (24h):   {price_forecast[:24].min():>6.1f} - {price_forecast[:24].max():.1f} ore/kWh",
+        "",
+        f"  FORECAST SUMMARY:",
+        f"    Solar (24h):         {solar_sum_24h:>6.1f} kWh     [{solar_context}]",
+        f"    Load Avg (24h):      {avg_load_24h:>6.1f} kW      [{load_context}]",
+        "",
+        section_border,
+        f"{'AI AGENT RECOMMENDATION':^80}",
+        section_border,
+        "",
+        f"  NEURAL NETWORK OUTPUT:",
+        f"    Raw Action Value:    {action:>+7.4f}  (range: -1.0 to +1.0)",
+        "",
+        f"  RECOMMENDED ACTION:",
+        f"    Battery Command:     {action_symbol} {action_desc:^30} {action_symbol}",
+        "",
+    ]
+    
+    # Add reasoning context
+    reasoning_lines = [
+        section_border,
+        f"{'DECISION CONTEXT':^80}",
+        section_border,
+        "",
+    ]
+    
+    if battery_power > 0:  # Discharging
+        reasoning_lines.extend([
+            f"  DISCHARGING STRATEGY:",
+            f"    • Battery has sufficient charge ({current_soc:.1%})",
+            f"    • Current price is {price_trend.lower()} ({current_price:.1f} ore/kWh)",
+            f"    • Selling energy to grid during favorable conditions",
+        ])
+    elif battery_power < 0:  # Charging
+        reasoning_lines.extend([
+            f"  CHARGING STRATEGY:",
+            f"    • Battery can accept charge (SoC: {current_soc:.1%})",
+            f"    • Current price is {price_trend.lower()} ({current_price:.1f} ore/kWh)",
+            f"    • Storing energy for later use during expensive periods",
+        ])
+    else:  # Idle
+        reasoning_lines.extend([
+            f"  CONSERVATION STRATEGY:",
+            f"    • Maintaining current battery state ({current_soc:.1%})",
+            f"    • Market conditions do not favor immediate action",
+            f"    • Waiting for more favorable price signals",
+        ])
+    
+    reasoning_lines.extend([
+        "",
+        f"  NEXT EVALUATION: {(current_dt + datetime.timedelta(minutes=15)).strftime('%H:%M')} (15 minutes)",
+        "",
+        border,
+        ""
+    ])
+    
+    # Log all lines
+    for line in lines + reasoning_lines:
+        logger.info(line)
+
 def build_flattened_observation_for_production(
     current_soc: float,
     current_dt: datetime.datetime,
@@ -573,6 +713,12 @@ def run_agent(model_path_str: Union[str, Path], config: dict, dry_run: bool = Fa
         else:
             logger.info("  -> Battery idle / no change")
 
+        # 7. Beautiful state summary
+        _log_beautiful_state_summary(
+            current_soc, current_datetime, price_fc, solar_fc, load_fc, 
+            action_scalar, target_battery_power_kw, config
+        )
+
         if dry_run:
             logger.info("DRY RUN: No actual battery control commands sent")
         else:
@@ -595,6 +741,8 @@ def main():
     parser.add_argument("--log-file", action="store_true", help="Log to file in addition to console")
     parser.add_argument("--log-level", type=str, default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     parser.add_argument("--dry-run", action="store_true", help="Simulate without actual battery control")
+    parser.add_argument("--test-scenario", type=str, choices=["low-soc", "high-price", "low-price"], 
+                       help="Test scenario with simulated conditions")
     
     args = parser.parse_args()
     
@@ -608,6 +756,10 @@ def main():
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
         return 1
+    
+    # Apply test scenario modifications
+    if args.test_scenario:
+        config = _apply_test_scenario(config, args.test_scenario)
     
     # Determine model path
     if args.model:
@@ -624,7 +776,7 @@ def main():
     
     # Run the agent
     try:
-        result = run_agent(model_path_str=model_path, config=config, dry_run=args.dry_run)
+        result = run_agent(model_path_str=model_path, config=config, dry_run=args.dry_run or args.test_scenario)
         if result is not None:
             logger.info(f"[SUCCESS] Production agent completed successfully. Battery power: {result:.2f} kW")
             return 0
@@ -638,6 +790,25 @@ def main():
         logger.error(f"Critical error in production agent: {e}")
         logger.debug(traceback.format_exc())
         return 1
+
+def _apply_test_scenario(config: dict, scenario: str) -> dict:
+    """Apply test scenario modifications to config."""
+    logger.info(f"Applying test scenario: {scenario}")
+    
+    if scenario == "low-soc":
+        config["_test_soc_override"] = 0.15  # 15% SoC
+        config["_test_price_multiplier"] = 0.5  # Lower prices to encourage charging
+        logger.info("Test scenario: Low SoC with favorable charging prices")
+    elif scenario == "high-price":
+        config["_test_soc_override"] = 0.85  # 85% SoC
+        config["_test_price_multiplier"] = 3.0  # Very high prices
+        logger.info("Test scenario: High SoC with very high electricity prices")
+    elif scenario == "low-price":
+        config["_test_soc_override"] = 0.30  # 30% SoC
+        config["_test_price_multiplier"] = 0.1  # Very low prices
+        logger.info("Test scenario: Medium SoC with very low electricity prices")
+    
+    return config
 
 if __name__ == "__main__":
     sys.exit(main()) 

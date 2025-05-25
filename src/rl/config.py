@@ -214,14 +214,14 @@ reward_scaling_factor: float = 0.2            # Increased from 0.1 to amplify al
 
 # Multi-Objective Reward Component Weights
 w_grid: float = 0.8              # Reduced from 1.0 to balance with other components
-w_cap: float = 1.0               # Reduced from 2.0 to minimize capacity penalty dominance
-w_deg: float = 0.5               # Reduced from 0.7 to minimize degradation impact
+w_cap: float = 3.0               # Reduced from 2.0 to minimize capacity penalty dominance
+w_deg: float = 1.2               # Reduced from 0.7 to minimize degradation impact
 w_soc: float = 2.0               # Increased from 1.0 to strengthen SoC management
 w_shape: float = 1.5             # Increased from 1.0 to improve SoC guidance
-w_night: float = 1.5             # Reduced from 2.0 to balance night incentives
+w_night: float = 1.0             # Reduced from 2.0 to balance night incentives
 w_arbitrage: float = 2.5         # Increased from 2.0 to strengthen arbitrage incentives  
 w_export: float = 1.5            # Reduced from 1.7 to balance export incentives
-w_action_mod: float = 0.8        # Reduced from 1.5 to minimize action penalty impact
+w_action_mod: float = 1.3        # Reduced from 1.5 to minimize action penalty impact
 w_chain: float = 2.0             # Increased from 1.5 to strengthen chain bonuses
 w_solar: float = 1.5             # Increased from 1.2 to improve solar-aware behavior
 
@@ -232,13 +232,13 @@ w_solar: float = 1.5             # Increased from 1.2 to improve solar-aware beh
 
 # Core PPO parameters
 short_term_learning_rate: float = 2e-4        # Reduced from 3e-4 for more stable learning
-short_term_gamma: float = 0.995               # Increased from 0.99 for better long-term planning
+short_term_gamma: float = 0.999               # Increased from 0.99 for better long-term planning
 short_term_n_steps: int = 4096                # Increased from 2048 for better sample efficiency
-short_term_batch_size: int = 128              # Increased from 64 for more stable updates
+short_term_batch_size: int = 256              # Increased from 64 for more stable updates
 short_term_n_epochs: int = 8                  # Reduced from 10 to prevent overfitting
-short_term_ent_coeff: float = 0.005           # Reduced from 0.01 for more focused exploration
-short_term_gae_lambda: float = 0.98           # Increased from 0.95 for better advantage estimation
-short_term_timesteps: int = 500_000         # Increased from 500_000 for more thorough training
+short_term_ent_coeff: float = 0.01           # Reduced from 0.01 for more focused exploration
+short_term_gae_lambda: float = 0.99           # Increased from 0.95 for better advantage estimation
+short_term_timesteps: int = 5_000_000         # Increased from 500_000 for more thorough training
 
 # ==============================================================================
 #                           HELPER FUNCTION

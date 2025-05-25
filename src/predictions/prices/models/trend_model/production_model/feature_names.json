@@ -1,1 +1,1 @@
-["powerProductionTotal", "price_168h_avg", "month_sin", "day_cos", "hour_cos", "is_morning_peak", "powerConsumptionTotal", "hour_avg_price", "dayofweek_sin", "is_evening_peak", "hour_sin", "month_cos", "day_sin", "is_weekend", "price_24h_avg", "is_business_hour", "dayofweek_cos"]
+["is_evening_peak", "powerConsumptionTotal", "dayofweek_sin", "month_sin", "hour_cos", "powerProductionTotal", "hour_sin", "hour_avg_price", "price_168h_avg", "day_sin", "price_24h_avg", "month_cos", "is_business_hour", "is_morning_peak", "is_weekend", "day_cos", "dayofweek_cos"]

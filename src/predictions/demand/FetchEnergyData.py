@@ -6,13 +6,17 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import logging
 import sys
+import numpy as np
 from dateutil.parser import parse
 
-# Set up logging
+# Configure comprehensive logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('src/predictions/demand/logs/energy_data_fetch.log', mode='a')
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -560,71 +564,292 @@ def format_datetime_for_tibber(dt):
     # Format as ISO with Z (Zulu time / UTC)
     return dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
-def check_data_quality(df):
+def validate_energy_data_quality(df, data_type="energy"):
     """
-    Check data quality for duplicates and NaN values
+    Comprehensive data quality validation for energy data.
     
     Args:
-        df (pd.DataFrame): DataFrame to check
+        df: DataFrame to validate
+        data_type: Type of data for logging context
+    
+    Returns:
+        dict: Quality metrics and status
     """
-    logger.info("Checking data quality...")
+    logger.info(f"Starting data quality validation for {data_type}")
     
-    # Check for duplicates
-    duplicates = df.duplicated(subset=['timestamp']).sum()
-    if duplicates > 0:
-        logger.warning(f"Found {duplicates} duplicate timestamps in the data")
+    if df.empty:
+        logger.error(f"CRITICAL: {data_type} DataFrame is empty!")
+        return {"status": "FAILED", "reason": "Empty DataFrame"}
+    
+    quality_report = {
+        "status": "PASSED",
+        "total_records": len(df),
+        "date_range": None,
+        "duplicates": 0,
+        "missing_values": {},
+        "gaps": [],
+        "outliers": {},
+        "issues": [],
+        "energy_columns": [],
+        "problematic_records": {}
+    }
+    
+    # Basic info
+    logger.info(f"{data_type} - Total records: {len(df)}")
+    
+    # Check for energy columns
+    expected_energy_cols = ["consumption", "production", "consumption_cost", "production_profit"]
+    found_energy_cols = [col for col in expected_energy_cols if col in df.columns]
+    quality_report["energy_columns"] = found_energy_cols
+    
+    if not found_energy_cols:
+        logger.error(f"CRITICAL: {data_type} - No energy data columns found!")
+        quality_report["status"] = "FAILED"
+        quality_report["issues"].append("No energy data columns found")
+        return quality_report
     else:
-        logger.info("No duplicate timestamps found")
+        logger.info(f"COLUMNS FOUND: {data_type} - Found energy columns: {found_energy_cols}")
     
-    # Check for NaN values
-    nan_counts = df.isna().sum()
-    total_rows = len(df)
+    # Date range analysis
+    if 'timestamp' in df.columns:
+        try:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            start_date = df['timestamp'].min()
+            end_date = df['timestamp'].max()
+            quality_report["date_range"] = f"{start_date} to {end_date}"
+            logger.info(f"{data_type} - Date range: {start_date} to {end_date}")
+            
+            # Gap detection for hourly energy data
+            expected_hours = (end_date - start_date).total_seconds() / 3600 + 1
+            actual_hours = len(df)
+            gap_count = int(expected_hours - actual_hours)
+            
+            if gap_count > 0:
+                quality_report["gaps"] = [f"{gap_count} missing hours"]
+                logger.warning(f"GAP WARNING: {data_type} - Found {gap_count} missing hours (expected {int(expected_hours)}, got {actual_hours})")
+                quality_report["issues"].append(f"Missing {gap_count} hours of data")
+                
+                # Find specific missing hours
+                expected_range = pd.date_range(start=start_date, end=end_date, freq='H')
+                missing_hours = expected_range.difference(df['timestamp'])
+                sample_missing = missing_hours[:30] if len(missing_hours) > 30 else missing_hours
+                logger.warning(f"MISSING HOUR TIMESTAMPS: Sample missing hours: {sample_missing.tolist()}")
+                if len(missing_hours) > 30:
+                    logger.warning(f"... and {len(missing_hours) - 30} more missing hour timestamps")
+                quality_report["problematic_records"]["missing_hours"] = missing_hours[:100].tolist()
+            else:
+                logger.info(f"GAP CHECK OK: {data_type} - No gaps detected in hourly data")
+                
+        except Exception as e:
+            logger.error(f"DATE ERROR: {data_type} - Error processing timestamps: {e}")
+            quality_report["issues"].append(f"Timestamp processing error: {e}")
     
-    for column, nan_count in nan_counts.items():
-        if nan_count > 0:
-            percent = (nan_count / total_rows) * 100
-            logger.warning(f"Column '{column}' has {nan_count} NaN values ({percent:.2f}%)")
+    # Duplicate detection
+    if 'timestamp' in df.columns:
+        duplicates = df.duplicated(subset=['timestamp']).sum()
+        quality_report["duplicates"] = duplicates
+        if duplicates > 0:
+            duplicate_mask = df.duplicated(subset=['timestamp'], keep=False)
+            duplicate_records = df[duplicate_mask]
+            logger.warning(f"DUPLICATE WARNING: {data_type} - Found {duplicates} duplicate timestamps")
+            quality_report["issues"].append(f"{duplicates} duplicate timestamps")
+            
+            # Show specific duplicate timestamps
+            duplicate_timestamps = duplicate_records['timestamp'].tolist()
+            sample_duplicates = duplicate_timestamps[:20] if len(duplicate_timestamps) > 20 else duplicate_timestamps
+            logger.warning(f"DUPLICATE TIMESTAMPS: Sample duplicates: {sample_duplicates}")
+            if len(duplicate_timestamps) > 20:
+                logger.warning(f"... and {len(duplicate_timestamps) - 20} more duplicate timestamps")
+            quality_report["problematic_records"]["duplicate_timestamps"] = duplicate_timestamps[:50]
+        else:
+            logger.info(f"DUPLICATE CHECK OK: {data_type} - No duplicate timestamps found")
     
-    if nan_counts.sum() == 0:
-        logger.info("No NaN values found in the data")
+    # Missing values analysis for energy columns
+    missing_summary = df[found_energy_cols].isnull().sum()
+    missing_dict = missing_summary[missing_summary > 0].to_dict()
+    quality_report["missing_values"] = missing_dict
     
-    # Check for zero consumption and production values
-    zero_consumption = (df['consumption'] == 0).sum()
-    if zero_consumption > 0:
-        percent = (zero_consumption / total_rows) * 100
-        logger.info(f"Found {zero_consumption} records with zero consumption ({percent:.2f}%)")
+    if missing_dict:
+        logger.warning(f"MISSING VALUES WARNING: {data_type} - Missing values detected:")
+        for col, count in missing_dict.items():
+            pct = (count / len(df)) * 100
+            logger.warning(f"   {col}: {count} missing ({pct:.1f}%)")
+            
+            # Show specific timestamps with missing values
+            if 'timestamp' in df.columns:
+                missing_mask = df[col].isnull()
+                missing_timestamps = df[missing_mask]['timestamp'].tolist()
+                sample_missing = missing_timestamps[:10] if len(missing_timestamps) > 10 else missing_timestamps
+                logger.warning(f"   MISSING VALUE TIMESTAMPS for {col}: {sample_missing}")
+                if len(missing_timestamps) > 10:
+                    logger.warning(f"   ... and {len(missing_timestamps) - 10} more missing value timestamps")
+                quality_report["problematic_records"][f"missing_{col}"] = missing_timestamps[:30]
+            
+            if pct > 10:  # More than 10% missing is concerning for energy data
+                quality_report["issues"].append(f"{col} has {pct:.1f}% missing values")
+    else:
+        logger.info(f"MISSING VALUES OK: {data_type} - No missing values found in energy columns")
     
-    zero_production = (df['production'] == 0).sum()
-    if zero_production > 0:
-        percent = (zero_production / total_rows) * 100
-        logger.info(f"Found {zero_production} records with zero production ({percent:.2f}%)")
+    # Value validation for energy columns
+    for col in found_energy_cols:
+        if col in df.columns and not df[col].empty:
+            # Check for negative values (energy should be non-negative)
+            negative_mask = df[col] < 0
+            negative_count = negative_mask.sum()
+            if negative_count > 0:
+                logger.warning(f"NEGATIVE VALUES WARNING: {data_type} - {col}: {negative_count} negative values found")
+                quality_report["issues"].append(f"{col} has {negative_count} negative values")
+                
+                # Show specific negative value records
+                if 'timestamp' in df.columns:
+                    negative_records = df[negative_mask][['timestamp', col]]
+                    sample_negative = negative_records.head(10)
+                    logger.warning(f"NEGATIVE VALUE RECORDS for {col}:")
+                    for _, row in sample_negative.iterrows():
+                        logger.warning(f"   {row['timestamp']}: {row[col]}")
+                    if len(negative_records) > 10:
+                        logger.warning(f"   ... and {len(negative_records) - 10} more negative value records")
+                    
+                    quality_report["problematic_records"][f"negative_{col}"] = [
+                        {"timestamp": str(row['timestamp']), "value": float(row[col])} 
+                        for _, row in negative_records.head(20).iterrows()
+                    ]
+            
+            # Check for extremely high values (might indicate data errors)
+            if 'consumption' in col or 'production' in col:
+                # Energy values above 100 kWh per hour are very unusual for residential
+                extreme_mask = df[col] > 100
+                extreme_count = extreme_mask.sum()
+                if extreme_count > 0:
+                    extreme_pct = (extreme_count / len(df)) * 100
+                    if extreme_pct > 1:  # More than 1% extreme values is suspicious
+                        logger.warning(f"EXTREME VALUES WARNING: {data_type} - {col}: {extreme_count} extremely high values (>{100} kWh)")
+                        quality_report["issues"].append(f"{col} has {extreme_count} extremely high values")
+                        
+                        # Show specific extreme value records
+                        if 'timestamp' in df.columns:
+                            extreme_records = df[extreme_mask][['timestamp', col]].sort_values(col, ascending=False)
+                            sample_extreme = extreme_records.head(10)
+                            logger.warning(f"EXTREME HIGH VALUE RECORDS for {col}:")
+                            for _, row in sample_extreme.iterrows():
+                                logger.warning(f"   {row['timestamp']}: {row[col]:.3f} kWh")
+                            if len(extreme_records) > 10:
+                                logger.warning(f"   ... and {len(extreme_records) - 10} more extreme value records")
+                            
+                            quality_report["problematic_records"][f"extreme_{col}"] = [
+                                {"timestamp": str(row['timestamp']), "value": float(row[col])} 
+                                for _, row in extreme_records.head(20).iterrows()
+                            ]
+                    else:
+                        logger.info(f"EXTREME VALUES INFO: {data_type} - {col}: {extreme_count} high values (>{100} kWh) - {extreme_pct:.1f}% within normal range")
+            
+            # Outlier detection using IQR method
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            
+            outlier_mask = (df[col] < lower_bound) | (df[col] > upper_bound)
+            outlier_count = outlier_mask.sum()
+            
+            if outlier_count > 0:
+                outlier_pct = (outlier_count / len(df)) * 100
+                quality_report["outliers"][col] = outlier_count
+                
+                # Show statistics
+                logger.info(f"OUTLIER STATS for {col}: Q1={Q1:.3f}, Q3={Q3:.3f}, IQR={IQR:.3f}")
+                logger.info(f"OUTLIER BOUNDS for {col}: Lower={lower_bound:.3f}, Upper={upper_bound:.3f}")
+                
+                if outlier_pct > 15:  # More than 15% outliers is concerning for energy data
+                    logger.warning(f"OUTLIER WARNING: {data_type} - {col}: {outlier_count} outliers ({outlier_pct:.1f}%)")
+                    quality_report["issues"].append(f"{col} has {outlier_pct:.1f}% outliers")
+                    
+                    # Show specific outlier records
+                    if 'timestamp' in df.columns:
+                        outlier_records = df[outlier_mask][['timestamp', col]].sort_values(col)
+                        
+                        # Show most extreme outliers
+                        extreme_low = outlier_records.head(5)
+                        extreme_high = outlier_records.tail(5)
+                        
+                        logger.warning(f"EXTREME LOW OUTLIERS for {col}:")
+                        for _, row in extreme_low.iterrows():
+                            logger.warning(f"   {row['timestamp']}: {row[col]:.3f}")
+                        
+                        logger.warning(f"EXTREME HIGH OUTLIERS for {col}:")
+                        for _, row in extreme_high.iterrows():
+                            logger.warning(f"   {row['timestamp']}: {row[col]:.3f}")
+                        
+                        if outlier_count > 10:
+                            logger.warning(f"   ... and {outlier_count - 10} more outlier records")
+                        
+                        quality_report["problematic_records"][f"outliers_{col}"] = [
+                            {"timestamp": str(row['timestamp']), "value": float(row[col])} 
+                            for _, row in outlier_records.head(10).iterrows()
+                        ] + [
+                            {"timestamp": str(row['timestamp']), "value": float(row[col])} 
+                            for _, row in outlier_records.tail(10).iterrows()
+                        ]
+                else:
+                    logger.info(f"OUTLIER INFO: {data_type} - {col}: {outlier_count} outliers ({outlier_pct:.1f}%) - within acceptable range")
+                    
+                    # Still log a few examples for reference
+                    if 'timestamp' in df.columns:
+                        outlier_records = df[outlier_mask][['timestamp', col]].head(5)
+                        sample_outliers = [(str(row['timestamp']), float(row[col])) for _, row in outlier_records.iterrows()]
+                        logger.info(f"SAMPLE OUTLIERS for {col}: {sample_outliers}")
     
-    # Check for missing hours (gaps in time series)
-    df_sorted = df.sort_values('timestamp')
-    time_diffs = df_sorted['timestamp'].diff().dropna()
+    # Energy-specific checks
+    if 'consumption' in df.columns and 'production' in df.columns:
+        # Check for simultaneous high consumption and production (unusual pattern)
+        high_both_mask = (df['consumption'] > df['consumption'].quantile(0.9)) & (df['production'] > df['production'].quantile(0.9))
+        high_both_count = high_both_mask.sum()
+        if high_both_count > 0:
+            high_both_pct = (high_both_count / len(df)) * 100
+            if high_both_pct > 5:  # More than 5% is unusual
+                logger.warning(f"ENERGY PATTERN WARNING: {data_type} - {high_both_count} records ({high_both_pct:.1f}%) with simultaneously high consumption and production")
+                quality_report["issues"].append(f"Unusual energy pattern: {high_both_count} records with high consumption and production")
+                
+                # Show specific examples
+                if 'timestamp' in df.columns:
+                    high_both_records = df[high_both_mask][['timestamp', 'consumption', 'production']].head(10)
+                    logger.warning(f"HIGH CONSUMPTION & PRODUCTION RECORDS:")
+                    for _, row in high_both_records.iterrows():
+                        logger.warning(f"   {row['timestamp']}: consumption={row['consumption']:.3f}, production={row['production']:.3f}")
+                    
+                    quality_report["problematic_records"]["high_both_energy"] = [
+                        {"timestamp": str(row['timestamp']), "consumption": float(row['consumption']), "production": float(row['production'])} 
+                        for _, row in high_both_records.iterrows()
+                    ]
+            else:
+                logger.info(f"ENERGY PATTERN OK: {data_type} - {high_both_count} records ({high_both_pct:.1f}%) with high consumption and production - normal range")
     
-    # Expected difference for hourly data is 1 hour
-    expected_diff = pd.Timedelta(hours=1)
-    gaps = time_diffs[time_diffs > expected_diff]
+    # Final status determination
+    if quality_report["issues"]:
+        if any("FAILED" in str(issue) or "No energy" in str(issue) for issue in quality_report["issues"]):
+            quality_report["status"] = "FAILED"
+        else:
+            quality_report["status"] = "WARNING"
+        
+        logger.warning(f"QUALITY SUMMARY: {data_type} - Data quality issues found: {len(quality_report['issues'])}")
+        for issue in quality_report["issues"]:
+            logger.warning(f"   Issue: {issue}")
+    else:
+        logger.info(f"QUALITY PASSED: {data_type} - All data quality checks passed")
     
-    if len(gaps) > 0:
-        logger.warning(f"Found {len(gaps)} gaps in the time series data")
-        for i in range(len(gaps)):
-            idx = gaps.index[i]
-            prev_time = df_sorted.loc[idx-1, 'timestamp']
-            curr_time = df_sorted.loc[idx, 'timestamp']
-            gap_size = curr_time - prev_time
-            logger.warning(f"Gap of {gap_size} between {prev_time} and {curr_time}")
+    return quality_report
 
 def main():
-    logger.info("Starting to fetch consumption and production data from Tibber API")
-    logger.warning("Using simple approach: timestamps stored without timezone information")
+    """Main function with comprehensive logging and error handling"""
+    logger.info("STARTING: Energy consumption and production data update")
+    logger.info(f"FILE PATH: Working with file: {CSV_FILE_PATH}")
     
     try:
         # Check if the CSV file exists and has data
         if os.path.exists(CSV_FILE_PATH) and os.path.getsize(CSV_FILE_PATH) > 0:
             # Read existing data
-            logger.info("Reading existing energy data")
+            logger.info("FILE LOADED: Reading existing energy data")
             existing_data = pd.read_csv(CSV_FILE_PATH)
             
             # Convert timestamp to datetime without timezone
@@ -632,29 +857,51 @@ def main():
             
             # Get the latest timestamp and add 1 hour to avoid duplicates
             latest_timestamp = existing_data['timestamp'].max()
-            logger.info(f"Latest timestamp in existing data: {latest_timestamp}")
+            logger.info(f"EXISTING DATA: Latest timestamp in existing data: {latest_timestamp}")
+            logger.info(f"EXISTING DATA: Current file contains {len(existing_data)} records")
             
             # Add 1 hour to avoid duplicates
             next_timestamp = latest_timestamp + timedelta(hours=1)
+            logger.info(f"FETCH RANGE: Fetching new data from {next_timestamp} onwards")
             
             # Use the optimized approach to fetch only recent data
+            logger.info("API CALL: Fetching recent energy data from Tibber API")
             energy_data = fetch_recent_tibber_data(next_timestamp)
             
             if not energy_data['consumption'] and not energy_data['production']:
-                logger.info("No new data available")
-                return
+                logger.info("NO UPDATE NEEDED: No new data available from API")
+                
+                # Still validate existing data
+                logger.info("VALIDATION: Validating existing energy data...")
+                existing_quality = validate_energy_data_quality(existing_data, "existing energy data")
+                if existing_quality["status"] == "PASSED":
+                    logger.info("VALIDATION PASSED: EXISTING DATA VALIDATION SUCCESSFUL")
+                    return True
+                elif existing_quality["status"] == "WARNING":
+                    logger.warning("VALIDATION WARNING: EXISTING DATA VALIDATION FOUND ISSUES BUT CONTINUING")
+                    return True  # Accept warnings for energy data - they're often legitimate
+                else:
+                    logger.error("VALIDATION FAILED: EXISTING DATA VALIDATION FAILED")
+                    return False
+            
+            logger.info(f"API SUCCESS: Retrieved {len(energy_data['consumption'])} consumption records and {len(energy_data['production'])} production records")
             
             # Process new data
+            logger.info("PROCESSING: Processing newly fetched energy data")
             new_data_df = process_energy_data(energy_data)
             
             if new_data_df.empty:
-                logger.info("No new data to add after processing")
-                return
+                logger.info("NO DATA: No new data to add after processing")
+                return True
                 
             # Log the date range of new data
             min_date = new_data_df['timestamp'].min()
             max_date = new_data_df['timestamp'].max()
-            logger.info(f"New data covers period: {min_date} to {max_date}")
+            logger.info(f"NEW DATA RANGE: New data covers period: {min_date} to {max_date}")
+            logger.info(f"NEW DATA STATS: {len(new_data_df)} new records processed")
+            
+            # Validate new data quality
+            new_data_quality = validate_energy_data_quality(new_data_df, "new energy data")
             
             # Check if existing data has all the required columns
             required_columns = ['consumption', 'consumption_cost', 'consumption_unit_price',
@@ -663,15 +910,20 @@ def main():
                                'production_unit']
             
             # Add missing columns with default values if needed
+            missing_cols = []
             for col in required_columns:
                 if col not in existing_data.columns:
                     if 'cost' in col or 'price' in col or 'production' in col or 'consumption' in col:
                         existing_data[col] = 0.0
                     else:
                         existing_data[col] = 'kWh'
+                    missing_cols.append(col)
+            
+            if missing_cols:
+                logger.info(f"COLUMN UPDATE: Added missing columns with default values: {missing_cols}")
             
             # Merge with existing data
-            logger.info(f"Adding {len(new_data_df)} new data points")
+            logger.info(f"MERGING: Adding {len(new_data_df)} new data points to existing {len(existing_data)} records")
             combined_df = pd.concat([existing_data, new_data_df], ignore_index=True)
             
             # Remove any duplicates based on timestamp
@@ -679,52 +931,118 @@ def main():
             combined_df.drop_duplicates(subset=['timestamp'], keep='last', inplace=True)
             after_dedup = len(combined_df)
             if before_dedup != after_dedup:
-                logger.info(f"Removed {before_dedup - after_dedup} duplicate entries")
+                duplicate_count = before_dedup - after_dedup
+                logger.info(f"DUPLICATES REMOVED: Removed {duplicate_count} duplicate entries during merge")
             
             # Sort by timestamp
             combined_df.sort_values('timestamp', inplace=True)
             
-            # Save to CSV
-            combined_df.to_csv(CSV_FILE_PATH, index=False)
-            logger.info(f"Updated energy data saved to {CSV_FILE_PATH}")
-            logger.info(f"Total records in the updated file: {len(combined_df)}")
-            logger.info(f"Data now covers: {combined_df['timestamp'].min()} to {combined_df['timestamp'].max()}")
+            # Final quality validation
+            logger.info("FINAL VALIDATION: Performing final data quality validation...")
+            final_quality = validate_energy_data_quality(combined_df, "final merged energy data")
             
-            # Check for data quality issues
-            check_data_quality(combined_df)
+            # Save to CSV
+            try:
+                # Ensure directory exists
+                os.makedirs(os.path.dirname(CSV_FILE_PATH), exist_ok=True)
+                combined_df.to_csv(CSV_FILE_PATH, index=False)
+                logger.info(f"SAVE SUCCESS: Updated energy data saved to {CSV_FILE_PATH}")
+                logger.info(f"FILE STATS: Total records in the updated file: {len(combined_df)}")
+                logger.info(f"DATE RANGE: Data now covers: {combined_df['timestamp'].min()} to {combined_df['timestamp'].max()}")
+                
+                # Verify the file was saved
+                try:
+                    updated_file = pd.read_csv(CSV_FILE_PATH, nrows=5)
+                    logger.info(f"VERIFICATION SUCCESS: File verification successful. Columns: {', '.join(updated_file.columns)}")
+                except Exception as e:
+                    logger.error(f"VERIFICATION FAILED: File verification failed: {str(e)}")
+                    return False
+                
+                # Final status report
+                if final_quality["status"] == "PASSED":
+                    logger.info("SYSTEM SUCCESS: ENERGY DATA UPDATE COMPLETED SUCCESSFULLY!")
+                    return True
+                elif final_quality["status"] == "WARNING":
+                    logger.warning("SYSTEM WARNING: ENERGY DATA UPDATE COMPLETED WITH WARNINGS")
+                    return True
+                else:
+                    logger.error("SYSTEM FAILED: ENERGY DATA UPDATE COMPLETED BUT WITH QUALITY ISSUES")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"SAVE ERROR: Error saving updated energy data: {str(e)}")
+                return False
             
         else:
             # Fetch all available data
-            logger.info("No existing data found. Fetching all available consumption and production data")
+            logger.info("NEW FILE: No existing data found. Fetching all available consumption and production data")
+            
+            logger.info("API CALL: Fetching all energy data from Tibber API")
             energy_data = fetch_all_tibber_data()
             
             if not energy_data['consumption'] and not energy_data['production']:
-                logger.error("No data available from Tibber API")
-                return
+                logger.error("API ERROR: No data available from Tibber API")
+                return False
+                
+            logger.info(f"API SUCCESS: Retrieved {len(energy_data['consumption'])} consumption records and {len(energy_data['production'])} production records")
                 
             # Process data
+            logger.info("PROCESSING: Processing all fetched energy data")
             data_df = process_energy_data(energy_data)
             
             if data_df.empty:
-                logger.error("Failed to process energy data")
-                return
+                logger.error("PROCESSING ERROR: Failed to process energy data")
+                return False
+                
+            logger.info(f"PROCESSING SUCCESS: Processed {len(data_df)} total records")
+            logger.info(f"DATE RANGE: Data covers period: {data_df['timestamp'].min()} to {data_df['timestamp'].max()}")
+            
+            # Validate data quality
+            quality_report = validate_energy_data_quality(data_df, "new energy data")
                 
             # Make sure the directory exists
-            os.makedirs(os.path.dirname(CSV_FILE_PATH), exist_ok=True)
+            try:
+                os.makedirs(os.path.dirname(CSV_FILE_PATH), exist_ok=True)
+                    
+                # Save to CSV
+                data_df.to_csv(CSV_FILE_PATH, index=False)
+                logger.info(f"SAVE SUCCESS: Energy data saved to {CSV_FILE_PATH}")
+                logger.info(f"FILE STATS: Total records: {len(data_df)}")
                 
-            # Save to CSV
-            data_df.to_csv(CSV_FILE_PATH, index=False)
-            logger.info(f"Energy data saved to {CSV_FILE_PATH}")
-            logger.info(f"Total records: {len(data_df)}")
-            logger.info(f"Data covers period: {data_df['timestamp'].min()} to {data_df['timestamp'].max()}")
-            
-            # Check for data quality issues
-            check_data_quality(data_df)
+                # Verify the file was saved
+                try:
+                    created_file = pd.read_csv(CSV_FILE_PATH, nrows=5)
+                    logger.info(f"VERIFICATION SUCCESS: File verification successful. Columns: {', '.join(created_file.columns)}")
+                except Exception as e:
+                    logger.error(f"VERIFICATION FAILED: File verification failed: {str(e)}")
+                    return False
+                
+                # Final status report
+                if quality_report["status"] == "PASSED":
+                    logger.info("SYSTEM SUCCESS: ENERGY DATA CREATION COMPLETED SUCCESSFULLY!")
+                    return True
+                elif quality_report["status"] == "WARNING":
+                    logger.warning("SYSTEM WARNING: ENERGY DATA CREATION COMPLETED WITH WARNINGS")
+                    return True
+                else:
+                    logger.error("SYSTEM FAILED: ENERGY DATA CREATION COMPLETED BUT WITH QUALITY ISSUES")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"SAVE ERROR: Error saving energy data to CSV: {str(e)}")
+                return False
             
     except Exception as e:
-        logger.error(f"An error occurred: {e}")
+        logger.error(f"CRITICAL ERROR: Fatal error in main function: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
+        return False
 
 if __name__ == "__main__":
-    main()
+    success = main()
+    if success:
+        logger.info("SCRIPT SUCCESS: Script completed successfully")
+        exit(0)
+    else:
+        logger.error("SCRIPT FAILED: Script completed with errors")
+        exit(1)

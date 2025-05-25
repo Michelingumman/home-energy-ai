@@ -575,7 +575,7 @@ home-energy-ai/
 ## 🚀 **Future Research Directions**
 
 ### **Short-term Enhancements**
-- **Advanced Deep Learning**: LSTM/Transformer architectures for sequence modeling
+- **Advanced Deep Learning**: LSTM architectures for sequence modeling
 - **Multi-objective RL**: Pareto-optimal solutions for conflicting objectives
 - **Federated Learning**: Privacy-preserving model training across multiple homes
 - **Edge Computing**: Raspberry Pi deployment for reduced latency
@@ -605,13 +605,7 @@ This work builds upon and contributes to several research areas:
 
 ## 🤝 **Acknowledgments**
 
-### **Academic Support**
-- **Chalmers University of Technology** for providing the academic framework
-- **Department of Computer Science and Engineering** for technical guidance
-- **Thesis Supervisors** for research direction and methodology support
-
 ### **Industry Collaboration**
-- **Real-world Testing Environment** provided by residential deployment site
 - **API Access** from Tibber, Electricity Maps, forecast.solar, and other providers
 - **Technical Integration** with Thermia, SolarEdge, and Home Assistant ecosystems
 
@@ -619,6 +613,7 @@ This work builds upon and contributes to several research areas:
 - **Prefect** for enterprise workflow orchestration
 - **Stable-Baselines3** for reinforcement learning implementations
 - **XGBoost** and **scikit-learn** for machine learning foundations
+- **Tensorflow** for Neural Network foundations
 
 ---
 

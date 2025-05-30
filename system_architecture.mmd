@@ -1,0 +1,71 @@
+graph LR
+    %% Clean professional styling with white background
+    classDef data fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#0d47a1
+    classDef ml fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
+    classDef orchestration fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100
+    classDef infrastructure fill:#e8f5e8,stroke:#388e3c,stroke-width:2px,color:#1b5e20
+    classDef monitoring fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f
+    
+    %% Data Sources
+    subgraph DATA["Data Layer"]
+        EXT[External APIs<br/>SE3 • Maps<br/>Weather • Finance]:::data
+        HOME[Home Systems<br/>Tibber • Thermia<br/>Solar • Battery]:::infrastructure
+    end
+    
+    %% Data Pipeline & Orchestration
+    subgraph ORCHESTRATION["Prefect Orchestration"]
+        FETCH[Data Fetching<br/>Prices • Weather<br/>Consumption]:::orchestration
+        PROCESS[Data Processing<br/>ETL • Features<br/>Validation]:::orchestration
+        SCHEDULE[Scheduling<br/>Hourly • Weekly<br/>Real-time]:::orchestration
+    end
+    
+    %% Machine Learning
+    subgraph ML["ML Pipeline"]
+        TRAINING[Model Training<br/>XGBoost<br/>TCN • PPO]:::ml
+        INFERENCE[Inference<br/>Forecasts<br/>Decisions]:::ml
+        HPO[HPO<br/>Optuna<br/>Validation]:::ml
+    end
+    
+    %% Control System
+    subgraph CONTROL["Control Layer"]
+        OPTIMIZER[Optimizer<br/>Cost • Peak<br/>Balancing]:::orchestration
+        CONTROLLERS[Controllers<br/>APIs<br/>Commands]:::infrastructure
+    end
+    
+    %% Monitoring & Quality
+    subgraph MONITOR["Monitoring"]
+        LOGGING[Logging<br/>Tasks<br/>Errors]:::monitoring
+        QUALITY[Quality<br/>Missing<br/>Outliers]:::monitoring
+        ALERTS[Alerts<br/>Failures<br/>Drift]:::monitoring
+    end
+    
+    %% Main data flow
+    DATA --> ORCHESTRATION
+    ORCHESTRATION --> ML
+    ML --> CONTROL
+    CONTROL --> HOME
+    
+    %% Detailed connections
+    EXT --> FETCH
+    HOME --> FETCH
+    FETCH --> PROCESS
+    PROCESS --> TRAINING
+    PROCESS --> INFERENCE
+    TRAINING --> INFERENCE
+    INFERENCE --> OPTIMIZER
+    OPTIMIZER --> CONTROLLERS
+    CONTROLLERS --> HOME
+    SCHEDULE --> FETCH
+    SCHEDULE --> TRAINING
+    
+    %% Monitoring connections
+    FETCH -.-> LOGGING
+    PROCESS -.-> QUALITY
+    TRAINING -.-> LOGGING
+    INFERENCE -.-> QUALITY
+    OPTIMIZER -.-> ALERTS
+    CONTROLLERS -.-> ALERTS
+    
+    %% HPO connections
+    TRAINING --> HPO
+    HPO --> TRAINING

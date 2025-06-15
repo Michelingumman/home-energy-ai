@@ -351,7 +351,3 @@ python src/predictions/demand/evaluate.py --eval-ratio 0.15
 4. **Long-term**: Real-time adaptation and production deployment
 
 ---
-
-*Last updated: 2025-05-24*
-*Model version: v2.1*
-*Performance: MAE=0.97, RMSE=1.39, outperforms persistence by 35%*

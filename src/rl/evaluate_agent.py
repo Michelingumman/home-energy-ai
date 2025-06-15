@@ -190,14 +190,38 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
         # Create a list of (timestamp, discounted_hourly_power) tuples
         hourly_power_events = list(zip(timestamps_hourly, discounted_grid_powers_hourly))
 
-        # Sort by power value in descending order, considering only positive peaks
-        sorted_hourly_power_events = sorted(
-            [event for event in hourly_power_events if event[1] > 0], 
-            key=lambda x: x[1], 
-            reverse=True
-        )
+        # FIXED: Apply same-day constraint for peak plotting (matches bill calculation)
+        config = get_config_dict()  # Get config for constraint setting
+        enforce_same_day_constraint = config.get('enforce_capacity_same_day_constraint', True)
         
-        top_hourly_peak_events = sorted_hourly_power_events[:3]
+        if enforce_same_day_constraint:
+            # Group by date and find max peak per day (same logic as bill calculation)
+            peaks_by_date = {}
+            for timestamp, power in hourly_power_events:
+                if power > 0:  # Only consider positive (import) power
+                    date_key = timestamp.date()
+                    if date_key not in peaks_by_date:
+                        peaks_by_date[date_key] = (timestamp, power)
+                    else:
+                        # Keep the higher peak for this date
+                        existing_timestamp, existing_power = peaks_by_date[date_key]
+                        if power > existing_power:
+                            peaks_by_date[date_key] = (timestamp, power)
+            
+            # Get daily max peaks and sort by power (descending)
+            daily_max_peaks = list(peaks_by_date.values())
+            daily_max_peaks.sort(key=lambda x: x[1], reverse=True)
+            
+            # Take top 3 daily peaks
+            top_hourly_peak_events = daily_max_peaks[:3]
+        else:
+            # Fallback: Original logic without same-day constraint
+            sorted_hourly_power_events = sorted(
+                [event for event in hourly_power_events if event[1] > 0], 
+                key=lambda x: x[1], 
+                reverse=True
+            )
+            top_hourly_peak_events = sorted_hourly_power_events[:3]
         
         peak_colors = ['red', 'green', 'blue']
         
@@ -218,7 +242,9 @@ def plot_agent_performance(episode_data, model_name=None, save_dir=None):
                 color = peak_colors[i]
                 ax7.axvline(x=peak_ts, color=color, linestyle='-', linewidth=1, alpha=0.7)
                 
-                ax7.annotate(f'Hourly Peak {i+1}: {peak_val:.2f} kW', 
+                # Add date to annotation for clarity
+                date_str = peak_ts.strftime('%m-%d')
+                ax7.annotate(f'Peak {i+1}: {peak_val:.2f} kW ({date_str})', 
                             xy=(peak_ts, peak_val),
                             xytext=(10, 10 + i*20),
                             textcoords='offset points',
@@ -663,9 +689,23 @@ def calculate_performance_metrics(episode_data, config=None):
     estimated_savings = peak_reduction_due_to_discount * capacity_fee_sek_per_kw if peak_reduction_due_to_discount > 0 else 0
     
     # Calculate export metrics
-    export_energy_kwh = sum(abs(data['grid_power_kw'] * (time_step_h if 'time_step_h' in locals() else 0.25)) 
+    export_energy_kwh = sum(abs(data['grid_power_kw'] * time_step_h) 
                            for data in episode_data if data.get('grid_power_kw', 0) < 0)
-    export_revenue = sum(data.get('export_bonus', 0) for data in episode_data)
+    
+    # FIXED: Calculate export revenue properly from episode data
+    # Look for reward_export_bonus in episode data (from RL agent) or calculate from bill
+    export_revenue_from_rewards = sum(data.get('reward_export_bonus', 0) for data in episode_data)
+    
+    # Convert from reward scaling back to actual öre/SEK if needed
+    if export_revenue_from_rewards > 0:
+        # The reward is scaled by export_reward_scaling_factor in the environment
+        export_scaling = config.get('export_reward_scaling_factor', 0.004) if config else 0.004
+        # Convert back to actual öre, then to SEK
+        export_revenue = (export_revenue_from_rewards / export_scaling) / 100.0  # öre to SEK
+    else:
+        # Fallback: calculate from energy and price
+        export_price_ore = config.get('export_reward_bonus_ore_kwh', 60) if config else 60
+        export_revenue = (export_energy_kwh * export_price_ore) / 100.0  # Convert öre to SEK
     
     # Action masking metrics - new
     actions_modified = [data.get('action_modified', False) for data in episode_data]
@@ -962,6 +1002,13 @@ def evaluate_episode(agent, config):
         episode_data.append(step_data)
     
     print(f"Episode completed with {len(episode_data)} steps")
+    
+    # DEBUG: Check what the environment's final peaks are
+    if episode_data:
+        final_step = episode_data[-1]
+        env_top3_peaks = final_step.get('top3_peaks', [])
+        print(f"DEBUG: Environment's final top3_peaks: {env_top3_peaks}")
+    
     return episode_data
 
 def analyze_reward_component_distributions(episode_data):
@@ -1026,6 +1073,720 @@ def analyze_reward_component_distributions(episode_data):
     
     return results
 
+def get_latest_model_path():
+    """Get the path to the latest trained model."""
+    model_dir = Path("src/rl/saved_models")
+    
+    # Use the well-performing model instead of the latest undertrained one
+    # The 20250604_222155 model shows much better performance than recent models
+    # preferred_model = model_dir / "final_recurrent_model_20250604_222155.zip"
+    # if preferred_model.exists():
+    #     return str(preferred_model)
+    
+    # Fallback to searching for latest if preferred doesn't exist
+    model_files = list(model_dir.glob("final_recurrent_model_*.zip"))
+    if not model_files:
+        return None
+    
+    # Sort by timestamp in filename and return the latest
+    model_files.sort(key=lambda x: x.stem.split('_')[-2:])  # Sort by date_time
+    return str(model_files[-1])
+
+def calculate_electricity_bill(episode_data, config):
+    """
+    Calculate a complete monthly electricity bill breakdown.
+    
+    Args:
+        episode_data: List of dictionaries with episode data
+        config: Configuration dictionary
+        
+    Returns:
+        Dictionary with detailed bill breakdown
+    """
+    # Extract configuration values
+    energy_tax = config.get('energy_tax', 54.875)  # öre/kWh
+    vat_mult = config.get('vat_mult', 1.25)
+    grid_fee = config.get('grid_fee', 6.25)  # öre/kWh
+    fixed_grid_fee_per_month = config.get('fixed_grid_fee_sek_per_month', 365.0)  # SEK/month
+    capacity_fee_per_kw = config.get('capacity_fee_sek_per_kw', 81.25)  # SEK/kW/month
+    night_capacity_discount = config.get('night_capacity_discount', 0.5)
+    export_price_ore_per_kwh = config.get('export_reward_bonus_ore_kwh', 60)  # öre/kWh
+    
+    # Calculate time step in hours
+    if len(episode_data) > 1:
+        time_step_h = (episode_data[1]['timestamp'] - episode_data[0]['timestamp']).total_seconds() / 3600.0
+    else:
+        time_step_h = 0.25
+    
+    # Initialize bill components
+    bill = {
+        'energy_consumption_kwh': 0.0,
+        'energy_export_kwh': 0.0,
+        'spot_cost_sek': 0.0,
+        'energy_tax_sek': 0.0,
+        'grid_fee_sek': 0.0,
+        'vat_sek': 0.0,
+        'export_revenue_sek': 0.0,
+        'net_energy_cost_sek': 0.0,
+        'capacity_fee_sek': 0.0,
+        'fixed_grid_fee_sek': 0.0,
+        'total_bill_sek': 0.0,
+        'battery_degradation_cost_sek': 0.0,
+        'top_3_peaks_kw': [],
+        'average_peak_kw': 0.0
+    }
+    
+    # Track hourly grid power for capacity calculation (with night discount)
+    hourly_grid_powers = []
+    current_hour_powers = []
+    current_hour = None
+    
+    # Process each timestep
+    for data in episode_data:
+        timestamp = data['timestamp']
+        grid_power_kw = data.get('grid_power_kw', 0)
+        current_price_ore = data.get('current_price', 0)
+        is_night = data.get('is_night_discount', False)
+        battery_power_kw = data.get('power_kw', 0)
+        
+        # Calculate energy consumption/export for this timestep
+        if grid_power_kw > 0:  # Importing from grid
+            energy_kwh = grid_power_kw * time_step_h
+            bill['energy_consumption_kwh'] += energy_kwh
+            
+            # Swedish electricity pricing model:
+            # Total cost per kWh = (spot_price * VAT) + energy_tax + grid_fee
+            # Note: energy_tax and grid_fee already include VAT
+            spot_price_with_vat_ore = current_price_ore * vat_mult
+            total_cost_per_kwh_ore = spot_price_with_vat_ore + energy_tax + grid_fee
+            
+            # Calculate total cost for this timestep
+            total_cost_ore = total_cost_per_kwh_ore * energy_kwh
+            
+            # Break down into components for reporting (convert to SEK)
+            bill['spot_cost_sek'] += (spot_price_with_vat_ore * energy_kwh) / 100.0
+            bill['energy_tax_sek'] += (energy_tax * energy_kwh) / 100.0
+            bill['grid_fee_sek'] += (grid_fee * energy_kwh) / 100.0
+            
+        elif grid_power_kw < 0:  # Exporting to grid
+            energy_kwh = abs(grid_power_kw) * time_step_h
+            bill['energy_export_kwh'] += energy_kwh
+            
+            # Calculate export revenue
+            export_revenue_ore = export_price_ore_per_kwh * energy_kwh
+            bill['export_revenue_sek'] += export_revenue_ore / 100.0
+        
+        # Track battery degradation
+        if abs(battery_power_kw) > 0:
+            energy_throughput_kwh = abs(battery_power_kw) * time_step_h
+            degradation_cost_ore = energy_throughput_kwh * config.get('battery_degradation_cost_per_kwh', 45.0)
+            bill['battery_degradation_cost_sek'] += degradation_cost_ore / 100.0
+        
+        # Track hourly peaks for capacity fee (aggregate to hourly)
+        hour = timestamp.replace(minute=0, second=0, microsecond=0)
+        if current_hour != hour:
+            # Save previous hour's average if it exists
+            if current_hour_powers:
+                hourly_avg_power = sum(current_hour_powers) / len(current_hour_powers)
+                # Apply night discount if this was a night hour
+                if current_hour and (current_hour.hour >= 22 or current_hour.hour < 6):
+                    if hourly_avg_power > 0:
+                        hourly_avg_power *= night_capacity_discount
+                hourly_grid_powers.append(hourly_avg_power)
+            
+            current_hour = hour
+            current_hour_powers = []
+        
+        current_hour_powers.append(max(0, grid_power_kw))  # Only count imports for capacity
+    
+    # Process final hour
+    if current_hour_powers:
+        hourly_avg_power = sum(current_hour_powers) / len(current_hour_powers)
+        if current_hour and (current_hour.hour >= 22 or current_hour.hour < 6):
+            if hourly_avg_power > 0:
+                hourly_avg_power *= night_capacity_discount
+        hourly_grid_powers.append(hourly_avg_power)
+    
+    # FIXED: Calculate capacity fee with Swedish same-day constraint
+    # Only one peak per day can count towards the top 3 peaks
+    enforce_same_day_constraint = config.get('enforce_capacity_same_day_constraint', True)
+    
+    if hourly_grid_powers and enforce_same_day_constraint:
+        # Create (timestamp, power) pairs for each hour
+        hour_timestamps = []
+        current_hour = None
+        for i, data in enumerate(episode_data):
+            hour = data['timestamp'].replace(minute=0, second=0, microsecond=0)
+            if current_hour != hour:
+                hour_timestamps.append(hour)
+                current_hour = hour
+        
+        # Ensure we have matching timestamps and powers
+        min_length = min(len(hour_timestamps), len(hourly_grid_powers))
+        hourly_power_events = list(zip(hour_timestamps[:min_length], hourly_grid_powers[:min_length]))
+        
+        # Group by date and find max peak per day
+        peaks_by_date = {}
+        for timestamp, power in hourly_power_events:
+            if power > 0:  # Only consider positive (import) power
+                date_key = timestamp.date()
+                if date_key not in peaks_by_date:
+                    peaks_by_date[date_key] = (timestamp, power)
+                else:
+                    # Keep the higher peak for this date
+                    existing_timestamp, existing_power = peaks_by_date[date_key]
+                    if power > existing_power:
+                        peaks_by_date[date_key] = (timestamp, power)
+        
+        # Get daily max peaks and sort by power (descending)
+        daily_max_peaks = list(peaks_by_date.values())
+        daily_max_peaks.sort(key=lambda x: x[1], reverse=True)
+        
+        # Take top 3 daily peaks
+        top_3_daily_peaks = daily_max_peaks[:3]
+        top_3_peaks = [power for _, power in top_3_daily_peaks]
+        
+        # Pad with zeros if less than 3 peaks
+        while len(top_3_peaks) < 3:
+            top_3_peaks.append(0.0)
+        
+        bill['top_3_peaks_kw'] = top_3_peaks
+        bill['average_peak_kw'] = sum(top_3_peaks) / 3
+        bill['capacity_fee_sek'] = bill['average_peak_kw'] * capacity_fee_per_kw
+        
+        # Debug output to verify same-day constraint
+        if top_3_daily_peaks:
+            peak_dates = [timestamp.strftime('%Y-%m-%d') for timestamp, _ in top_3_daily_peaks]
+            print(f"Capacity peaks (same-day constraint): {[f'{p:.2f}kW' for p in top_3_peaks]} from dates: {peak_dates}")
+        
+    elif hourly_grid_powers:
+        # Fallback: Original logic without same-day constraint (for testing)
+        sorted_peaks = sorted([p for p in hourly_grid_powers if p > 0], reverse=True)
+        top_3_peaks = sorted_peaks[:3]
+        
+        # Pad with zeros if less than 3 peaks
+        while len(top_3_peaks) < 3:
+            top_3_peaks.append(0.0)
+        
+        bill['top_3_peaks_kw'] = top_3_peaks
+        bill['average_peak_kw'] = sum(top_3_peaks) / 3
+        bill['capacity_fee_sek'] = bill['average_peak_kw'] * capacity_fee_per_kw
+        
+        print(f"Capacity peaks (NO same-day constraint): {[f'{p:.2f}kW' for p in top_3_peaks]}")
+    else:
+        # No peaks found
+        bill['top_3_peaks_kw'] = [0.0, 0.0, 0.0]
+        bill['average_peak_kw'] = 0.0
+        bill['capacity_fee_sek'] = 0.0
+    
+    # Calculate fixed costs (pro-rated for episode length)
+    episode_days = len(episode_data) * time_step_h / 24.0
+    months_in_episode = episode_days / 30.44  # Average days per month
+    bill['fixed_grid_fee_sek'] = fixed_grid_fee_per_month * months_in_episode
+    
+    # Calculate net energy cost
+    bill['net_energy_cost_sek'] = (bill['spot_cost_sek'] + bill['energy_tax_sek'] + 
+                                   bill['grid_fee_sek'] - bill['export_revenue_sek'])
+    
+    # Calculate total bill
+    bill['total_bill_sek'] = (bill['net_energy_cost_sek'] + bill['capacity_fee_sek'] + 
+                              bill['fixed_grid_fee_sek'] + bill['battery_degradation_cost_sek'])
+    
+    return bill
+
+
+def simulate_rule_based_strategy(episode_data, strategy_name, config):
+    """
+    Simulate a rule-based battery management strategy.
+    
+    NOTE: These strategies are intentionally basic and do NOT have access to forecasts
+    (prices, demand, solar) unlike the RL agent. They only use current timestep data
+    and simple heuristics to demonstrate the value of predictive learning.
+    
+    Args:
+        episode_data: Original episode data from RL agent
+        strategy_name: Name of the strategy to simulate
+        config: Configuration dictionary
+        
+    Returns:
+        Modified episode data with rule-based battery actions
+    """
+    # Copy episode data
+    import copy
+    strategy_data = copy.deepcopy(episode_data)
+    
+    # Battery parameters
+    battery_capacity_kwh = config.get('battery_capacity', 22.0)
+    max_charge_power_kw = config.get('battery_max_charge_power_kw', 5.0)
+    max_discharge_power_kw = config.get('battery_max_discharge_power_kw', 10.0)
+    charge_efficiency = config.get('battery_charge_efficiency', 0.95)
+    discharge_efficiency = config.get('battery_discharge_efficiency', 0.95)
+    
+    # Calculate time step
+    if len(episode_data) > 1:
+        time_step_h = (episode_data[1]['timestamp'] - episode_data[0]['timestamp']).total_seconds() / 3600.0
+    else:
+        time_step_h = 0.25
+    
+    # Initialize battery state
+    current_soc = config.get('battery_initial_soc', 0.5)
+    
+    # REMOVED: Pre-calculate price thresholds - strategies should not have perfect foresight
+    # Instead, use fixed conservative thresholds based on typical Swedish prices
+    if strategy_name == "price_based":
+        # Use conservative fixed thresholds instead of perfect foresight
+        low_threshold = 40.0   # öre/kWh - conservative low price threshold
+        high_threshold = 120.0  # öre/kWh - conservative high price threshold
+        print(f"Price strategy thresholds (FIXED): Low={low_threshold:.1f}, High={high_threshold:.1f} öre/kWh")
+    
+    # Track recent grid imports for simple peak tracking (last 24 hours)
+    recent_grid_imports = []
+    
+    for i, data in enumerate(strategy_data):
+        timestamp = data['timestamp']
+        base_demand_kw = data.get('base_demand_kw', 0)
+        solar_production_kw = data.get('current_solar_production_kw', 0)
+        current_price = data.get('current_price', 0)
+        is_night = data.get('is_night_discount', False)
+        
+        # Net demand without battery
+        net_demand_kw = base_demand_kw - solar_production_kw
+        
+        # Update recent grid imports for simple peak tracking
+        if len(recent_grid_imports) >= 96:  # Keep last 24 hours (96 * 15min steps)
+            recent_grid_imports.pop(0)
+        recent_grid_imports.append(max(0, net_demand_kw))  # Only track potential imports
+        
+        # Simple peak estimate (max of recent imports)
+        current_peak_estimate = max(recent_grid_imports) if recent_grid_imports else 0
+        
+        # Determine battery action based on strategy
+        battery_power_kw = 0.0
+        
+        if strategy_name == "no_battery":
+            battery_power_kw = 0.0
+            
+        elif strategy_name == "time_of_use":
+            # Simple time-based strategy - NO forecast knowledge
+            hour = timestamp.hour
+            if 22 <= hour or hour < 6:  # Night hours - moderate charging
+                if current_soc < 0.6 and solar_production_kw < 1.0:
+                    # Only charge what's needed, no excess
+                    charge_need = min(
+                        max_charge_power_kw,
+                        (0.6 - current_soc) * battery_capacity_kwh / time_step_h,
+                        max(0, net_demand_kw * 0.8)  # Only moderate charging
+                    )
+                    battery_power_kw = -charge_need
+            elif 16 <= hour < 20:  # Evening peak hours - conservative discharge
+                if current_soc > 0.4 and net_demand_kw > 2.0:
+                    discharge_available = min(
+                        max_discharge_power_kw * 0.7,  # Conservative discharge rate
+                        (current_soc - 0.4) * battery_capacity_kwh / time_step_h,
+                        max(0, net_demand_kw * 0.6)  # Cover part of demand
+                    )
+                    battery_power_kw = discharge_available
+                    
+        elif strategy_name == "price_based":
+            # Simple price-based strategy with FIXED thresholds (no perfect foresight)
+            if current_price <= low_threshold and current_soc < 0.7:
+                # Low price - conservative charging
+                if solar_production_kw <= base_demand_kw:  # No excess solar
+                    charge_amount = min(
+                        max_charge_power_kw * 0.8,  # Conservative rate
+                        (0.7 - current_soc) * battery_capacity_kwh / time_step_h,
+                        max(0, net_demand_kw * 0.5)  # Moderate charging
+                    )
+                    battery_power_kw = -charge_amount
+            elif current_price >= high_threshold and current_soc > 0.3:
+                # High price - conservative discharge
+                if net_demand_kw > 1.0:  # Only if there's actual demand
+                    discharge_amount = min(
+                        max_discharge_power_kw * 0.6,  # Conservative rate
+                        (current_soc - 0.3) * battery_capacity_kwh / time_step_h,
+                        net_demand_kw * 0.7  # Cover most but not all demand
+                    )
+                    battery_power_kw = discharge_amount
+                                     
+        elif strategy_name == "solar_following":
+            # Simple solar following - only current timestep, no forecasts
+            if solar_production_kw > base_demand_kw and current_soc < 0.8:
+                # Excess solar - store it
+                excess_power = solar_production_kw - base_demand_kw
+                battery_power_kw = -min(
+                    max_charge_power_kw, 
+                    excess_power * 0.9,  # Use most of the excess
+                    (0.8 - current_soc) * battery_capacity_kwh / time_step_h
+                )
+            elif solar_production_kw < base_demand_kw * 0.5 and current_soc > 0.3:
+                # Low solar, use battery to supplement
+                needed_power = base_demand_kw - solar_production_kw
+                battery_power_kw = min(
+                    max_discharge_power_kw,
+                    needed_power * 0.8,  # Cover most of the deficit
+                    (current_soc - 0.3) * battery_capacity_kwh / time_step_h
+                )
+                                     
+        elif strategy_name == "peak_shaving":
+            # Simple peak shaving based on recent history (no forecasts)
+            dynamic_threshold = max(3.5, current_peak_estimate * 0.8)  # Adaptive but simple
+            
+            if net_demand_kw > dynamic_threshold and current_soc > 0.3:
+                # Current demand is high - discharge to reduce peak
+                needed_reduction = min(
+                    net_demand_kw - dynamic_threshold,
+                    max_discharge_power_kw,
+                    (current_soc - 0.3) * battery_capacity_kwh / time_step_h
+                )
+                battery_power_kw = needed_reduction
+            elif net_demand_kw < -1.5 and current_soc < 0.7:  # Excess generation
+                # Store excess for later peak shaving
+                available_excess = min(abs(net_demand_kw) * 0.8, max_charge_power_kw)
+                charge_capacity = (0.7 - current_soc) * battery_capacity_kwh / time_step_h
+                battery_power_kw = -min(available_excess, charge_capacity)
+        
+        # Apply SoC constraints more strictly
+        if battery_power_kw < 0:  # Charging
+            # Check if we can actually charge this much
+            max_energy_to_add = (0.9 - current_soc) * battery_capacity_kwh
+            max_charge_this_step = max_energy_to_add / (time_step_h * charge_efficiency)
+            battery_power_kw = max(battery_power_kw, -min(max_charge_power_kw, max_charge_this_step))
+            
+        elif battery_power_kw > 0:  # Discharging
+            # Check if we can actually discharge this much
+            max_energy_to_remove = (current_soc - 0.1) * battery_capacity_kwh
+            max_discharge_this_step = max_energy_to_remove * discharge_efficiency / time_step_h
+            battery_power_kw = min(battery_power_kw, min(max_discharge_power_kw, max_discharge_this_step))
+        
+        # Update SoC based on battery action
+        if battery_power_kw < 0:  # Charging
+            energy_charged = abs(battery_power_kw) * time_step_h * charge_efficiency
+            current_soc = min(0.9, current_soc + energy_charged / battery_capacity_kwh)
+        elif battery_power_kw > 0:  # Discharging
+            energy_discharged = battery_power_kw * time_step_h / discharge_efficiency
+            current_soc = max(0.1, current_soc - energy_discharged / battery_capacity_kwh)
+        
+        # Calculate new grid power
+        new_grid_power_kw = net_demand_kw + battery_power_kw
+        
+        # Update the data
+        strategy_data[i]['soc'] = current_soc
+        strategy_data[i]['power_kw'] = battery_power_kw
+        strategy_data[i]['grid_power_kw'] = new_grid_power_kw
+        strategy_data[i]['strategy'] = strategy_name
+    
+    return strategy_data
+
+
+def compare_strategies(episode_data, config, strategies=None):
+    """
+    Compare the RL agent performance against rule-based strategies.
+    
+    Args:
+        episode_data: Original episode data from RL agent
+        config: Configuration dictionary
+        strategies: List of strategy names to compare (optional)
+        
+    Returns:
+        Dictionary with comparison results
+    """
+    if strategies is None:
+        strategies = ["no_battery", "time_of_use", "price_based", "solar_following", "peak_shaving"]
+    
+    results = {}
+    
+    # Calculate bill for RL agent
+    rl_bill = calculate_electricity_bill(episode_data, config)
+    results["rl_agent"] = {
+        'bill': rl_bill,
+        'strategy_name': 'RL Agent',
+        'episode_data': episode_data
+    }
+    
+    print(f"\n=== STRATEGY COMPARISON DEBUG ===")
+    print(f"Episode length: {len(episode_data)} timesteps")
+    print(f"RL Agent - Total export: {rl_bill['energy_export_kwh']:.1f} kWh")
+    print(f"RL Agent - Total consumption: {rl_bill['energy_consumption_kwh']:.1f} kWh")
+    print(f"RL Agent - Average peak: {rl_bill['average_peak_kw']:.2f} kW")
+    
+    # Calculate bills for each rule-based strategy
+    for strategy in strategies:
+        print(f"\nSimulating {strategy} strategy...")
+        strategy_data = simulate_rule_based_strategy(episode_data, strategy, config)
+        strategy_bill = calculate_electricity_bill(strategy_data, config)
+        
+        # Debug output for each strategy
+        print(f"{strategy} - Total export: {strategy_bill['energy_export_kwh']:.1f} kWh")
+        print(f"{strategy} - Total consumption: {strategy_bill['energy_consumption_kwh']:.1f} kWh")
+        print(f"{strategy} - Average peak: {strategy_bill['average_peak_kw']:.2f} kW")
+        print(f"{strategy} - Total bill: {strategy_bill['total_bill_sek']:.2f} SEK")
+        
+        # Calculate battery utilization
+        battery_actions = [d.get('power_kw', 0) for d in strategy_data]
+        charging_steps = len([p for p in battery_actions if p < -0.1])
+        discharging_steps = len([p for p in battery_actions if p > 0.1])
+        total_steps = len(battery_actions)
+        
+        print(f"{strategy} - Charging: {charging_steps}/{total_steps} steps ({charging_steps/total_steps*100:.1f}%)")
+        print(f"{strategy} - Discharging: {discharging_steps}/{total_steps} steps ({discharging_steps/total_steps*100:.1f}%)")
+        
+        results[strategy] = {
+            'bill': strategy_bill,
+            'strategy_name': strategy.replace('_', ' ').title(),
+            'episode_data': strategy_data
+        }
+    
+    return results
+
+
+def print_bill_comparison(comparison_results):
+    """
+    Print a detailed comparison of electricity bills across strategies.
+    
+    Args:
+        comparison_results: Results from compare_strategies function
+    """
+    print(f"\n{'='*100}")
+    print(f"{'ELECTRICITY BILL COMPARISON':^100}")
+    print(f"{'='*100}")
+    
+    # Create comparison table
+    strategies = list(comparison_results.keys())
+    
+    # Bill components to compare
+    components = [
+        ('total_bill_sek', 'Total Bill (SEK)', '8.2f'),
+        ('net_energy_cost_sek', 'Net Energy Cost (SEK)', '8.2f'),
+        ('capacity_fee_sek', 'Capacity Fee (SEK)', '8.2f'),
+        ('fixed_grid_fee_sek', 'Fixed Grid Fee (SEK)', '8.2f'),
+        ('battery_degradation_cost_sek', 'Battery Degradation (SEK)', '8.2f'),
+        ('energy_consumption_kwh', 'Energy Consumption (kWh)', '8.1f'),
+        ('energy_export_kwh', 'Energy Export (kWh)', '8.1f'),
+        ('average_peak_kw', 'Avg Peak (kW)', '8.2f'),
+    ]
+    
+    # Print header
+    header = f"{'Component':<25}"
+    for strategy in strategies:
+        strategy_name = comparison_results[strategy]['strategy_name']
+        header += f"{strategy_name:>15}"
+    print(header)
+    print("-" * len(header))
+    
+    # Print each component
+    for key, label, fmt in components:
+        row = f"{label:<25}"
+        for strategy in strategies:
+            value = comparison_results[strategy]['bill'][key]
+            row += f"{value:>{15}.{fmt.split('.')[1]}}"
+        print(row)
+    
+    print("-" * len(header))
+    
+    # Calculate and print savings compared to baseline (no_battery)
+    if "no_battery" in comparison_results:
+        baseline_bill = comparison_results["no_battery"]['bill']['total_bill_sek']
+        print(f"\n{'SAVINGS COMPARED TO NO BATTERY BASELINE':^100}")
+        print("-" * 100)
+        
+        savings_row = f"{'Savings (SEK)':<25}"
+        pct_row = f"{'Savings (%)':<25}"
+        
+        for strategy in strategies:
+            bill = comparison_results[strategy]['bill']['total_bill_sek']
+            savings = baseline_bill - bill
+            
+            # Handle percentage calculation for negative bills (net profit scenarios)
+            if baseline_bill != 0:
+                pct_savings = (savings / abs(baseline_bill) * 100)
+            else:
+                pct_savings = 0
+            
+            savings_row += f"{savings:>15.2f}"
+            pct_row += f"{pct_savings:>15.1f}%"
+        
+        print(savings_row)
+        print(pct_row)
+        
+        # Add explanation for negative bills
+        if baseline_bill < 0:
+            print(f"\nNote: Negative bills indicate net profit from energy export.")
+            print(f"Baseline bill: {baseline_bill:.2f} SEK (net profit of {abs(baseline_bill):.2f} SEK)")
+    
+    # Print detailed breakdown for RL agent
+    print(f"\n{'DETAILED RL AGENT BILL BREAKDOWN':^100}")
+    print("-" * 100)
+    rl_bill = comparison_results["rl_agent"]['bill']
+    
+    print(f"{'Energy Costs:':<30}")
+    print(f"  {'Spot Price Cost:':<28} {rl_bill['spot_cost_sek']:>8.2f} SEK")
+    print(f"  {'Energy Tax:':<28} {rl_bill['energy_tax_sek']:>8.2f} SEK")
+    print(f"  {'Grid Fee:':<28} {rl_bill['grid_fee_sek']:>8.2f} SEK")
+    print(f"  {'Export Revenue:':<28} {-rl_bill['export_revenue_sek']:>8.2f} SEK")
+    print(f"  {'Net Energy Cost:':<28} {rl_bill['net_energy_cost_sek']:>8.2f} SEK")
+    
+    print(f"\n{'Grid Connection Costs:':<30}")
+    print(f"  {'Capacity Fee:':<28} {rl_bill['capacity_fee_sek']:>8.2f} SEK")
+    print(f"  {'Fixed Grid Fee:':<28} {rl_bill['fixed_grid_fee_sek']:>8.2f} SEK")
+    
+    print(f"\n{'Battery Costs:':<30}")
+    print(f"  {'Degradation Cost:':<28} {rl_bill['battery_degradation_cost_sek']:>8.2f} SEK")
+    
+    print(f"\n{'Usage Summary:':<30}")
+    print(f"  {'Energy Consumption:':<28} {rl_bill['energy_consumption_kwh']:>8.1f} kWh")
+    print(f"  {'Energy Export:':<28} {rl_bill['energy_export_kwh']:>8.1f} kWh")
+    print(f"  {'Top 3 Peaks:':<28} {', '.join([f'{p:.2f}' for p in rl_bill['top_3_peaks_kw']])} kW")
+    print(f"  {'Average Peak:':<28} {rl_bill['average_peak_kw']:>8.2f} kW")
+    
+    print(f"\n{'TOTAL BILL:':<30} {rl_bill['total_bill_sek']:>8.2f} SEK")
+    print("=" * 100)
+
+
+def save_bill_comparison(comparison_results, output_dir):
+    """
+    Save bill comparison results to files.
+    
+    Args:
+        comparison_results: Results from compare_strategies function
+        output_dir: Directory to save results
+    """
+    import os
+    import json
+    import pandas as pd
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save detailed comparison as JSON
+    json_data = {}
+    for strategy, data in comparison_results.items():
+        json_data[strategy] = {
+            'strategy_name': data['strategy_name'],
+            'bill': data['bill']
+        }
+    
+    with open(os.path.join(output_dir, "bill_comparison.json"), 'w') as f:
+        json.dump(json_data, f, indent=4, default=str)
+    
+    # Create summary DataFrame
+    summary_data = []
+    for strategy, data in comparison_results.items():
+        bill = data['bill']
+        summary_data.append({
+            'Strategy': data['strategy_name'],
+            'Total Bill (SEK)': bill['total_bill_sek'],
+            'Energy Cost (SEK)': bill['net_energy_cost_sek'],
+            'Capacity Fee (SEK)': bill['capacity_fee_sek'],
+            'Fixed Fee (SEK)': bill['fixed_grid_fee_sek'],
+            'Battery Cost (SEK)': bill['battery_degradation_cost_sek'],
+            'Consumption (kWh)': bill['energy_consumption_kwh'],
+            'Export (kWh)': bill['energy_export_kwh'],
+            'Avg Peak (kW)': bill['average_peak_kw']
+        })
+    
+    df = pd.DataFrame(summary_data)
+    df.to_csv(os.path.join(output_dir, "bill_comparison_summary.csv"), index=False)
+    
+    print(f"Bill comparison results saved to {output_dir}")
+
+def plot_strategy_comparison(comparison_results, output_path):
+    """
+    Create a visual comparison plot of different strategies' electricity bills.
+    
+    Args:
+        comparison_results: Results from compare_strategies function
+        output_path: Path to save the plot
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    # Extract data for plotting
+    strategies = list(comparison_results.keys())
+    strategy_names = [comparison_results[s]['strategy_name'] for s in strategies]
+    
+    # Bill components to plot
+    total_bills = [comparison_results[s]['bill']['total_bill_sek'] for s in strategies]
+    energy_costs = [comparison_results[s]['bill']['net_energy_cost_sek'] for s in strategies]
+    capacity_fees = [comparison_results[s]['bill']['capacity_fee_sek'] for s in strategies]
+    fixed_fees = [comparison_results[s]['bill']['fixed_grid_fee_sek'] for s in strategies]
+    battery_costs = [comparison_results[s]['bill']['battery_degradation_cost_sek'] for s in strategies]
+    avg_peaks = [comparison_results[s]['bill']['average_peak_kw'] for s in strategies]
+    
+    # Create subplots
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle('Strategy Comparison: Electricity Bills and Performance', fontsize=16, fontweight='bold')
+    
+    # Plot 1: Total Bill Comparison
+    colors = ['red' if 'RL Agent' in name else 'lightblue' for name in strategy_names]
+    bars1 = ax1.bar(strategy_names, total_bills, color=colors)
+    ax1.set_title('Total Electricity Bill (SEK)', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Bill (SEK)')
+    ax1.tick_params(axis='x', rotation=45)
+    ax1.grid(True, alpha=0.3)
+    
+    # Add value labels on bars
+    for bar, value in zip(bars1, total_bills):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height + (10 if height >= 0 else -20),
+                f'{value:.1f}', ha='center', va='bottom' if height >= 0 else 'top', fontweight='bold')
+    
+    # Plot 2: Bill Components Breakdown (stacked bar)
+    # Prepare data for stacking (separate positive and negative components)
+    positive_components = []
+    negative_components = []
+    
+    for i in range(len(strategies)):
+        pos_total = capacity_fees[i] + fixed_fees[i] + battery_costs[i]
+        neg_total = energy_costs[i] if energy_costs[i] < 0 else 0
+        positive_components.append(pos_total)
+        negative_components.append(neg_total)
+    
+    # Create stacked bars
+    ax2.bar(strategy_names, positive_components, label='Positive Costs', color='lightcoral')
+    ax2.bar(strategy_names, negative_components, label='Net Energy (Profit)', color='lightgreen')
+    
+    ax2.set_title('Bill Components Breakdown', fontsize=12, fontweight='bold')
+    ax2.set_ylabel('Cost/Profit (SEK)')
+    ax2.tick_params(axis='x', rotation=45)
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # Plot 3: Average Peak Power
+    bars3 = ax3.bar(strategy_names, avg_peaks, color=colors)
+    ax3.set_title('Average Peak Power (Capacity Fee Driver)', fontsize=12, fontweight='bold')
+    ax3.set_ylabel('Peak Power (kW)')
+    ax3.tick_params(axis='x', rotation=45)
+    ax3.grid(True, alpha=0.3)
+    
+    # Add value labels
+    for bar, value in zip(bars3, avg_peaks):
+        height = bar.get_height()
+        ax3.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                f'{value:.2f}', ha='center', va='bottom', fontweight='bold')
+    
+    # Plot 4: Savings vs Baseline
+    if "no_battery" in comparison_results:
+        baseline_bill = comparison_results["no_battery"]['bill']['total_bill_sek']
+        savings = [baseline_bill - bill for bill in total_bills]
+        
+        colors_savings = ['green' if s > 0 else 'red' for s in savings]
+        bars4 = ax4.bar(strategy_names, savings, color=colors_savings)
+        ax4.set_title('Savings vs No Battery Baseline (SEK)', fontsize=12, fontweight='bold')
+        ax4.set_ylabel('Savings (SEK)')
+        ax4.tick_params(axis='x', rotation=45)
+        ax4.axhline(y=0, color='black', linestyle='-', alpha=0.5)
+        ax4.grid(True, alpha=0.3)
+        
+        # Add value labels
+        for bar, value in zip(bars4, savings):
+            height = bar.get_height()
+            ax4.text(bar.get_x() + bar.get_width()/2., height + (5 if height >= 0 else -10),
+                    f'{value:.1f}', ha='center', va='bottom' if height >= 0 else 'top', fontweight='bold')
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"Strategy comparison plot saved to {output_path}")
+
 if __name__ == "__main__":
     try:
         parser = argparse.ArgumentParser(description="Evaluate a trained RL agent in the home energy management environment")
@@ -1047,6 +1808,8 @@ if __name__ == "__main__":
                            help="Month to evaluate (format: YYYY-MM)")
         parser.add_argument("--random-start", action="store_true", 
                            help="Use random start dates for evaluation")
+        parser.add_argument("--compare-strategies", action="store_true", 
+                           help="Compare RL agent against rule-based strategies and calculate electricity bills")
         
         # Parse arguments
         args = parser.parse_args()
@@ -1103,8 +1866,8 @@ if __name__ == "__main__":
             # Always use the default recurrent model path
             # grabbign the latest model
             print(f"Using default recurrent model path")
-            latest_model = max(os.listdir(config['model_dir']), key=lambda x: os.path.getmtime(os.path.join(config['model_dir'], x)))
-            model_path = os.path.join(config['model_dir'], latest_model)
+            latest_model = get_latest_model_path()
+            model_path = latest_model
         
         print(f"Model path: {model_path}")
         print(f"Model exists: {os.path.exists(model_path)}")
@@ -1163,6 +1926,20 @@ if __name__ == "__main__":
             print(f"\n{'='*30} Performance Metrics {'='*30}")
             results = calculate_performance_metrics(episode_data, config)
             all_results.append(results)
+            
+            # NEW: Compare strategies and calculate electricity bills
+            if args.compare_strategies:
+                print(f"\n{'='*30} Strategy Comparison {'='*30}")
+                comparison_results = compare_strategies(episode_data, config)
+                
+                # Print detailed bill comparison
+                print_bill_comparison(comparison_results)
+                
+                # Save bill comparison results
+                save_bill_comparison(comparison_results, plot_dir)
+                
+                # Plot strategy comparison
+                plot_strategy_comparison(comparison_results, output_path=os.path.join(plot_dir, "strategy_comparison.png"))
             
             # Save the results to a JSON file
             results_file = os.path.join(plot_dir, "metrics.json")

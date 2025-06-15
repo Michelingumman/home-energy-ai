@@ -14,7 +14,7 @@ def ensure_soc_limits(
     min_soc: float = 0.2, 
     max_soc: float = 0.8,
     max_charge_power_kw: float = 5.0,
-    max_discharge_power_kw: float = 5.0,
+    max_discharge_power_kw: float = 10.0,
     capacity_kwh: float = 22.0,
     time_step_hours: float = 0.25
 ) -> float:

@@ -51,6 +51,7 @@ import pandas as pd
 
 from prefect import flow, task, serve
 from prefect.artifacts import create_markdown_artifact
+from prefect.schedules import Cron
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -80,7 +81,7 @@ SCRIPT_PATHS = {
     # Prediction/inference scripts
     'price_predictions': 'src/predictions/prices/run_model.py',
     'demand_predictions': 'src/predictions/demand/predict.py',
-    'rl_control': 'src/rl/run_production_agent.py'
+    'rl_agent': 'src/rl/run_production_agent.py'
 }
 
 # =============================================================================
@@ -107,7 +108,7 @@ def get_descriptive_name_from_script_path(script_path: str, args: List[str] = No
         'src/rl/train.py': 'train-rl-agent',
         'src/predictions/prices/run_model.py': 'generate-price-predictions',
         'src/predictions/demand/predict.py': 'generate-demand-predictions',
-        'src/rl/run_production_agent.py': 'run-rl-control'
+        'src/rl/run_production_agent.py': 'run-rl-control',
     }
     
     base_name = script_name_map.get(script_path)
@@ -128,7 +129,7 @@ def get_descriptive_name_from_script_path(script_path: str, args: List[str] = No
 @task(retries=1, retry_delay_seconds=60, 
       task_run_name="{task_name}")
 def run_python_script(script_path: str, args: List[str] = None, 
-                     working_dir: str = None, timeout: int = 3600,
+                     working_dir: str = None, timeout: int = 24*60*60,
                      task_name: str = None) -> Dict[str, Any]:
     """
     Run a Python script with proper error handling and logging.
@@ -272,6 +273,368 @@ def fetch_solar_predictions() -> Dict[str, Any]:
         SCRIPT_PATHS['solar_predictions'],
         task_name="fetch-solar-predictions"
     )
+    
+    
+@task(retries=1, retry_delay_seconds=120, task_run_name="run-agent")
+def run_agent() -> Dict[str, Any]:
+    """Execute the RL agent for battery control and return formatted output."""
+    logger.info("Running RL agent for battery control")
+    
+    import subprocess
+    import io
+    import contextlib
+    from datetime import datetime
+    
+    try:
+        # Use the same Python interpreter that's running Prefect
+        cmd = [sys.executable, str(SCRIPT_PATHS['rl_agent']), "--dry-run"]
+        
+        # Set up environment to ensure proper module access
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(PROJECT_ROOT)
+        
+        logger.info(f"Executing RL agent: {' '.join(cmd)}")
+        logger.info(f"Working directory: {PROJECT_ROOT}")
+        logger.info(f"Python executable: {sys.executable}")
+        
+        # Run the script and capture both stdout and stderr
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True, 
+            timeout=300,  # 5 minute timeout
+            cwd=PROJECT_ROOT,
+            env=env
+        )
+        
+        if result.returncode == 0:
+            # Parse the output to extract key information
+            output_lines = result.stdout.split('\n')
+            agent_info = _parse_agent_output(output_lines)
+            
+            logger.info("✅ RL Agent executed successfully")
+            logger.info(f"Agent action: {agent_info.get('action_value', 'N/A')}")
+            logger.info(f"Battery command: {agent_info.get('battery_command', 'N/A')}")
+            
+            return {
+                'script_path': str(SCRIPT_PATHS['rl_agent']),
+                'success': True,
+                'agent_info': agent_info,
+                'full_output': result.stdout,
+                'timestamp': datetime.now().isoformat(),
+                'return_code': result.returncode
+            }
+        else:
+            logger.error(f"RL Agent script failed with return code {result.returncode}")
+            logger.error(f"Command: {' '.join(cmd)}")
+            logger.error(f"STDOUT: {result.stdout}")
+            logger.error(f"STDERR: {result.stderr}")
+            return {
+                'script_path': str(SCRIPT_PATHS['rl_agent']),
+                'success': False,
+                'error': f"Return code {result.returncode}: {result.stderr}",
+                'stdout': result.stdout,
+                'stderr': result.stderr,
+                'timestamp': datetime.now().isoformat(),
+                'return_code': result.returncode
+            }
+            
+    except subprocess.TimeoutExpired:
+        logger.error("RL Agent script timed out after 5 minutes")
+        return {
+            'script_path': str(SCRIPT_PATHS['rl_agent']),
+            'success': False,
+            'error': "Script execution timed out",
+            'timestamp': datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error running RL agent: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {
+            'script_path': str(SCRIPT_PATHS['rl_agent']),
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }
+
+def _parse_agent_output(output_lines: List[str]) -> Dict[str, Any]:
+    """Parse the RL agent output to extract key information."""
+    info = {
+        'soc': None,
+        'soc_percentage': None,
+        'current_price': None,
+        'price_trend': None,
+        'action_value': None,
+        'battery_command': None,
+        'command_type': None,
+        'power_kw': None,
+        'decision_context': [],
+        'forecast_summary': {},
+        'raw_sections': {}
+    }
+    
+    try:
+        # Find the main report section
+        report_start = -1
+        for i, line in enumerate(output_lines):
+            if "ENERGY MANAGEMENT SYSTEM DECISION" in line:
+                report_start = i
+                break
+        
+        if report_start == -1:
+            return info
+            
+        # Extract specific information
+        for i in range(report_start, len(output_lines)):
+            line = output_lines[i].strip()
+            
+            if "State of Charge:" in line:
+                # Extract SoC percentage and kWh values
+                parts = line.split()
+                for j, part in enumerate(parts):
+                    if part.endswith('%'):
+                        info['soc_percentage'] = part.rstrip('%')
+                        # Try to extract the numerical SoC (0-1 range)
+                        try:
+                            info['soc'] = float(info['soc_percentage']) / 100.0
+                        except:
+                            pass
+                        break
+                        
+            elif "Current Price:" in line:
+                # Extract current price and trend
+                parts = line.split()
+                for j, part in enumerate(parts):
+                    try:
+                        if 'ore/kWh' in parts[j+1:j+2]:
+                            info['current_price'] = float(part)
+                            break
+                    except (ValueError, IndexError):
+                        continue
+                
+                if "[" in line and "]" in line:
+                    start = line.find("[") + 1
+                    end = line.find("]")
+                    info['price_trend'] = line[start:end]
+                    
+            elif "Raw Action Value:" in line:
+                # Extract raw action value
+                parts = line.split()
+                for part in parts:
+                    try:
+                        if part.startswith(('+', '-')) or part.replace('.', '').replace('-', '').isdigit():
+                            info['action_value'] = float(part)
+                            break
+                    except ValueError:
+                        continue
+                        
+            elif "Battery Command:" in line:
+                # Extract battery command
+                logger.debug(f"Parsing battery command line: '{line}'")
+                
+                # Check for DISCHARGE first (before CHARGE) to avoid substring matching
+                if "DISCHARGE" in line:
+                    info['command_type'] = "DISCHARGE" 
+                    logger.debug("Detected DISCHARGE command")
+                    # Extract power value
+                    import re
+                    match = re.search(r'DISCHARGE at ([\d.]+) kW', line)
+                    if match:
+                        info['power_kw'] = float(match.group(1))
+                        info['battery_command'] = f"Discharge at {info['power_kw']} kW"
+                        logger.debug(f"Extracted discharge power: {info['power_kw']} kW")
+                    else:
+                        logger.warning(f"Could not extract power from DISCHARGE line: {line}")
+                        
+                elif "CHARGE" in line:
+                    info['command_type'] = "CHARGE"
+                    logger.debug("Detected CHARGE command")
+                    # Extract power value
+                    import re
+                    match = re.search(r'CHARGE at ([\d.]+) kW', line)
+                    if match:
+                        info['power_kw'] = float(match.group(1))
+                        info['battery_command'] = f"Charge at {info['power_kw']} kW"
+                        logger.debug(f"Extracted charge power: {info['power_kw']} kW")
+                    else:
+                        logger.warning(f"Could not extract power from CHARGE line: {line}")
+                        
+                elif "IDLE" in line:
+                    info['command_type'] = "IDLE"
+                    info['power_kw'] = 0.0
+                    info['battery_command'] = "Battery idle / no change"
+                    logger.debug("Detected IDLE command")
+                else:
+                    logger.warning(f"Could not parse battery command from line: {line}")
+                    
+            elif "Solar (24h):" in line:
+                # Extract solar forecast
+                parts = line.split()
+                for j, part in enumerate(parts):
+                    try:
+                        if 'kWh' in parts[j+1:j+2]:
+                            info['forecast_summary']['solar_24h'] = float(part)
+                            break
+                    except (ValueError, IndexError):
+                        continue
+                        
+            elif "Load Avg (24h):" in line:
+                # Extract load forecast
+                parts = line.split()
+                for j, part in enumerate(parts):
+                    try:
+                        if 'kW' in parts[j+1:j+2]:
+                            info['forecast_summary']['load_avg_24h'] = float(part)
+                            break
+                    except (ValueError, IndexError):
+                        continue
+                        
+            elif any(strategy in line for strategy in ["CHARGING STRATEGY:", "DISCHARGING STRATEGY:", "CONSERVATION STRATEGY:"]):
+                # Start capturing decision context
+                strategy_lines = []
+                for k in range(i+1, min(i+6, len(output_lines))):
+                    context_line = output_lines[k].strip()
+                    if context_line.startswith("•") or context_line.startswith("    •"):
+                        strategy_lines.append(context_line.lstrip("• ").strip())
+                    elif "NEXT EVALUATION:" in context_line:
+                        break
+                info['decision_context'] = strategy_lines
+                
+    except Exception as e:
+        logger.warning(f"Error parsing agent output: {e}")
+        
+    return info
+
+@task(task_run_name="create-agent-report")
+def create_agent_report(agent_result: Dict[str, Any]) -> str:
+    """Create a beautiful HTML/Markdown report from the RL agent results."""
+    
+    if not agent_result.get('success', False):
+        return f"""
+            # ⚠️ RL Agent Execution Failed
+
+            **Timestamp:** {agent_result.get('timestamp', 'Unknown')}
+
+            **Error:** {agent_result.get('error', 'Unknown error')}
+
+            **Script:** `{agent_result.get('script_path', 'Unknown')}`
+                """
+    
+    agent_info = agent_result.get('agent_info', {})
+    timestamp = agent_result.get('timestamp', 'Unknown')
+    
+    # Debug logging
+    logger.debug(f"Creating report with agent_info: {agent_info}")
+    
+    # Create status badges
+    command_type = agent_info.get('command_type', 'UNKNOWN')
+    logger.debug(f"Command type: {command_type}")
+    
+    if command_type == 'CHARGE':
+        command_badge = "🔋 **CHARGING**"
+        command_color = "🟢"
+    elif command_type == 'DISCHARGE':
+        command_badge = "⚡ **DISCHARGING**" 
+        command_color = "🔴"
+    else:
+        command_badge = "⏸️ **IDLE**"
+        command_color = "🟡"
+    
+    logger.debug(f"Command badge: {command_badge}")
+    
+    price_trend = agent_info.get('price_trend', 'UNKNOWN')
+    price_emoji = "📈" if price_trend == "HIGH" else "📉" if price_trend == "LOW" else "📊"
+    
+    soc_percentage = agent_info.get('soc_percentage')
+    soc_emoji = "🔋" if float(soc_percentage or 0) > 70 else "🔋" if float(soc_percentage or 0) > 30 else "🪫"
+    
+    report = f"""
+# Energy Management System Report
+
+**Report Generated:** {timestamp}
+
+---
+
+## {command_color} Current System Status
+
+| **Metric** | **Value** | **Status** |
+|------------|-----------|------------|
+| {soc_emoji} **Battery SoC** | {soc_percentage}% | {'✅ Good' if float(soc_percentage or 0) > 20 else '⚠️ Low'} |
+| {price_emoji} **Current Price** | {agent_info.get('current_price', 'N/A')} öre/kWh | {price_trend} |
+| ⚡ **Command** | {agent_info.get('battery_command', 'Unknown')} | {command_badge} |
+
+---
+
+## AI Agent Decision
+
+**Neural Network Output:** `{agent_info.get('action_value', 'N/A')}`
+
+**Recommended Action:** {command_badge}
+
+"""
+
+    # Add power details if available
+    power_kw = agent_info.get('power_kw')
+    if power_kw is not None:
+        if command_type == 'CHARGE':
+            report += f"- 🔌 **Charging at {power_kw} kW**\n"
+        elif command_type == 'DISCHARGE':
+            report += f"- ⚡ **Discharging at {power_kw} kW**\n"
+        else:
+            report += f"- ⏸️ **Battery idle (0 kW)**\n"
+    
+    # Add forecast summary
+    forecast = agent_info.get('forecast_summary', {})
+    if forecast:
+        report += f"""
+---
+
+## 24-Hour Forecast Summary
+
+| **Forecast** | **Value** |
+|--------------|-----------|
+| ☀️ **Solar Production** | {forecast.get('solar_24h', 'N/A')} kWh |
+| ⚡ **Average Load** | {forecast.get('load_avg_24h', 'N/A')} kW |
+
+"""
+
+    # Add decision context
+    decision_context = agent_info.get('decision_context', [])
+    if decision_context:
+        report += f"""
+---
+
+## 🧠 Decision Context
+
+"""
+        for context in decision_context:
+            report += f"- {context}\n"
+    
+    # Add next evaluation
+    from datetime import datetime, timedelta
+    try:
+        current_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        next_eval = current_time + timedelta(minutes=15)
+        report += f"""
+---
+
+## ⏰ Next Evaluation
+
+**Next Check:** {next_eval.strftime('%H:%M')} (15 minutes)
+
+---
+
+*Report generated by Home Energy AI System*
+"""
+    except:
+        report += """
+---
+
+*Report generated by Home Energy AI System*
+"""
+    
+    return report
 
 @task
 def check_data_freshness(file_path: str, max_age_hours: int = 24) -> Dict[str, Any]:
@@ -399,6 +762,24 @@ def fetch_exogenic_data() -> Dict[str, Any]:
         logger.error(f"❌ Failed to fetch weather data: {e}")
         results.append({'script_path': SCRIPT_PATHS['weather_data'], 'success': False, 'error': str(e)})
     
+    # Fetch solar predictions
+    try:
+        result = fetch_solar_predictions()
+        results.append(result)
+        logger.info("✅ Solar predictions fetched successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch solar predictions: {e}")
+        results.append({'script_path': SCRIPT_PATHS['solar_predictions'], 'success': False, 'error': str(e)})
+    
+    # Fetch solar actual data
+    try:
+        result = fetch_solar_actual()
+        results.append(result)
+        logger.info("✅ Solar actual data fetched successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch solar actual data: {e}")
+        results.append({'script_path': SCRIPT_PATHS['solar_actual'], 'success': False, 'error': str(e)})
+    
     successful = sum(1 for r in results if r.get('success', False))
     logger.info(f"Exogenic data fetching completed: {successful}/{len(results)} successful")
     
@@ -411,49 +792,161 @@ def fetch_exogenic_data() -> Dict[str, Any]:
 
 @flow(name="15-Minute Home Data Update")
 def home_data_flow() -> str:
-    """15-minute flow to update home data (consumption, Thermia)."""
-    logger.info("Starting 15-minute home data update flow")
+    """15-minute flow to update home data and run RL agent control."""
+    logger.info("Starting 15-minute home data update flow with RL agent control")
     
-    # Fetch home data
+    # Fetch home data and run RL agent
     home_result = fetch_home_data()
     
-    # Create execution report
+    # Extract agent report if available
+    agent_report = home_result.get('agent_report')
+    agent_success = False
+    
+    # Check if the RL agent specifically succeeded
+    for result in home_result.get('results', []):
+        if 'rl_agent' in result.get('script_path', '') or 'run_production_agent' in result.get('script_path', ''):
+            agent_success = result.get('success', False)
+            break
+    
+    if agent_report and agent_success:
+        # Create a Prefect artifact for the agent report for better UI visibility
+        create_markdown_artifact(
+            markdown=agent_report,
+            key="rl-agent-control-report",
+            description="✅ RL Agent Control Decision Report - SUCCESS"
+        )
+        
+        # Log the agent report prominently for Prefect UI
+        logger.info("🤖 RL AGENT CONTROL REPORT - SUCCESS")
+        logger.info("=" * 60)
+        
+        # Split the markdown report into lines and log each one
+        for line in agent_report.split('\n'):
+            if line.strip():  # Only log non-empty lines
+                logger.info(line)
+        
+        logger.info("=" * 60)
+        logger.info("✅ RL Agent control completed successfully")
+    else:
+        # Find the specific agent error
+        agent_error = "Unknown error"
+        for result in home_result.get('results', []):
+            if 'rl_agent' in result.get('script_path', '') or 'run_production_agent' in result.get('script_path', ''):
+                agent_error = result.get('error', 'Unknown error')
+                # Log additional details if available
+                if 'stderr' in result:
+                    logger.error(f"RL Agent STDERR: {result['stderr']}")
+                if 'stdout' in result:
+                    logger.info(f"RL Agent STDOUT: {result['stdout']}")
+                break
+        
+        logger.error(f"❌ RL Agent control failed: {agent_error}")
+        
+        # Create a failure artifact with more details
+        failure_report = f"""# ❌ RL Agent Control Failed
+
+**Error:** {agent_error}
+
+**Timestamp:** {datetime.now().isoformat()}
+
+## Troubleshooting
+
+1. **Check Dependencies**: Ensure `sb3-contrib` and other RL dependencies are installed
+2. **Verify Model**: Check if the trained model exists at the expected path
+3. **Environment**: Ensure the correct Python environment is active
+4. **Logs**: Check the detailed logs above for more specific error information
+
+## Next Steps
+
+- Check the agent script can run independently: `python src/rl/run_production_agent.py --dry-run`
+- Verify all dependencies are installed in the current environment
+- Check if the model file exists and is accessible
+
+"""
+        
+        create_markdown_artifact(
+            markdown=failure_report,
+            key="rl-agent-control-report",
+            description="❌ RL Agent Control Failure Report"
+        )
+    
+    # Create standard execution report for other tasks
     all_results = home_result['results']
-    report = create_execution_report(all_results, "15-Minute Home Data Update")
+    standard_report = create_execution_report(all_results, "15-Minute Home Data Update")
     
-    # Log summary
-    successful = home_result['successful_count']
-    total = home_result['total_count']
-    logger.info(f"Home data flow completed: {successful}/{total} tasks successful")
+    # Determine overall flow status
+    total_tasks = home_result['total_count']
+    successful_tasks = home_result['successful_count']
     
-    return report
+    # Consider the flow a warning if RL agent failed but other tasks succeeded
+    if agent_success:
+        flow_status = "✅ SUCCESS"
+        status_emoji = "🟢"
+    elif successful_tasks > 0:
+        flow_status = "⚠️ PARTIAL SUCCESS - RL AGENT FAILED"
+        status_emoji = "🟡"
+        logger.warning("Flow completed with warnings: RL Agent failed but other tasks succeeded")
+    else:
+        flow_status = "❌ FAILED"
+        status_emoji = "🔴"
+        logger.error("Flow failed: All tasks failed including RL Agent")
+    
+    # Combine standard report with agent report if available
+    if agent_report and agent_success:
+        combined_report = f"""# {status_emoji} 15-Minute Home Data Update Flow Report
+
+**Status:** {flow_status}
+
+## 🤖 RL Agent Control Report
+
+{agent_report}
+
+---
+
+## 📋 System Tasks Report
+
+{standard_report}
+
+---
+
+*Flow completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*
+"""
+    else:
+        combined_report = f"""# {status_emoji} 15-Minute Home Data Update Flow Report
+
+**Status:** {flow_status}
+
+## ⚠️ RL Agent Status
+RL Agent control failed. See the failure artifact and logs for details.
+
+**Tasks Summary:** {successful_tasks}/{total_tasks} successful
+
+---
+
+## 📋 System Tasks Report
+
+{standard_report}
+
+---
+
+*Flow completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*
+"""
+    
+    # Log summary with clear status
+    logger.info(f"🏠 Home data flow completed: {flow_status}")
+    logger.info(f"📊 Tasks: {successful_tasks}/{total_tasks} successful")
+    logger.info(f"🤖 RL Agent: {'✅ Success' if agent_success else '❌ Failed'}")
+    
+    return combined_report
 
 @task(retries=1, retry_delay_seconds=120, task_run_name="fetch-home-data")
 def fetch_home_data() -> Dict[str, Any]:
-    """Fetch home-related data: consumption and Thermia heat pump."""
-    logger.info("Starting home data fetching")
+    """Fetch current home data and run RL agent control."""
+    logger.info("Starting home data fetching and agent control")
     
     results = []
     
-    # Fetch consumption data
-    try:
-        result = fetch_energy_consumption()
-        results.append(result)
-        logger.info("✅ Consumption data fetched successfully")
-    except Exception as e:
-        logger.error(f"❌ Failed to fetch consumption data: {e}")
-        results.append({'script_path': SCRIPT_PATHS['consumption_data'], 'success': False, 'error': str(e)})
-    
-    # Fetch consumption data
-    try:
-        result = fetch_actual_load()
-        results.append(result)
-        logger.info("✅ Consumption actual load data fetched successfully")
-    except Exception as e:
-        logger.error(f"❌ Failed to fetch consumption actual load data: {e}")
-        results.append({'script_path': SCRIPT_PATHS['consumption_actual_load'], 'success': False, 'error': str(e)})
-    
-    # Fetch Thermia heat pump data
+    # Fetch Thermia data first (heat pump data)
     try:
         result = fetch_thermia_data()
         results.append(result)
@@ -462,14 +955,58 @@ def fetch_home_data() -> Dict[str, Any]:
         logger.error(f"❌ Failed to fetch Thermia data: {e}")
         results.append({'script_path': SCRIPT_PATHS['thermia_data'], 'success': False, 'error': str(e)})
     
+    # Fetch energy consumption data
+    try:
+        result = fetch_energy_consumption()
+        results.append(result)
+        logger.info("✅ Energy consumption data fetched successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch energy consumption data: {e}")
+        results.append({'script_path': SCRIPT_PATHS['consumption_data'], 'success': False, 'error': str(e)})
+    
+    # Fetch actual load data
+    try:
+        result = fetch_actual_load()
+        results.append(result)
+        logger.info("✅ Actual load data fetched successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch actual load data: {e}")
+        results.append({'script_path': SCRIPT_PATHS['consumption_actual_load'], 'success': False, 'error': str(e)})
+    
     successful = sum(1 for r in results if r.get('success', False))
     logger.info(f"Home data fetching completed: {successful}/{len(results)} successful")
+    
+    # Run the RL agent control task and create a report
+    try:
+        agent_result = run_agent()
+        results.append(agent_result)
+        
+        if agent_result.get('success', False):
+            logger.info("✅ Agent control task completed successfully")
+            
+            # Create the beautiful report
+            agent_report = create_agent_report(agent_result)
+            
+            # Log the report for Prefect UI
+            logger.info("📊 RL Agent Report Generated:")
+            logger.info("\n" + agent_report)
+            
+        else:
+            logger.error("❌ Failed to run agent control task")
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to run agent control task: {e}")
+        results.append({'script_path': SCRIPT_PATHS['rl_agent'], 'success': False, 'error': str(e)})
+    
+    successful = sum(1 for r in results if r.get('success', False))
+    logger.info(f"Home data fetching and agent control completed: {successful}/{len(results)} successful")
     
     return {
         'task_name': 'fetch_home_data',
         'results': results,
         'successful_count': successful,
-        'total_count': len(results)
+        'total_count': len(results),
+        'agent_report': agent_report if 'agent_report' in locals() else None
     }
 
 @task(retries=1, retry_delay_seconds=120, task_run_name="fetch-solar-data")
@@ -511,7 +1048,7 @@ def fetch_solar_data() -> Dict[str, Any]:
 # MODEL TRAINING TASKS
 # =============================================================================
 
-@task(retries=1, retry_delay_seconds=300, timeout_seconds=7200, task_run_name="train-price-models")  # 2 hour timeout
+@task(retries=1, retry_delay_seconds=300, timeout_seconds=24*60*60, task_run_name="train-price-models")  # 1 day timeout
 def train_price_models(production_mode: bool = True) -> Dict[str, Any]:
     """Train all price prediction models: trend, peak, valley."""
     logger.info(f"Starting price model training (production={production_mode})")
@@ -528,7 +1065,7 @@ def train_price_models(production_mode: bool = True) -> Dict[str, Any]:
             result = run_python_script(
                 SCRIPT_PATHS['prices_train'], 
                 args=args,
-                timeout=7200,  # 2 hours per model
+                timeout=24*60*60,  # 1 day per model
                 task_name=f"train-price-model-{model_type}"
             )
             results.append(result)
@@ -554,7 +1091,7 @@ def train_price_models(production_mode: bool = True) -> Dict[str, Any]:
         'production_mode': production_mode
     }
 
-@task(retries=1, retry_delay_seconds=300, timeout_seconds=10800, task_run_name="train-demand-model")  # 3 hour timeout
+@task(retries=1, retry_delay_seconds=300, timeout_seconds=24*60*60, task_run_name="train-demand-model")  # 1 day timeout
 def train_demand_model(production_mode: bool = True, trials: int = 30) -> Dict[str, Any]:
     """Train demand prediction model."""
     logger.info(f"Starting demand model training (production={production_mode}, trials={trials})")
@@ -568,7 +1105,7 @@ def train_demand_model(production_mode: bool = True, trials: int = 30) -> Dict[s
         result = run_python_script(
             SCRIPT_PATHS['demand_train'],
             args=args,
-            timeout=10800,  # 3 hours
+            timeout=24*60*60,  # 1 day
             task_name=f"train-demand-model-{trials}-trials"
         )
         
@@ -597,7 +1134,7 @@ def train_demand_model(production_mode: bool = True, trials: int = 30) -> Dict[s
             'trials': trials
         }
 
-@task(retries=1, retry_delay_seconds=300, timeout_seconds=21600, task_run_name="train-rl-agent")  # 6 hour timeout
+@task(retries=1, retry_delay_seconds=300, timeout_seconds=48*60*60, task_run_name="train-rl-agent")  # 2 day timeout
 def train_rl_agent(sanity_check_steps: int = 10, start_date: str = None, 
                   end_date: str = None, total_timesteps: int = None) -> Dict[str, Any]:
     """Train RL battery control agent."""
@@ -622,7 +1159,7 @@ def train_rl_agent(sanity_check_steps: int = 10, start_date: str = None,
         result = run_python_script(
             SCRIPT_PATHS['rl_train'],
             args=args,
-            timeout=21600,  # 6 hours
+            timeout=48*60*60,  # 2 days
             task_name=f"train-rl-agent-{sanity_check_steps}-steps"
         )
         
@@ -725,25 +1262,6 @@ def hourly_exogenic_flow() -> str:
     successful = exogenic_result['successful_count']
     total = exogenic_result['total_count']
     logger.info(f"Hourly exogenic flow completed: {successful}/{total} tasks successful")
-    
-    return report
-
-@flow(name="15-Minute Home Data Update")
-def home_data_flow() -> str:
-    """15-minute flow to update home data (consumption, Thermia)."""
-    logger.info("Starting 15-minute home data update flow")
-    
-    # Fetch home data
-    home_result = fetch_home_data()
-    
-    # Create execution report
-    all_results = home_result['results']
-    report = create_execution_report(all_results, "15-Minute Home Data Update")
-    
-    # Log summary
-    successful = home_result['successful_count']
-    total = home_result['total_count']
-    logger.info(f"Home data flow completed: {successful}/{total} tasks successful")
     
     return report
 
@@ -940,44 +1458,63 @@ def serve_flows():
         # Hourly exogenic data update
         hourly_exogenic_flow.to_deployment(
             name="hourly-exogenic-data",
-            cron="0 * * * *",  # Every hour at minute 0
             description="Hourly update of exogenic data (prices, CO2/gas/coal, weather)",
-            tags=["data-fetching", "hourly", "exogenic"]
+            tags=["data-fetching", "hourly", "exogenic"],
+            schedules=[
+                Cron(
+                    "0 * * * *",  # Every hour at minute 0
+                    timezone="UTC"
+                )
+            ]
         ),
         
         # 15-minute home data update  
         home_data_flow.to_deployment(
             name="15min-home-data",
-            cron="0,15,30,45 * * * *",  # At 00, 15, 30, 45 minutes past every hour
             description="15-minute update of home data (consumption, Thermia) - runs at specific clock times",
-            tags=["data-fetching", "15min", "home"]
+            tags=["data-fetching", "15min", "home"],
+            schedules=[
+                Cron(
+                    "0,15,30,45 * * * *",  # At 00, 15, 30, 45 minutes past every hour
+                    timezone="UTC"
+                )
+            ]
         ),
         
         # Daily energy pipeline
         daily_energy_pipeline.to_deployment(
-            name="daily-energy-pipeline", 
-            cron="0 6 * * *",  # Daily at 6 AM
+            name="daily-energy-pipeline",
             description="Daily comprehensive energy pipeline with data updates and predictions",
-            tags=["daily", "pipeline", "predictions"]
+            tags=["daily", "pipeline", "predictions"],
+            schedules=[
+                Cron(
+                    "0 6 * * *",  # Daily at 6 AM
+                    timezone="UTC"
+                )
+            ]
         ),
         
         # Weekly price model training (Sunday 02:00)
         weekly_model_training.to_deployment(
             name="weekly-price-training",
-            cron="0 2 * * 0",  # Sunday at 2 AM
             description="Weekly training of price prediction models (trend, peak, valley)",
             tags=["training", "weekly", "prices"],
             parameters={
                 "train_price_models_flag": True,
                 "train_demand_model_flag": False,
                 "price_production_mode": True
-            }
+            },
+            schedules=[
+                Cron(
+                    "0 2 * * 0",  # Sunday at 2 AM
+                    timezone="UTC"
+                )
+            ]
         ),
         
         # Weekly demand model training (Monday 02:00) 
         weekly_model_training.to_deployment(
             name="weekly-demand-training",
-            cron="0 2 * * 1",  # Monday at 2 AM
             description="Weekly training of demand prediction model",
             tags=["training", "weekly", "demand"],
             parameters={
@@ -985,20 +1522,31 @@ def serve_flows():
                 "train_demand_model_flag": True,
                 "demand_production_mode": True,
                 "demand_trials": 50
-            }
+            },
+            schedules=[
+                Cron(
+                    "0 2 * * 1",  # Monday at 2 AM
+                    timezone="UTC"
+                )
+            ]
         ),
         
         # Weekly RL agent training (Tuesday 02:00)
         rl_training_flow.to_deployment(
-            name="weekly-rl-training", 
-            cron="0 2 * * 2",  # Tuesday at 2 AM
+            name="weekly-rl-training",
             description="Weekly training of RL battery control agent",
             tags=["training", "weekly", "rl"],
             parameters={
                 "sanity_check_steps": 10,
                 "start_date": "2027-01-01",
                 "update_data_first": True
-            }
+            },
+            schedules=[
+                Cron(
+                    "0 2 * * 2",  # Tuesday at 2 AM
+                    timezone="UTC"
+                )
+            ]
         )
     )
 
@@ -1012,10 +1560,88 @@ if __name__ == "__main__":
         "hourly-exogenic", "home-data", "daily-pipeline", 
         "weekly-training", "rl-training"
     ], help="Test a specific flow")
+    parser.add_argument("--test-parsing", action="store_true",
+                       help="Test the agent output parsing logic")
     
     args = parser.parse_args()
     
-    if args.serve:
+    if args.test_parsing:
+        # Test the parsing logic with sample output
+        sample_output = [
+            "================================================================================",
+            "                        ENERGY MANAGEMENT SYSTEM DECISION",
+            "================================================================================",
+            "",
+            "  TIMESTAMP: 2025-06-02 09:53 (Monday)",
+            "",
+            "--------------------------------------------------------------------------------",
+            "                               CURRENT SYSTEM STATE",
+            "--------------------------------------------------------------------------------",
+            "",
+            "  BATTERY STATUS:",
+            "     State of Charge:      64.0%  ( 14.1 kWh / 22.0 kWh)",
+            "",
+            "  MARKET CONDITIONS:",
+            "     Current Price:         42.3 ore/kWh  [HIGH]",
+            "     24h Average:           30.9 ore/kWh",
+            "     Price Range (24h):      5.7 - 65.2 ore/kWh",
+            "",
+            "  FORECAST SUMMARY:",
+            "     Solar (24h):           54.7 kWh     [GOOD]",
+            "     Load Avg (24h):         0.5 kW      [LOW]",
+            "",
+            "--------------------------------------------------------------------------------",
+            "                             AI AGENT RECOMMENDATION",
+            "--------------------------------------------------------------------------------",
+            "",
+            "  NEURAL NETWORK OUTPUT:",
+            "     Raw Action Value:    +0.2682  (range: -1.0 to +1.0)",
+            "",
+            "  RECOMMENDED ACTION:",
+            "     Battery Command:     <<<      DISCHARGE at 2.7 kW       <<<",
+            "",
+            "--------------------------------------------------------------------------------",
+            "                                 DECISION CONTEXT",
+            "--------------------------------------------------------------------------------",
+            "",
+            "  DISCHARGING STRATEGY:",
+            "     • Battery has sufficient charge (64.0%)",
+            "     • Current price is high (42.3 ore/kWh)",
+            "     • Selling energy to grid during favorable conditions",
+            "",
+            "  NEXT EVALUATION: 10:08 (15 minutes)",
+            "",
+            "================================================================================",
+        ]
+        
+        # Enable debug logging
+        logging.getLogger().setLevel(logging.DEBUG)
+        
+        print("Testing agent output parsing...")
+        parsed_info = _parse_agent_output(sample_output)
+        
+        print("\nParsed information:")
+        for key, value in parsed_info.items():
+            print(f"  {key}: {value}")
+        
+        print(f"\nCommand type: {parsed_info.get('command_type')}")
+        print(f"Power kW: {parsed_info.get('power_kw')}")
+        print(f"Battery command: {parsed_info.get('battery_command')}")
+        print(f"Action value: {parsed_info.get('action_value')}")
+        
+        # Test report creation
+        mock_result = {
+            'success': True,
+            'agent_info': parsed_info,
+            'timestamp': '2025-06-02T09:53:34'
+        }
+        
+        print("\nGenerating report...")
+        report = create_agent_report(mock_result)
+        print("\nGenerated report:")
+        print(report)
+        
+    elif args.serve:
         serve_flows()
     elif args.test_flow:
         # Test individual flows
@@ -1036,4 +1662,5 @@ if __name__ == "__main__":
             print("RL Training Result:", result)
     else:
         print("Use --serve to start serving flows or --test-flow to test a specific flow")
-        print("Available test flows: hourly-exogenic, home-data, daily-pipeline, weekly-training, rl-training") 
+        print("Available test flows: hourly-exogenic, home-data, daily-pipeline, weekly-training, rl-training")
+        print("Use --test-parsing to test the agent output parsing logic") 

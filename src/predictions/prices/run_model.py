@@ -54,7 +54,7 @@ from scipy.interpolate import interp1d
 USE_ADVANCED_TREND_SMOOTHING = False
 
 # This is not used if above is True
-SIMPLE_TREND_MODEL_SMOOTHING_LEVEL = 'light' # 'light', 'medium', 'heavy', 'daily', 'weekly'
+SIMPLE_TREND_MODEL_SMOOTHING_LEVEL = 'heavy' # 'light', 'medium', 'heavy', 'daily', 'weekly'
 
 
 # Define custom layers needed for model loading
@@ -938,7 +938,7 @@ def generate_weekly_valley_plots(timestamps, predictions, probabilities, actuals
         f1 = 2 * precision * recall / max(precision + recall, 1e-6)
         
         # Add title with metrics
-        ax.set_title(f'Week starting {week_key} ({eval_name} Data)\n' +
+        ax.set_title(f'Week starting {week_key}\n' +
                     f'Valleys: {np.sum(week_actuals)} actual, {np.sum(week_predictions)} predicted | ' +
                     f'Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}',
                     fontsize=14)
@@ -2512,7 +2512,7 @@ def generate_weekly_peak_plots(timestamps, predictions, probabilities, actuals, 
         f1 = 2 * precision * recall / max(precision + recall, 1e-6)
         
         # Add title with metrics
-        ax.set_title(f'Week starting {week_key} ({eval_name} Data)\n' +
+        ax.set_title(f'Week starting {week_key}\n' +
                     f'Peaks: {np.sum(week_actuals)} actual, {np.sum(week_predictions)} predicted | ' +
                     f'Precision: {precision:.2f}, Recall: {recall:.2f}, F1: {f1:.2f}',
                     fontsize=14)
@@ -3030,7 +3030,7 @@ def evaluate_merged_models(data, trend_artifacts, peak_artifacts=None, valley_ar
         axs[0].step(week_timestamps, week_trend_predictions, 'g-', label='Trend Prediction (Smoothed)', linewidth=2)
         
         axs[0].set_ylabel('Price (öre/kWh)')
-        axs[0].set_title(f'Actual Price and Base Trend Model (Smoothed): {start_date} to {end_date}')
+        axs[0].set_title(f'Actual Price and Base Trend Model (Smoothed)')
         axs[0].legend(loc='upper right')
         axs[0].grid(True, alpha=0.3)
         

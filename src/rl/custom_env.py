@@ -110,21 +110,20 @@ def safe_action_mask(raw_action: float, soc: float, min_soc: float, max_soc: flo
     max_discharge = compute_max_discharge_rate(soc, min_soc, max_discharge_power_kw,
                                              battery_capacity_kwh, time_step_hours)
     
-    # Convert from raw normalized (-1 to 1) to actual power values
-    requested_power = raw_action
-    if requested_power < 0:  # Charging request
-        # Scale the -1 to 0 range to -max_charge_power_kw to 0
-        requested_charge_power = -requested_power * max_charge_power_kw
-        # Limit to safe value
+    # Convert normalized action (-1 to +1) to actual power request
+    if raw_action < 0:  # Charging request (negative action)
+        # Scale -1 to 0 range to -max_charge_power_kw to 0
+        requested_charge_power = -raw_action * max_charge_power_kw  # Convert to positive power value
+        # Limit to safe charging power
         safe_charge_power = min(requested_charge_power, max_charge)
-        # Convert back to normalized space
+        # Convert back to normalized action space
         safe_action = -safe_charge_power / max_charge_power_kw if max_charge_power_kw > 0 else 0
-    else:  # Discharging request
-        # Scale the 0 to 1 range to 0 to max_discharge_power_kw  
-        requested_discharge_power = requested_power * max_discharge_power_kw
-        # Limit to safe value
+    else:  # Discharging request (positive action)
+        # Scale 0 to 1 range to 0 to max_discharge_power_kw  
+        requested_discharge_power = raw_action * max_discharge_power_kw
+        # Limit to safe discharging power
         safe_discharge_power = min(requested_discharge_power, max_discharge)
-        # Convert back to normalized space
+        # Convert back to normalized action space
         safe_action = safe_discharge_power / max_discharge_power_kw if max_discharge_power_kw > 0 else 0
         
     return safe_action
@@ -284,8 +283,9 @@ def total_reward(components: Dict[str, float], weights: Dict[str, float]) -> flo
     
     # Night-time charging reward - only applied when actually charging the battery
     if all(k in components for k in ['night_discount', 'battery_charging_power']) and 'w_night' in weights:
-        # Only add night charging reward if actually charging (battery_charging_power > 0)
-        total += weights['w_night'] * components['night_discount'] * components['battery_charging_power']
+        # Apply the night charging scaling factor here in the aggregation
+        night_charging_scaling_factor = 2.0  # Same value as in config
+        total += weights['w_night'] * components['night_discount'] * components['battery_charging_power'] * night_charging_scaling_factor
     
     # Arbitrage bonus
     if 'arbitrage_bonus' in components and 'w_arbitrage' in weights:
@@ -309,6 +309,86 @@ def total_reward(components: Dict[str, float], weights: Dict[str, float]) -> flo
         total -= weights['w_action_mod'] * components['action_mod_penalty']
     
     return total
+
+def adaptive_soc_targets_with_load(current_hour: int, price_forecast: List[float], 
+                                  solar_forecast: List[float], load_forecast: List[float],
+                                  base_min: float, base_max: float) -> Tuple[float, float]:
+    """
+    Enhanced version that includes load forecasting for better SoC management.
+    
+    Args:
+        current_hour: Current hour of day (0-23)
+        price_forecast: Next 24h price forecast
+        solar_forecast: Next 24h solar forecast  
+        load_forecast: Next 24h load forecast
+        base_min: Base minimum preferred SoC
+        base_max: Base maximum preferred SoC
+        
+    Returns:
+        Tuple[float, float]: Adjusted (min_pref, max_pref) SoC targets
+    """
+    # Calculate price percentiles for next 24 hours
+    if len(price_forecast) >= 24:
+        next_24h_prices = price_forecast[:24]
+        price_25th = np.percentile(next_24h_prices, 25)
+        price_75th = np.percentile(next_24h_prices, 75)
+        current_price = price_forecast[0] if len(price_forecast) > 0 else price_25th
+    else:
+        return base_min, base_max
+    
+    # Calculate expected solar and load for next 12 hours
+    next_12h_solar = sum(solar_forecast[:12]) if len(solar_forecast) >= 12 else 0
+    next_12h_load = sum(load_forecast[:12]) if len(load_forecast) >= 12 else 6.0  # Default 0.5kW * 12h
+    
+    # Calculate net load (load - solar) to understand energy requirements
+    next_12h_net_load = next_12h_load - next_12h_solar
+    
+    # Look for peak load periods in next 24 hours
+    if len(load_forecast) >= 24:
+        max_load_next_24h = max(load_forecast[:24])
+        avg_load_next_24h = sum(load_forecast[:24]) / 24
+        load_variability = max_load_next_24h - avg_load_next_24h
+    else:
+        max_load_next_24h = 1.0
+        avg_load_next_24h = 0.5
+        load_variability = 0.5
+    
+    # Adjust targets based on time of day and forecasts
+    adjusted_min = base_min
+    adjusted_max = base_max
+    
+    # Night hours (22:00-06:00) - prepare for next day
+    if current_hour >= 22 or current_hour <= 6:
+        if current_price <= price_25th:  # Very low prices
+            adjusted_min = max(0.15, base_min - 0.1)
+            adjusted_max = min(0.85, base_max + 0.1)
+        elif next_12h_solar > 3.0:  # Significant solar expected
+            adjusted_max = min(0.7, base_max - 0.05)
+        
+        # Additional: If high load expected tomorrow, ensure enough capacity
+        if next_12h_net_load > 8.0:  # High net demand expected
+            adjusted_min = max(0.4, base_min + 0.1)
+    
+    # Morning hours (06:00-10:00) - prepare for solar and daily load patterns
+    elif 6 <= current_hour <= 10:
+        if next_12h_solar > 2.0:
+            adjusted_max = min(0.7, base_max - 0.1)
+        
+        # If peak loads are expected later in the day, maintain higher SoC
+        if load_variability > 0.5:  # High load variability expected
+            adjusted_min = max(0.35, base_min + 0.05)
+    
+    # Peak hours (16:00-20:00) - prepare for high prices and evening loads
+    elif 16 <= current_hour <= 20:
+        if current_price >= price_75th:
+            adjusted_min = max(0.3, base_min + 0.1)
+        
+        # If evening loads are high, maintain higher SoC for self-consumption
+        if max_load_next_24h > avg_load_next_24h * 1.5:
+            adjusted_min = max(0.4, base_min + 0.15)
+    
+    return adjusted_min, adjusted_max
+
 
 def adaptive_soc_targets(current_hour: int, price_forecast: List[float], solar_forecast: List[float], 
                         base_min: float, base_max: float) -> Tuple[float, float]:
@@ -372,6 +452,7 @@ class HomeEnergyEnv(gym.Env):
     - Time index (hour of day, minute of hour, day of week)
     - Price forecast for next 24 hours (from historical data)
     - Solar forecast for the next 3 days (from solar data)
+    - Load forecast for next 3 days (perfect foresight of household consumption)
     - Capacity metrics
     - Price averages
     - Is night discount flag
@@ -1114,11 +1195,33 @@ class HomeEnergyEnv(gym.Env):
             if remaining_solar_steps > 0:
                 solar_forecast = self.solar_forecast_observed[self.current_step][:24]  # Next 24h hourly solar
         
-        # Apply adaptive SoC targeting
-        preferred_soc_min, preferred_soc_max = adaptive_soc_targets(
+        # Update SoC violation memory (decay previous violations, add current ones)
+        self.soc_violation_memory *= self.soc_violation_memory_factor
+        
+        # Check for current SoC violations and add to memory
+        current_violation_severity = 0.0
+        if soc_after < soc_min_limit:
+            current_violation_severity = (soc_min_limit - soc_after) * 10.0  # Amplify violation
+        elif soc_after > soc_max_limit:
+            current_violation_severity = (soc_after - soc_max_limit) * 15.0  # Higher penalty for over-charging
+        
+        self.soc_violation_memory += current_violation_severity
+        
+        # Calculate escalated penalty factor based on violation memory
+        violation_escalation = 1.0 + (self.soc_violation_memory * self.soc_violation_escalation_factor)
+        
+        # Get load forecast for next 24 hours (from the perfect load forecast)
+        load_forecast = []
+        if self.use_variable_consumption and hasattr(self, 'load_forecast_observed') and self.load_forecast_observed is not None:
+            if self.current_step < len(self.load_forecast_observed):
+                load_forecast = self.load_forecast_observed[self.current_step][:24]  # Next 24h hourly load
+        
+        # Apply adaptive SoC targeting with load awareness
+        preferred_soc_min, preferred_soc_max = adaptive_soc_targets_with_load(
             current_hour=current_hour,
             price_forecast=price_forecast,
             solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
             base_min=base_preferred_soc_min,
             base_max=base_preferred_soc_max
         )
@@ -1173,18 +1276,6 @@ class HomeEnergyEnv(gym.Env):
             self.battery_cost_history.append(degradation_cost)
         
         reward_components['degradation_cost'] = degradation_cost
-        
-        # Update SoC violation memory (decay previous violations, add current ones)
-        self.soc_violation_memory *= self.soc_violation_memory_factor
-        
-        # Check for current SoC violations and add to memory
-        current_violation_severity = 0.0
-        if soc_after < soc_min_limit:
-            current_violation_severity = (soc_min_limit - soc_after) * 10.0  # Amplify violation
-        elif soc_after > soc_max_limit:
-            current_violation_severity = (soc_after - soc_max_limit) * 15.0  # Higher penalty for over-charging
-        
-        self.soc_violation_memory += current_violation_severity
         
         # Calculate escalated penalty factor based on violation memory
         violation_escalation = 1.0 + (self.soc_violation_memory * self.soc_violation_escalation_factor)
@@ -1381,7 +1472,7 @@ class HomeEnergyEnv(gym.Env):
         
         # The night_charging_reward for logging should be the raw incentive, not the weighted one.
         # The weights are applied in total_reward.
-        raw_night_charging_incentive = reward_components['night_discount'] * reward_components['battery_charging_power'] * self.config.get("night_charging_scaling_factor", 1.0)
+        raw_night_charging_incentive = reward_components['night_discount'] * reward_components['battery_charging_power']  # Removed scaling factor - now applied in total_reward
         
         # Apply overall reward scaling factor if configured
         reward_scaling_factor = self.config.get("reward_scaling_factor", 0.1)
@@ -2194,7 +2285,7 @@ class HomeEnergyEnv(gym.Env):
             # Debug logging when peaks change significantly
             if self.debug_prints and old_peaks != self.top3_peaks:
                 peak_dates = [timestamp.strftime('%Y-%m-%d') for timestamp, _ in top_3_daily_peaks]
-                logger.debug(f"Capacity peaks updated (same-day constraint): {[f'{p:.2f}kW' for p in self.top3_peaks]} " +
+                print(f"ENV: Capacity peaks updated (same-day constraint): {[f'{p:.2f}kW' for p in self.top3_peaks]} " +
                            f"from dates: {peak_dates}")
         else:
             # Original logic without same-day constraint (for comparison/testing)
@@ -2205,6 +2296,37 @@ class HomeEnergyEnv(gym.Env):
         # Calculate rolling average of actual peaks (excluding zeros)
         non_zero_peaks = [p for p in self.top3_peaks if p > 0]
         self.peak_rolling_average = sum(non_zero_peaks) / len(non_zero_peaks) if non_zero_peaks else 0.0
+
+    def _calculate_seasonal_context(self, current_dt: datetime.datetime) -> np.ndarray:
+        """
+        Calculate seasonal context features for better agent awareness.
+        
+        Args:
+            current_dt: Current datetime
+            
+        Returns:
+            np.ndarray: Seasonal context [solar_capacity_factor, consumption_factor, season_sine, season_cosine]
+        """
+        day_of_year = current_dt.timetuple().tm_yday
+        
+        # Calculate seasonal sine/cosine (0-365 days mapped to 0-2π)
+        season_radians = 2 * np.pi * day_of_year / 365.25
+        season_sine = np.sin(season_radians)
+        season_cosine = np.cos(season_radians)
+        
+        # Solar capacity factor (higher in summer, lower in winter)
+        # Peak around summer solstice (day 172), minimum around winter solstice (day 355/356)
+        solar_peak_day = 172  # Approximate summer solstice
+        days_from_peak = min(abs(day_of_year - solar_peak_day), 
+                            abs(day_of_year - solar_peak_day + 365),
+                            abs(day_of_year - solar_peak_day - 365))
+        solar_capacity_factor = np.cos(np.pi * days_from_peak / 182.5) * 0.5 + 0.5  # 0-1 range
+        
+        # Consumption factor (higher in winter for heating, lower in summer)
+        # Inverse of solar pattern
+        consumption_factor = 1.0 - solar_capacity_factor * 0.3  # 0.7-1.0 range
+        
+        return np.array([solar_capacity_factor, consumption_factor, season_sine, season_cosine], dtype=np.float32)
 
 # Example usage (for testing the simplified environment)
 if __name__ == "__main__":

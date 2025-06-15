@@ -1,0 +1,140 @@
+{
+    "rl_agent": {
+        "strategy_name": "RL Agent",
+        "bill": {
+            "energy_consumption_kwh": 735.1820820030202,
+            "energy_export_kwh": 2656.6463500351006,
+            "spot_cost_sek": 191.82525111665262,
+            "energy_tax_sek": 403.4311674991565,
+            "grid_fee_sek": 45.948880125188765,
+            "vat_sek": 0.0,
+            "export_revenue_sek": 1593.9878100210597,
+            "net_energy_cost_sek": -952.7825112800617,
+            "capacity_fee_sek": 529.9936364688383,
+            "fixed_grid_fee_sek": 359.72404730617603,
+            "total_bill_sek": 377.5832853945285,
+            "battery_degradation_cost_sek": 440.6481128995759,
+            "top_3_peaks_kw": [
+                6.631017764662361,
+                6.507040571542822,
+                6.430937471875
+            ],
+            "average_peak_kw": 6.522998602693394
+        }
+    },
+    "no_battery": {
+        "strategy_name": "No Battery",
+        "bill": {
+            "energy_consumption_kwh": 586.5779555256015,
+            "energy_export_kwh": 2548.2025130716243,
+            "spot_cost_sek": 168.85209136443,
+            "energy_tax_sek": 321.88465309467273,
+            "grid_fee_sek": 36.661122220350094,
+            "vat_sek": 0.0,
+            "export_revenue_sek": 1528.9215078429756,
+            "net_energy_cost_sek": -1001.5236411635228,
+            "capacity_fee_sek": 519.0793136783855,
+            "fixed_grid_fee_sek": 359.72404730617603,
+            "total_bill_sek": -122.72028017896133,
+            "battery_degradation_cost_sek": 0.0,
+            "top_3_peaks_kw": [
+                6.7121859025,
+                6.430937471875,
+                6.022882053750001
+            ],
+            "average_peak_kw": 6.3886684760416665
+        }
+    },
+    "time_of_use": {
+        "strategy_name": "Time Of Use",
+        "bill": {
+            "energy_consumption_kwh": 577.752178460259,
+            "energy_export_kwh": 2584.325963298894,
+            "spot_cost_sek": 151.0556417776886,
+            "energy_tax_sek": 317.041507930066,
+            "grid_fee_sek": 36.109511153766185,
+            "vat_sek": 0.0,
+            "export_revenue_sek": 1550.5955779793367,
+            "net_energy_cost_sek": -1046.388917117816,
+            "capacity_fee_sek": 930.2133406041667,
+            "fixed_grid_fee_sek": 359.72404730617603,
+            "total_bill_sek": 602.4124651794626,
+            "battery_degradation_cost_sek": 358.8639943869359,
+            "top_3_peaks_kw": [
+                12.6349872675,
+                11.1856905625,
+                10.5256609
+            ],
+            "average_peak_kw": 11.448779576666666
+        }
+    },
+    "price_based": {
+        "strategy_name": "Price Based",
+        "bill": {
+            "energy_consumption_kwh": 632.9514419838274,
+            "energy_export_kwh": 2613.168782734401,
+            "spot_cost_sek": 202.58057449382517,
+            "energy_tax_sek": 347.332103788625,
+            "grid_fee_sek": 39.55946512398921,
+            "vat_sek": 0.0,
+            "export_revenue_sek": 1567.9012696406426,
+            "net_energy_cost_sek": -978.4291262342033,
+            "capacity_fee_sek": 534.3048462070311,
+            "fixed_grid_fee_sek": 359.72404730617603,
+            "total_bill_sek": 20.981782878945538,
+            "battery_degradation_cost_sek": 105.38201559994168,
+            "top_3_peaks_kw": [
+                6.7121859025,
+                6.5850555625,
+                6.430937471875
+            ],
+            "average_peak_kw": 6.576059645624999
+        }
+    },
+    "solar_following": {
+        "strategy_name": "Solar Following",
+        "bill": {
+            "energy_consumption_kwh": 924.2268519379503,
+            "energy_export_kwh": 2915.3796651255793,
+            "spot_cost_sek": 274.0959355667337,
+            "energy_tax_sek": 507.16948500095043,
+            "grid_fee_sek": 57.764178246121894,
+            "vat_sek": 0.0,
+            "export_revenue_sek": 1749.2277990753503,
+            "net_energy_cost_sek": -910.1982002615442,
+            "capacity_fee_sek": 709.7557099005209,
+            "fixed_grid_fee_sek": 359.72404730617603,
+            "total_bill_sek": 476.453278754992,
+            "battery_degradation_cost_sek": 317.17172180983937,
+            "top_3_peaks_kw": [
+                10.52479761075,
+                7.95860205,
+                7.7229650125
+            ],
+            "average_peak_kw": 8.735454891083334
+        }
+    },
+    "peak_shaving": {
+        "strategy_name": "Peak Shaving",
+        "bill": {
+            "energy_consumption_kwh": 685.1609133286149,
+            "energy_export_kwh": 2661.2535628547653,
+            "spot_cost_sek": 196.3267712285641,
+            "energy_tax_sek": 375.98205118907725,
+            "grid_fee_sek": 42.82255708303843,
+            "vat_sek": 0.0,
+            "export_revenue_sek": 1596.7521377128644,
+            "net_energy_cost_sek": -981.6207582121847,
+            "capacity_fee_sek": 747.7069408927083,
+            "fixed_grid_fee_sek": 359.72404730617603,
+            "total_bill_sek": 221.04553340047255,
+            "battery_degradation_cost_sek": 95.23530341377291,
+            "top_3_peaks_kw": [
+                10.622343283749998,
+                8.7105,
+                8.27479761075
+            ],
+            "average_peak_kw": 9.202546964833333
+        }
+    }
+}

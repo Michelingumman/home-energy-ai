@@ -1,6 +1,5 @@
 # 🏠⚡ Home Energy AI Optimizer
-## AI-Driven Home Energy Management System for Profit and Grid Stability
-
+## [AI-Driven Home Energy Management System for Profit and Grid Stability](https://odr.chalmers.se/items/d79fc32a-c2e9-4263-ae51-b1d758f43578)
 <div align="center">
 
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://python.org)
